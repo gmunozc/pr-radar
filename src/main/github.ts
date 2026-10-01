@@ -1,5 +1,7 @@
 import type {
+  CiState,
   GithubErrorKind,
+  MergeBlocker,
   MyPullRequest,
   MyReviewStatus,
   PullRequest,
@@ -14,7 +16,7 @@ import type {
 export const GRAPHQL_URL = 'https://api.github.com/graphql'
 export const PAGE_SIZE = 50
 
-// Both lists come from a single query (~1 rate-limit point).
+// Both lists come from a single query (~2 rate-limit points).
 export const PULL_REQUESTS_QUERY = /* GraphQL */ `
   fragment PrFields on PullRequest {
     id
@@ -26,17 +28,23 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
     updatedAt
     additions
     deletions
+    headRefOid
     repository { nameWithOwner }
     author { login avatarUrl }
+    commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   }
 
-  query PullRequests($requested: String!, $mine: String!, $first: Int!) {
+  query PullRequests($requested: String!, $mine: String!, $first: Int!, $login: String!, $withMyReview: Boolean!) {
     viewer { login avatarUrl }
     requested: search(query: $requested, type: ISSUE, first: $first) {
       issueCount
       nodes {
         ... on PullRequest {
           ...PrFields
+          myReview: reviews(author: $login, last: 1, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED])
+            @include(if: $withMyReview) {
+            nodes { submittedAt commit { oid } }
+          }
           reviewRequests(first: 20) {
             nodes {
               requestedReviewer {
@@ -55,6 +63,8 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
         ... on PullRequest {
           ...PrFields
           reviewDecision
+          mergeable
+          mergeStateStatus
           reviewRequests(first: 20) {
             nodes {
               requestedReviewer {
@@ -120,11 +130,18 @@ interface RawPr {
   deletions: number
   repository: { nameWithOwner: string }
   author: { login: string; avatarUrl: string } | null
+  headRefOid?: string
+  commits?: { nodes: Array<{ commit: { statusCheckRollup: { state: string } | null } | null }> }
   reviewRequests: { nodes: Array<{ requestedReviewer: RawReviewer | null }> }
+  myReview?: { nodes: Array<{ submittedAt: string | null; commit: { oid: string } | null }> }
 }
+
+type Mergeable = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
 
 interface RawMyPr extends RawPr {
   reviewDecision: ReviewDecision
+  mergeable?: Mergeable | null
+  mergeStateStatus?: string | null
   latestOpinionatedReviews: {
     nodes: Array<{ state: ReviewState; author: { login: string; avatarUrl: string } | null }>
   }
@@ -141,7 +158,7 @@ interface RawResponse {
     requested: RawSearch<RawPr>
     mine: RawSearch<RawMyPr>
   } | null
-  errors?: Array<{ type?: string; message: string }>
+  errors?: Array<{ type?: string; message: string; path?: Array<string | number> }>
 }
 
 const BASE_QUERY = ['is:pr', 'is:open', 'archived:false']
@@ -185,12 +202,62 @@ export function myReviewStatus(
   return 'no_reviewers'
 }
 
+export function ciFromRollup(state: string | null | undefined): CiState {
+  switch (state) {
+    case 'SUCCESS':
+      return 'success'
+    case 'FAILURE':
+    case 'ERROR':
+      return 'failure'
+    case 'PENDING':
+    case 'EXPECTED':
+      return 'pending'
+    default:
+      return 'none'
+  }
+}
+
+interface MergeInput {
+  status: MyReviewStatus
+  isDraft: boolean
+  ci: CiState
+  mergeable: Mergeable | null | undefined
+  mergeState: string | null | undefined
+}
+
+/** Approved, not a draft, checks green (or none), no conflicts and allowed by branch protection. */
+export function isReadyToMerge(pr: MergeInput): boolean {
+  return (
+    pr.status === 'approved' &&
+    !pr.isDraft &&
+    (pr.ci === 'success' || pr.ci === 'none') &&
+    pr.mergeable === 'MERGEABLE' &&
+    (pr.mergeState === 'CLEAN' || pr.mergeState === 'HAS_HOOKS')
+  )
+}
+
+export const hasConflicts = (pr: Pick<MergeInput, 'mergeable' | 'mergeState'>): boolean =>
+  pr.mergeable === 'CONFLICTING' || pr.mergeState === 'DIRTY'
+
+/** Why an approved PR isn't ready; null when ready, not approved, or GitHub is still computing. */
+export function mergeBlocker(pr: MergeInput): MergeBlocker | null {
+  if (pr.status !== 'approved' || isReadyToMerge(pr)) return null
+  if (pr.isDraft) return 'draft'
+  if (hasConflicts(pr)) return 'conflicts'
+  if (pr.ci === 'failure') return 'ci_failing'
+  if (pr.ci === 'pending') return 'ci_pending'
+  if (pr.mergeState === 'BEHIND') return 'behind'
+  if (pr.mergeState === 'BLOCKED') return 'blocked'
+  // UNKNOWN / unknown: GitHub hasn't computed mergeability yet.
+  return null
+}
+
 // Search with type ISSUE can theoretically return non-PR nodes, which come back empty.
 const isPr = <T extends { id?: string }>(n: T | null): n is T & { id: string } => Boolean(n && n.id)
 
 const newestFirst = (a: { createdAt: string }, b: { createdAt: string }) => b.createdAt.localeCompare(a.createdAt)
 
-function baseFields(n: RawPr & { id: string }) {
+function baseFields(n: RawPr & { id: string }, ciReadable: boolean) {
   return {
     id: n.id,
     number: n.number,
@@ -202,8 +269,21 @@ function baseFields(n: RawPr & { id: string }) {
     createdAt: n.createdAt,
     updatedAt: n.updatedAt,
     additions: n.additions,
-    deletions: n.deletions
+    deletions: n.deletions,
+    headOid: n.headRefOid ?? '',
+    ci: ciReadable ? ciFromRollup(n.commits?.nodes[0]?.commit?.statusCheckRollup?.state) : ('unknown' as const)
   }
+}
+
+/** Your latest submitted review on a PR, and whether the author pushed after it. */
+export function reviewFreshness(n: Pick<RawPr, 'headRefOid' | 'myReview'>): {
+  lastReviewAt: string | null
+  newCommitsSinceReview: boolean
+} {
+  const review = n.myReview?.nodes[n.myReview.nodes.length - 1]
+  if (!review) return { lastReviewAt: null, newCommitsSinceReview: false }
+  // A null commit (e.g. after a force-push rewrote it) also means the code changed.
+  return { lastReviewAt: review.submittedAt, newCommitsSinceReview: review.commit?.oid !== n.headRefOid }
 }
 
 function toReviewer(r: RawReviewer | null): Reviewer | null {
@@ -212,22 +292,43 @@ function toReviewer(r: RawReviewer | null): Reviewer | null {
   return null
 }
 
-function toMyPr(n: RawMyPr & { id: string }): MyPullRequest {
+function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boolean }): MyPullRequest {
   const pendingReviewers = n.reviewRequests.nodes
     .map((x) => toReviewer(x.requestedReviewer))
     .filter((r): r is Reviewer => r !== null)
   const reviews = n.latestOpinionatedReviews.nodes
     .filter((r) => r.author)
     .map((r) => ({ login: r.author!.login, avatarUrl: r.author!.avatarUrl, state: r.state }))
+  const base = baseFields(n, readable.ci)
+  const status = myReviewStatus(
+    n.reviewDecision,
+    pendingReviewers.length,
+    reviews.map((r) => r.state)
+  )
+  const merge: MergeInput = {
+    status,
+    isDraft: n.isDraft,
+    ci: base.ci,
+    mergeable: readable.merge ? n.mergeable : 'UNKNOWN',
+    mergeState: readable.merge ? n.mergeStateStatus : null
+  }
   return {
-    ...baseFields(n),
-    status: myReviewStatus(
-      n.reviewDecision,
-      pendingReviewers.length,
-      reviews.map((r) => r.state)
-    ),
+    ...base,
+    status,
     pendingReviewers,
-    reviews
+    reviews,
+    readyToMerge: isReadyToMerge(merge),
+    blocker: mergeBlocker(merge),
+    conflicts: hasConflicts(merge)
+  }
+}
+
+/** Fields GitHub refused to return (e.g. a GitHub App without Checks permission). */
+function forbiddenFields(errors: RawResponse['errors']): { ci: boolean; merge: boolean } {
+  const paths = (errors ?? []).map((e) => (e.path ?? []).join('.'))
+  return {
+    ci: paths.some((p) => p.includes('statusCheckRollup') || p.includes('commits')),
+    merge: paths.some((p) => p.includes('mergeable') || p.includes('mergeStateStatus'))
   }
 }
 
@@ -240,16 +341,27 @@ export function mapResponse(body: RawResponse): FetchResult {
   }
 
   const viewer = data.viewer
+  const forbidden = forbiddenFields(body.errors)
+  const readable = { ci: !forbidden.ci, merge: !forbidden.merge }
   const prs: PullRequest[] = data.requested.nodes
     .filter(isPr)
-    .map((n) => ({ ...baseFields(n), source: reviewSource(n, viewer.login) }))
+    .map((n) => ({ ...baseFields(n, readable.ci), source: reviewSource(n, viewer.login), ...reviewFreshness(n) }))
     .sort(newestFirst)
-  const myPrs: MyPullRequest[] = data.mine.nodes.filter(isPr).map(toMyPr).sort(newestFirst)
+  const myPrs: MyPullRequest[] = data.mine.nodes
+    .filter(isPr)
+    .map((n) => toMyPr(n, readable))
+    .sort(newestFirst)
 
   const warnings: Warning[] = []
-  if (body.errors?.length) {
-    const saml = body.errors.some((e) => /SAML/i.test(e.message))
-    warnings.push(saml ? { code: 'saml' } : { code: 'partial', params: { detail: body.errors[0].message } })
+  if (forbidden.ci) warnings.push({ code: 'missing_permission', params: { field: 'checks' } })
+  if (forbidden.merge) warnings.push({ code: 'missing_permission', params: { field: 'merge' } })
+  const otherErrors = (body.errors ?? []).filter((e) => {
+    const path = (e.path ?? []).join('.')
+    return !/statusCheckRollup|commits|mergeable|mergeStateStatus/.test(path)
+  })
+  if (otherErrors.length) {
+    const saml = otherErrors.some((e) => /SAML/i.test(e.message))
+    warnings.push(saml ? { code: 'saml' } : { code: 'partial', params: { detail: otherErrors[0].message } })
   }
   if (data.requested.issueCount > data.requested.nodes.length) {
     warnings.push({ code: 'truncated_requested', params: { shown: prs.length, total: data.requested.issueCount } })
@@ -271,6 +383,8 @@ function rateLimitResetAt(res: Response): number | undefined {
 export async function fetchPullRequests(
   token: string,
   settings: SearchSettings,
+  /** Your login, to find your latest review on each PR; unknown right after signing in. */
+  login?: string,
   fetchFn: FetchFn = fetch
 ): Promise<FetchResult> {
   let res: Response
@@ -285,7 +399,13 @@ export async function fetchPullRequests(
       },
       body: JSON.stringify({
         query: PULL_REQUESTS_QUERY,
-        variables: { requested: buildSearchQuery(settings), mine: buildMyPrsQuery(settings), first: PAGE_SIZE }
+        variables: {
+          requested: buildSearchQuery(settings),
+          mine: buildMyPrsQuery(settings),
+          first: PAGE_SIZE,
+          login: login ?? '',
+          withMyReview: Boolean(login)
+        }
       }),
       signal: AbortSignal.timeout(20_000)
     })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { planToEvents, renderNotification as render, type NotificationEvent } from '../src/main/notifications'
 import { translator } from '../src/shared/i18n'
-import type { PullRequest } from '../src/shared/types'
+import type { MyPullRequest, PullRequest } from '../src/shared/types'
 
 const pr = (over: Partial<PullRequest> = {}): PullRequest => ({
   id: 'PR_1',
@@ -15,7 +15,11 @@ const pr = (over: Partial<PullRequest> = {}): PullRequest => ({
   updatedAt: '2026-01-01T00:00:00Z',
   additions: 1,
   deletions: 1,
+  headOid: 'h',
+  ci: 'none',
   source: { kind: 'direct' },
+  lastReviewAt: null,
+  newCommitsSinceReview: false,
   ...over
 })
 
@@ -72,5 +76,25 @@ describe('renderNotification in English', () => {
     expect(render({ kind: 'reviews_grouped', prs: [pr(), pr()] }, en).title).toBe('2 new review requests')
     expect(render({ kind: 'session_expired' }, en).body).toBe('Your GitHub session expired. Reconnect your account.')
     expect(render({ kind: 'test' }, en).body).toBe('Notifications are working.')
+  })
+})
+
+describe('notifications about your PRs', () => {
+  const mine = { ...pr({ id: 'MY_1' }), status: 'approved', pendingReviewers: [], reviews: [], readyToMerge: true, blocker: null, conflicts: false } as MyPullRequest
+
+  it('reads well in both languages and replaces per PR', () => {
+    expect(render({ kind: 'my_pr_approved', pr: mine, by: ['ana', 'bob'] }, es)).toEqual({
+      id: 'mine-MY_1',
+      title: 'Aprobaron tu PR',
+      body: 'acme/app#12 · Add feature — @ana, @bob',
+      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+    })
+    expect(render({ kind: 'my_pr_changes_requested', pr: mine, by: ['ana'] }, en).title).toBe('Changes requested on your PR')
+    expect(render({ kind: 'my_pr_ready', pr: mine }, en)).toMatchObject({ id: 'mine-MY_1', title: 'Ready to merge' })
+    expect(render({ kind: 'my_prs_grouped', count: 5 }, es).body).toBe('5 novedades en tus PRs')
+  })
+
+  it('says when a review is requested again after new commits', () => {
+    expect(render({ kind: 'review_requested', pr: pr({ newCommitsSinceReview: true }) }, es).title).toBe('Te piden revisar de nuevo')
   })
 })

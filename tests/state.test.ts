@@ -28,3 +28,20 @@ describe('migrateState', () => {
     expect(migrateState({ login: 'octo' })).toBeNull()
   })
 })
+
+describe('migrateState and your PRs snapshot', () => {
+  it('keeps a valid snapshot and drops broken entries', () => {
+    const state = migrateState({
+      v: 2,
+      login: 'me',
+      seenIds: [],
+      dismissedIds: [],
+      myPrs: { a: { status: 'approved', readyNotifiedOid: 'h1' }, b: { nope: true }, c: null }
+    })
+    expect(state?.myPrs).toEqual({ a: { status: 'approved', readyNotifiedOid: 'h1' } })
+  })
+
+  it('leaves the snapshot undefined for older state files', () => {
+    expect(migrateState({ login: 'me', seenIds: [] })?.myPrs).toBeUndefined()
+  })
+})

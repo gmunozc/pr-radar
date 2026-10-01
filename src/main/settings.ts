@@ -7,7 +7,7 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (!patch || typeof patch !== 'object') return {}
   const p = patch as Record<string, unknown>
   const out: SettingsPatch = {}
-  for (const key of ['includeTeams', 'notifications', 'showDrafts', 'openAtLogin'] as const) {
+  for (const key of ['includeTeams', 'notifications', 'showDrafts', 'notifyMyPrs', 'openAtLogin'] as const) {
     if (typeof p[key] === 'boolean') out[key] = p[key]
   }
   if (typeof p.pollIntervalSec === 'number' && Number.isFinite(p.pollIntervalSec)) {

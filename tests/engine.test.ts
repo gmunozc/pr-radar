@@ -5,7 +5,14 @@ import { GithubError, type FetchResult } from '../src/main/github'
 import type { Logger } from '../src/main/log'
 import type { NotificationEvent } from '../src/main/notifications'
 import { Session, type StoredAuth } from '../src/main/session'
-import { DEFAULT_SETTINGS, type AppState, type PullRequest, type Settings, type Warning } from '../src/shared/types'
+import {
+  DEFAULT_SETTINGS,
+  type AppState,
+  type MyPullRequest,
+  type PullRequest,
+  type Settings,
+  type Warning
+} from '../src/shared/types'
 
 const HOUR = 3_600_000
 const NOW = 100 * HOUR
@@ -23,13 +30,28 @@ const pr = (id: string): PullRequest => ({
   updatedAt: '2026-01-01T00:00:00Z',
   additions: 1,
   deletions: 1,
-  source: { kind: 'direct' }
+  headOid: 'h',
+  ci: 'none',
+  source: { kind: 'direct' },
+  lastReviewAt: null,
+  newCommitsSinceReview: false
 })
 
-const result = (ids: string[], login = 'me', warnings: Warning[] = []): FetchResult => ({
+const myPr = (id: string, over: Partial<MyPullRequest> = {}): MyPullRequest => ({
+  ...pr(id),
+  status: 'waiting',
+  pendingReviewers: [],
+  reviews: [],
+  readyToMerge: false,
+  blocker: null,
+  conflicts: false,
+  ...over
+})
+
+const result = (ids: string[], login = 'me', warnings: Warning[] = [], myPrs: MyPullRequest[] = []): FetchResult => ({
   viewer: { login, avatarUrl: '' },
   prs: ids.map(pr),
-  myPrs: [],
+  myPrs,
   warnings
 })
 
@@ -66,7 +88,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     log: silent
   })
   const queue = [...responses]
-  const fetchPullRequests = vi.fn(async (token: string) => {
+  const fetchPullRequests = vi.fn(async (token: string, _settings?: Settings, _login?: string) => {
     const next = queue.shift()
     if (!next) throw new Error(`unexpected fetch with ${token}`)
     if (next instanceof Error) throw next
@@ -297,5 +319,40 @@ describe('Engine connection state', () => {
     expect(t.engine.state).toMatchObject({ connection: 'rate_limited', error: { code: 'rate_limited', retryAt: NOW + 60_000 } })
     await t.engine.poll()
     expect(t.engine.state.connection).toBe('error')
+  })
+})
+
+describe('Engine and your own PRs', () => {
+  const approved = myPr('m1', { status: 'approved', reviews: [{ login: 'ana', avatarUrl: '', state: 'APPROVED' }] })
+
+  it('notifies about your PRs after the first poll, and passes your login to the query', async () => {
+    const t = setup([result([], 'me', [], [myPr('m1')]), result([], 'me', [], [approved])])
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+    await t.engine.poll()
+    expect(t.events).toMatchObject([{ kind: 'my_pr_approved', by: ['ana'] }])
+    expect(t.fetchPullRequests.mock.calls[1][2]).toBe('me')
+  })
+
+  it('respects the "updates on my PRs" setting', async () => {
+    const t = setup([result([], 'me', [], [myPr('m1')]), result([], 'me', [], [approved])], { settings: { notifyMyPrs: false } })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+  })
+
+  it('takes a silent baseline for state written by 0.4.x (no snapshot of your PRs)', async () => {
+    const t = setup([result(['a'], 'me', [], [approved])], { stored: { v: 2, login: 'me', seenIds: ['a'], dismissedIds: [] } })
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+    expect(t.stored).toMatchObject({ myPrs: { m1: { status: 'approved' } } })
+  })
+
+  it('summarizes many updates at once', async () => {
+    const ids = ['m1', 'm2', 'm3', 'm4']
+    const t = setup([result([], 'me', [], ids.map((id) => myPr(id))), result([], 'me', [], ids.map((id) => myPr(id, { status: 'approved' })))])
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.events).toEqual([{ kind: 'my_prs_grouped', count: 4 }])
   })
 })

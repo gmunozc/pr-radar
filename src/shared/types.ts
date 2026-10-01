@@ -2,6 +2,9 @@ import type { LanguagePref, Locale } from './i18n'
 
 export type ReviewSource = { kind: 'direct' } | { kind: 'team'; slug: string }
 
+/** Combined status of the checks on a PR's head commit; `unknown` when it can't be read. */
+export type CiState = 'success' | 'failure' | 'pending' | 'none' | 'unknown'
+
 interface PullRequestBase {
   id: string
   number: number
@@ -14,12 +17,22 @@ interface PullRequestBase {
   updatedAt: string
   additions: number
   deletions: number
+  /** Head commit SHA. */
+  headOid: string
+  ci: CiState
 }
 
 /** A PR someone asked you to review. */
 export interface PullRequest extends PullRequestBase {
   source: ReviewSource
+  /** When you last submitted a review on it, if ever. */
+  lastReviewAt: string | null
+  /** The author pushed after your last review. */
+  newCommitsSinceReview: boolean
 }
+
+/** Why an approved PR of yours can't be merged yet. */
+export type MergeBlocker = 'conflicts' | 'behind' | 'blocked' | 'ci_failing' | 'ci_pending' | 'draft'
 
 export type Reviewer = { kind: 'user'; login: string; avatarUrl: string } | { kind: 'team'; slug: string }
 
@@ -32,6 +45,12 @@ export interface MyPullRequest extends PullRequestBase {
   status: MyReviewStatus
   pendingReviewers: Reviewer[]
   reviews: Array<{ login: string; avatarUrl: string; state: ReviewState }>
+  /** Approved, checks green, no conflicts and mergeable per branch protection. */
+  readyToMerge: boolean
+  /** Set when approved but not ready; null otherwise (or while GitHub is still computing). */
+  blocker: MergeBlocker | null
+  /** Merge conflicts with the base branch (shown whatever the review status). */
+  conflicts: boolean
 }
 
 export interface Viewer {
@@ -44,7 +63,13 @@ export type AppStatus = 'logged_out' | 'loading' | 'ready' | 'error'
 export type GithubErrorKind = 'unauthorized' | 'rate_limited' | 'network' | 'unknown'
 
 /** Non-fatal problems shown as banners; translated in the panel. */
-export type WarningCode = 'saml' | 'partial' | 'truncated_requested' | 'truncated_mine' | 'refresh_unsupported'
+export type WarningCode =
+  | 'saml'
+  | 'partial'
+  | 'truncated_requested'
+  | 'truncated_mine'
+  | 'refresh_unsupported'
+  | 'missing_permission'
 export interface Warning {
   code: WarningCode
   params?: Record<string, string | number>
@@ -83,6 +108,8 @@ export interface Settings {
   pollIntervalSec: number
   clientId: string
   language: LanguagePref
+  /** Notify when your PRs are approved, get changes requested or become ready to merge. */
+  notifyMyPrs: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -91,7 +118,8 @@ export const DEFAULT_SETTINGS: Settings = {
   showDrafts: true,
   pollIntervalSec: 30,
   clientId: '',
-  language: 'system'
+  language: 'system',
+  notifyMyPrs: true
 }
 
 export const MIN_POLL_INTERVAL_SEC = 15

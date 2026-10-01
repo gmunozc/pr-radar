@@ -3,6 +3,7 @@ import { formatDateTime, timeAgo } from '../../shared/format'
 import type { PullRequest } from '../../shared/types'
 import { XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
+import { CiIcon } from './CiIcon'
 
 export function PrItem({ pr }: { pr: PullRequest }) {
   const t = useT()
@@ -35,6 +36,7 @@ export function PrItem({ pr }: { pr: PullRequest }) {
             {name}
           </span>
           <span className="pr-number">#{pr.number}</span>
+          <CiIcon state={pr.ci} />
           <span className="pr-age" title={formatDateTime(pr.createdAt, locale)}>
             {timeAgo(pr.createdAt, Date.now(), locale)}
           </span>
@@ -49,6 +51,14 @@ export function PrItem({ pr }: { pr: PullRequest }) {
             </span>
           )}
           {pr.isDraft && <span className="chip chip-draft">{t('pr.draft')}</span>}
+          {pr.newCommitsSinceReview && (
+            <span
+              className="chip chip-new"
+              title={pr.lastReviewAt ? t('pr.newCommitsHint', { date: formatDateTime(pr.lastReviewAt, locale) }) : undefined}
+            >
+              {t('pr.newCommits')}
+            </span>
+          )}
           <span className="diff">
             <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>
           </span>

@@ -98,6 +98,12 @@ export function SettingsView() {
           checked={settings.notifications}
           onChange={(v) => void update({ notifications: v })}
         />
+        <Toggle
+          label={t('settings.notifyMyPrs')}
+          hint={t('settings.notifyMyPrsHint')}
+          checked={settings.notifyMyPrs}
+          onChange={(v) => void update({ notifyMyPrs: v })}
+        />
         <label className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.interval')}</div>

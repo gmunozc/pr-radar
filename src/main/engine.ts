@@ -5,10 +5,10 @@
  */
 import type { Locale } from '../shared/i18n'
 import type { AppState, AuthNotice, ConnectionState, PullRequest, Settings, Warning } from '../shared/types'
-import { applyDismissals, diffPrs, planNotifications } from './diff'
+import { applyDismissals, diffMyPrs, diffPrs, planNotifications } from './diff'
 import { GithubError, type FetchResult } from './github'
 import type { Logger } from './log'
-import { planToEvents, type NotificationEvent } from './notifications'
+import { capMyPrEvents, planToEvents, type NotificationEvent } from './notifications'
 import { SessionExpiredError, type ExpiryReason, type Session } from './session'
 import { migrateState, type PersistedState } from './state'
 
@@ -24,7 +24,7 @@ export interface EngineDeps {
   now(): number
   settings(): Settings
   session: SessionLike
-  fetchPullRequests(token: string, settings: Settings): Promise<FetchResult>
+  fetchPullRequests(token: string, settings: Settings, login?: string): Promise<FetchResult>
   stateStore: StateStore
   notify(events: NotificationEvent[]): void
   publish(state: AppState): void
@@ -92,7 +92,8 @@ export class Engine {
     if (!this.deps.session.current) return
     const settings = this.deps.settings()
     try {
-      const result = await this.withToken((token) => this.deps.fetchPullRequests(token, settings))
+      const login = this.deps.session.current?.login ?? this.persisted?.login
+      const result = await this.withToken((token) => this.deps.fetchPullRequests(token, settings, login))
       this.failures = 0
       this.connection = 'ok'
       this.deps.session.setLogin(result.viewer.login)
@@ -106,8 +107,13 @@ export class Engine {
       this.resetBaseline = false
       this.allPrs = result.prs
       const { visible, dismissedIds } = applyDismissals(result.prs, stored?.dismissedIds ?? [])
-      this.save({ v: 2, login: result.viewer.login, seenIds: diff.seenIds, dismissedIds })
-      if (settings.notifications) this.emit(planToEvents(planNotifications(diff, visible.length)))
+      const mine = diffMyPrs(stored?.myPrs, result.myPrs)
+      this.save({ v: 2, login: result.viewer.login, seenIds: diff.seenIds, dismissedIds, myPrs: mine.snapshot })
+      if (settings.notifications) {
+        const events = planToEvents(planNotifications(diff, visible.length))
+        if (settings.notifyMyPrs) events.push(...capMyPrEvents(mine.events))
+        this.emit(events)
+      }
 
       this.publish({
         status: 'ready',

@@ -31,6 +31,8 @@ function listTitle(state: AppState, tab: Tab, t: Translate): string {
   if (tab === 'review') {
     return state.prs.length === 0 ? t('header.nothingPending') : t('header.pending', { count: state.prs.length })
   }
+  const ready = state.myPrs.filter((pr) => pr.readyToMerge).length
+  if (ready > 0) return t('header.readyToMerge', { count: ready })
   const waiting = state.myPrs.filter((pr) => pr.status === 'waiting').length
   if (waiting > 0) return t('header.waiting', { count: waiting })
   return state.myPrs.length === 0 ? t('header.noOpenPrs') : t('header.openPrs', { count: state.myPrs.length })
@@ -104,9 +106,13 @@ export function Header({ state, tab, refreshing, inSettings, onRefresh, onToggle
       )}
       {!state.error &&
         state.warnings.map((w) => (
-          <div className="banner banner-warn" key={w.code}>
+          <div className="banner banner-warn" key={`${w.code}-${w.params?.field ?? ''}`}>
             <AlertIcon size={14} />
-            <span>{t(`warning.${w.code}`, w.params)}</span>
+            <span>
+              {w.code === 'missing_permission'
+                ? t('warning.missing_permission', { field: t(w.params?.field === 'merge' ? 'permission.merge' : 'permission.checks') })
+                : t(`warning.${w.code}`, w.params)}
+            </span>
           </div>
         ))}
     </>

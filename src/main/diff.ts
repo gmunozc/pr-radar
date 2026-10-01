@@ -1,4 +1,4 @@
-import type { PullRequest } from '../shared/types'
+import type { MyPullRequest, MyReviewStatus, PullRequest } from '../shared/types'
 
 export interface DiffResult {
   /** PRs that were not present in the previous snapshot. */
@@ -55,4 +55,50 @@ export function planNotifications(diff: DiffResult, totalPending: number): Notif
     return { kind: 'individual', prs: diff.newPrs }
   }
   return { kind: 'grouped', prs: diff.newPrs }
+}
+
+/** What we remember about each of your PRs between polls. */
+export interface MyPrSnapshot {
+  status: MyReviewStatus
+  /** Head SHA we last sent "ready to merge" for, so it's sent once per push. */
+  readyNotifiedOid?: string
+}
+
+export type MyPrEvent =
+  | { kind: 'my_pr_changes_requested'; pr: MyPullRequest; by: string[] }
+  | { kind: 'my_pr_approved'; pr: MyPullRequest; by: string[] }
+  | { kind: 'my_pr_ready'; pr: MyPullRequest }
+
+const reviewersWith = (pr: MyPullRequest, state: 'APPROVED' | 'CHANGES_REQUESTED') =>
+  pr.reviews.filter((r) => r.state === state).map((r) => r.login)
+
+/**
+ * Compares your open PRs with the previous snapshot. Silent on the first run and for PRs that
+ * just appeared, so only real transitions notify: changes requested, approved, ready to merge.
+ */
+export function diffMyPrs(
+  prev: Record<string, MyPrSnapshot> | undefined,
+  current: MyPullRequest[]
+): { events: MyPrEvent[]; snapshot: Record<string, MyPrSnapshot> } {
+  const snapshot: Record<string, MyPrSnapshot> = {}
+  const events: MyPrEvent[] = []
+  for (const pr of current) {
+    const before = prev?.[pr.id]
+    const next: MyPrSnapshot = { status: pr.status, readyNotifiedOid: before?.readyNotifiedOid }
+    if (before) {
+      if (pr.readyToMerge && before.readyNotifiedOid !== pr.headOid) {
+        events.push({ kind: 'my_pr_ready', pr })
+        next.readyNotifiedOid = pr.headOid
+      } else if (pr.status === 'changes_requested' && before.status !== 'changes_requested') {
+        events.push({ kind: 'my_pr_changes_requested', pr, by: reviewersWith(pr, 'CHANGES_REQUESTED') })
+      } else if (pr.status === 'approved' && before.status !== 'approved') {
+        events.push({ kind: 'my_pr_approved', pr, by: reviewersWith(pr, 'APPROVED') })
+      }
+    } else if (pr.readyToMerge) {
+      // Already ready when first seen: remember it so it isn't announced later.
+      next.readyNotifiedOid = pr.headOid
+    }
+    snapshot[pr.id] = next
+  }
+  return { events, snapshot }
 }

@@ -3,14 +3,20 @@ import { formatDateTime, timeAgo } from '../../shared/format'
 import type { Translate } from '../../shared/i18n'
 import type { MessageKey } from '../../shared/i18n/en'
 import type { MyPullRequest, MyReviewStatus } from '../../shared/types'
-import { PullRequestIcon } from '../icons'
+import { GitMergeIcon, PullRequestIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
+import { CiIcon } from './CiIcon'
 
 const STATUS: Record<MyReviewStatus, { label: MessageKey; className: string }> = {
   waiting: { label: 'status.waiting', className: 'waiting' },
   approved: { label: 'status.approved', className: 'approved' },
   changes_requested: { label: 'status.changes_requested', className: 'changes' },
   no_reviewers: { label: 'status.no_reviewers', className: 'none' }
+}
+
+const BLOCKER_CHIPS: Partial<Record<NonNullable<MyPullRequest['blocker']>, { label: MessageKey; hint: MessageKey }>> = {
+  behind: { label: 'blocker.behind', hint: 'blocker.behindHint' },
+  blocked: { label: 'blocker.blocked', hint: 'blocker.blockedHint' }
 }
 
 const MAX_AVATARS = 4
@@ -59,14 +65,15 @@ export function MyPrItem({ pr }: { pr: MyPullRequest }) {
     }
   }
   const [owner, name] = pr.repo.split('/')
-  const status = STATUS[pr.status]
+  const status = pr.readyToMerge ? { label: 'status.ready' as MessageKey, className: 'ready' } : STATUS[pr.status]
+  const blockerChip = pr.blocker ? BLOCKER_CHIPS[pr.blocker] : undefined
   const { avatars, teams } = people(pr, t)
   const extra = avatars.length - MAX_AVATARS
 
   return (
     <div className="pr" role="button" tabIndex={0} onClick={open} onKeyDown={onKeyDown} title={pr.url}>
       <div className={`status-icon status-${status.className}`}>
-        <PullRequestIcon size={14} />
+        {pr.readyToMerge ? <GitMergeIcon size={14} /> : <PullRequestIcon size={14} />}
       </div>
       <div className="pr-body">
         <div className="pr-meta">
@@ -75,6 +82,7 @@ export function MyPrItem({ pr }: { pr: MyPullRequest }) {
             {name}
           </span>
           <span className="pr-number">#{pr.number}</span>
+          <CiIcon state={pr.ci} />
           <span className="pr-age" title={formatDateTime(pr.createdAt, locale)}>
             {timeAgo(pr.createdAt, Date.now(), locale)}
           </span>
@@ -82,6 +90,16 @@ export function MyPrItem({ pr }: { pr: MyPullRequest }) {
         <div className="pr-title">{pr.title}</div>
         <div className="pr-tags">
           <span className={`chip chip-${status.className}`}>{t(status.label)}</span>
+          {pr.conflicts && (
+            <span className="chip chip-conflicts" title={t('blocker.conflictsHint')}>
+              {t('blocker.conflicts')}
+            </span>
+          )}
+          {blockerChip && (
+            <span className="chip chip-blocked" title={t(blockerChip.hint)}>
+              {t(blockerChip.label)}
+            </span>
+          )}
           {pr.isDraft && <span className="chip chip-draft">{t('pr.draft')}</span>}
           <span className="diff">
             <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>

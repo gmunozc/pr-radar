@@ -411,6 +411,49 @@ html[data-platform='darwin'] .tab-active {
   color: var(--warn-fg);
 }
 
+.chip-ready {
+  background: rgba(26, 127, 55, 0.18);
+  color: var(--green);
+}
+
+.chip-conflicts {
+  background: var(--error-bg);
+  color: var(--error-fg);
+}
+
+.chip-blocked {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.chip-new {
+  background: var(--direct-bg);
+  color: var(--direct-fg);
+}
+
+.ci {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.ci-success {
+  color: var(--green);
+}
+
+.ci-failure {
+  color: var(--red);
+}
+
+.ci-pending {
+  color: var(--warn-fg);
+}
+
+.ci-unknown {
+  color: var(--text-faint);
+}
+
 .chip-none,
 .chip-draft {
   background: var(--draft-bg);
@@ -486,6 +529,11 @@ html[data-platform='darwin'] .tab-active {
 .status-changes {
   background: var(--error-bg);
   color: var(--error-fg);
+}
+
+.status-ready {
+  background: rgba(26, 127, 55, 0.18);
+  color: var(--green);
 }
 
 .status-none {
