@@ -1,0 +1,41 @@
+appId: com.gmunozc.prradar
+productName: PR Radar
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: resources
+    to: resources
+    filter:
+      - "*.png"
+asar: true
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  target:
+    - target: dmg
+      # One installer for both Apple Silicon and Intel Macs.
+      arch: [universal]
+  identity: "-"
+  # Hardened runtime is only needed for notarization; with ad-hoc signing it can block launch.
+  hardenedRuntime: false
+  extendInfo:
+    LSUIElement: true
+    NSUserNotificationAlertStyle: alert
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+win:
+  icon: build/icon.png
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  icon: build/icon.png
+  category: Development
+  target:
+    - AppImage
