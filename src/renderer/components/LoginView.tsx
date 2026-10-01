@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AuthStatus } from '../../shared/types'
+import type { AuthNotice, AuthStatus } from '../../shared/types'
 import { PullRequestIcon } from '../icons'
 
 const api = window.prRadar
@@ -62,7 +62,14 @@ function ClientIdForm({ onSaved }: { onSaved(): void }) {
   )
 }
 
-export function LoginView({ auth }: { auth: AuthStatus }) {
+const NOTICES: Record<AuthNotice, string> = {
+  session_expired: 'Tu sesión de GitHub caducó. Vuelve a conectar; tus PRs descartados se conservan.',
+  refresh_unsupported:
+    'GitHub no permitió renovar la sesión. En tu OAuth App, desmarca "Expire user authorization tokens" y vuelve a conectar.',
+  keychain_denied: 'No se pudo leer la sesión guardada (acceso al Llavero denegado). Vuelve a conectar y pulsa "Permitir siempre".'
+}
+
+export function LoginView({ auth, notice }: { auth: AuthStatus; notice: AuthNotice | null }) {
   const [hasClientId, setHasClientId] = useState<boolean | null>(null)
   const [starting, setStarting] = useState(false)
 
@@ -114,6 +121,7 @@ export function LoginView({ auth }: { auth: AuthStatus }) {
           <p className="login-text">
             Conecta tu cuenta de GitHub y te avisaremos cada vez que te pidan revisar un pull request.
           </p>
+          {notice && auth.phase !== 'error' && <div className="banner banner-warn inline">{NOTICES[notice]}</div>}
           {auth.phase === 'error' && <div className="banner banner-error inline">{auth.message}</div>}
           <button className="btn btn-primary btn-lg" onClick={start} disabled={starting || hasClientId === null}>
             {starting ? 'Conectando…' : 'Conectar con GitHub'}

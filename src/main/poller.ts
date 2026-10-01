@@ -1,4 +1,5 @@
 import { MIN_POLL_INTERVAL_SEC } from '../shared/types'
+import { logger } from './log'
 
 /**
  * Runs `task` repeatedly with a fixed delay between the end of one run and the
@@ -42,7 +43,7 @@ export class Poller {
     try {
       retryAt = (await this.task())?.retryAt
     } catch (err) {
-      console.error('[poller] task failed', err)
+      logger.error('poll task failed', err)
     } finally {
       this.running = false
     }

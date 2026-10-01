@@ -92,6 +92,8 @@ export interface FetchResult {
   prs: PullRequest[]
   myPrs: MyPullRequest[]
   warnings: string[]
+  /** `github-authentication-token-expiration` header: present when the token expires. */
+  tokenExpiration?: string | null
 }
 
 type FetchFn = typeof fetch
@@ -313,5 +315,5 @@ export async function fetchPullRequests(
   } catch {
     throw new GithubError('unknown', 'GitHub devolvió una respuesta que no es JSON')
   }
-  return mapResponse(body)
+  return { ...mapResponse(body), tokenExpiration: res.headers.get('github-authentication-token-expiration') }
 }

@@ -54,7 +54,11 @@ export interface AppState {
   warnings: string[]
   /** PRs hidden by the user; not included in `prs`. */
   dismissedCount: number
+  /** Why the user is signed out (shown on the login screen), or null. */
+  authNotice: AuthNotice | null
 }
+
+export type AuthNotice = 'session_expired' | 'refresh_unsupported' | 'keychain_denied'
 
 export interface Settings {
   includeTeams: boolean

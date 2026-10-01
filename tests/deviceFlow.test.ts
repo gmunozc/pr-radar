@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { DeviceFlowError, pollForToken, requestDeviceCode, type DeviceCode } from '../src/main/deviceFlow'
+import {
+  DeviceFlowError,
+  parseTokenResponse,
+  pollForToken,
+  refreshAccessToken,
+  requestDeviceCode,
+  type DeviceCode
+} from '../src/main/deviceFlow'
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -61,7 +68,7 @@ describe('pollForToken', () => {
       sleep: async (ms) => void sleeps.push(ms)
     })
 
-    expect(token).toBe('gho_token')
+    expect(token).toEqual({ accessToken: 'gho_token', expiresAt: null, refreshToken: null, refreshTokenExpiresAt: null })
     expect(sleeps).toEqual([5000, 5000, 10000])
     const body = new URLSearchParams(fetchFn.mock.calls[0][1].body)
     expect(body.get('grant_type')).toBe('urn:ietf:params:oauth:grant-type:device_code')
@@ -109,5 +116,61 @@ describe('pollForToken', () => {
     })
     controller.abort()
     await expect(promise).rejects.toMatchObject({ code: 'cancelled' })
+  })
+})
+
+describe('parseTokenResponse', () => {
+  it('turns expiry durations into absolute times', () => {
+    const now = 1_000_000
+    expect(
+      parseTokenResponse(
+        { access_token: 'gho_a', expires_in: 28800, refresh_token: 'ghr_b', refresh_token_expires_in: 15897600 },
+        now
+      )
+    ).toEqual({
+      accessToken: 'gho_a',
+      expiresAt: now + 28800 * 1000,
+      refreshToken: 'ghr_b',
+      refreshTokenExpiresAt: now + 15897600 * 1000
+    })
+  })
+
+  it('treats tokens without expires_in as non-expiring and ignores empty values', () => {
+    expect(parseTokenResponse({ access_token: 'gho_a', refresh_token: '' }, 5)).toEqual({
+      accessToken: 'gho_a',
+      expiresAt: null,
+      refreshToken: null,
+      refreshTokenExpiresAt: null
+    })
+    expect(parseTokenResponse({ error: 'authorization_pending' }, 5)).toBeNull()
+  })
+
+  it('is used by pollForToken so the refresh token is kept', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(json({ access_token: 'gho_a', expires_in: 60, refresh_token: 'ghr_b' }))
+    const tokens = await pollForToken('c', code, { fetchFn, sleep: async () => {}, now: () => 0 })
+    expect(tokens).toMatchObject({ accessToken: 'gho_a', expiresAt: 60_000, refreshToken: 'ghr_b' })
+  })
+})
+
+describe('refreshAccessToken', () => {
+  it('sends the refresh grant without a client secret', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(json({ access_token: 'gho_new', expires_in: 28800, refresh_token: 'ghr_new' }))
+    const tokens = await refreshAccessToken('client-1', 'ghr_old', { fetchFn, now: () => 0 })
+    expect(tokens).toMatchObject({ accessToken: 'gho_new', refreshToken: 'ghr_new', expiresAt: 28800 * 1000 })
+    const body = new URLSearchParams(fetchFn.mock.calls[0][1].body)
+    expect(Object.fromEntries(body)).toEqual({ client_id: 'client-1', grant_type: 'refresh_token', refresh_token: 'ghr_old' })
+  })
+
+  it('maps GitHub errors to refresh error codes', async () => {
+    const fail = (body: unknown, status = 200) => refreshAccessToken('c', 'r', { fetchFn: vi.fn().mockResolvedValue(json(body, status)) })
+    await expect(fail({ error: 'bad_refresh_token' })).rejects.toMatchObject({ code: 'bad_refresh_token' })
+    await expect(fail({ error: 'incorrect_client_credentials' })).rejects.toMatchObject({ code: 'refresh_unsupported' })
+    await expect(fail({ error: 'unauthorized_client' })).rejects.toMatchObject({ code: 'refresh_unsupported' })
+    await expect(fail({}, 502)).rejects.toMatchObject({ code: 'http' })
+  })
+
+  it('reports network failures as transient', async () => {
+    const fetchFn = vi.fn().mockRejectedValue(new TypeError('fetch failed'))
+    await expect(refreshAccessToken('c', 'r', { fetchFn })).rejects.toMatchObject({ code: 'network' })
   })
 })

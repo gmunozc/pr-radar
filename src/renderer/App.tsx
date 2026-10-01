@@ -41,7 +41,7 @@ export function App() {
   if (state.status === 'logged_out') {
     return (
       <div className="app">
-        <LoginView auth={auth} />
+        <LoginView auth={auth} notice={state.authNotice} />
       </div>
     )
   }

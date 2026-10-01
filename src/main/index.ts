@@ -1,12 +1,23 @@
 import { app, powerMonitor } from 'electron'
 import { join } from 'node:path'
-import { DEFAULT_SETTINGS, IPC, type AppState, type AuthStatus, type PullRequest, type Settings } from '../shared/types'
-import { clearToken, DeviceLogin, loadToken } from './auth'
+import {
+  DEFAULT_SETTINGS,
+  IPC,
+  type AppState,
+  type AuthNotice,
+  type AuthStatus,
+  type PullRequest,
+  type Settings
+} from '../shared/types'
+import { createAuthStore, DeviceLogin } from './auth'
+import { refreshAccessToken } from './deviceFlow'
 import { applyDismissals, diffPrs, planNotifications } from './diff'
-import { fetchPullRequests, GithubError } from './github'
+import { fetchPullRequests, GithubError, type FetchResult } from './github'
 import { registerIpc } from './ipc'
+import { logger } from './log'
 import { notify, notifyLoggedOut } from './notifier'
 import { Poller } from './poller'
+import { Session, SessionExpiredError, type ExpiryReason } from './session'
 import { JsonFile } from './store'
 import { AppTray } from './tray'
 import { Panel } from './window'
@@ -16,6 +27,10 @@ interface SeenState {
   seenIds: string[]
   dismissedIds?: string[]
 }
+
+// Development runs use their own data folder (and a plain-text session, see createAuthStore)
+// so they never touch the installed app's session, Keychain item or single-instance lock.
+if (!app.isPackaged) app.setPath('userData', join(app.getPath('appData'), 'PR Radar Dev'))
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -30,11 +45,34 @@ function main(): void {
   if (process.platform === 'darwin') app.dock?.hide()
 
   const userData = app.getPath('userData')
+  logger.init({
+    file: join(userData, 'logs', 'pr-radar.log'),
+    minLevel: process.env.PR_RADAR_DEBUG ? 'debug' : 'info',
+    echo: !app.isPackaged
+  })
+  logger.info('PR Radar starting', { version: app.getVersion(), os: `${process.platform} ${process.arch}` })
+
   const settingsFile = new JsonFile<Settings>(join(userData, 'settings.json'), () => DEFAULT_SETTINGS)
   const seenFile = new JsonFile<SeenState | null>(join(userData, 'state.json'), () => null)
 
   let settings: Settings = { ...DEFAULT_SETTINGS, ...settingsFile.read() }
-  let token = loadToken()
+  const clientId = () => import.meta.env.MAIN_VITE_GITHUB_CLIENT_ID?.trim() || settings.clientId.trim()
+
+  const authStore = createAuthStore(join(userData, 'auth.bin'), clientId, logger, { plain: !app.isPackaged })
+  const devTtlSec = Number(process.env.PR_RADAR_DEV_TOKEN_TTL_SEC)
+  const session = new Session({
+    store: authStore,
+    refresh: (id, refreshToken) => refreshAccessToken(id, refreshToken),
+    now: Date.now,
+    log: logger,
+    ttlOverrideMs: !app.isPackaged && devTtlSec > 0 ? devTtlSec * 1000 : undefined
+  })
+  if (session.current) {
+    const s = session.current
+    logger.info('session loaded', { method: s.method, expires: s.expiresAt !== null, hasRefresh: s.refreshToken !== null })
+  }
+  // Problems with the session that don't stop polling (shown as warnings in the panel).
+  let sessionWarning: string | null = null
   let seen = seenFile.read()
   // Last full result from GitHub, including dismissed PRs.
   let allPrs: PullRequest[] = []
@@ -42,14 +80,15 @@ function main(): void {
   let resetBaseline = false
 
   let state: AppState = {
-    status: token ? 'loading' : 'logged_out',
+    status: session.current ? 'loading' : 'logged_out',
     viewer: null,
     prs: [],
     myPrs: [],
     lastUpdated: null,
     error: null,
     warnings: [],
-    dismissedCount: 0
+    dismissedCount: 0,
+    authNotice: authStore.readError
   }
 
   const panel = new Panel()
@@ -65,7 +104,7 @@ function main(): void {
     if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.authStatus, status)
   }
 
-  const loggedOutState = (): AppState => ({
+  const loggedOutState = (authNotice: AuthNotice | null = null): AppState => ({
     status: 'logged_out',
     viewer: null,
     prs: [],
@@ -73,7 +112,8 @@ function main(): void {
     lastUpdated: null,
     error: null,
     warnings: [],
-    dismissedCount: 0
+    dismissedCount: 0,
+    authNotice
   })
 
   const saveSeen = (next: SeenState) => {
@@ -88,21 +128,60 @@ function main(): void {
     publish({ ...state, prs: visible, dismissedCount: dismissedIds.length })
   }
 
+  /** Explicit "Cerrar sesión": forget the session and everything about this account. */
   const logout = () => {
+    logger.info('logout')
     deviceLogin.cancel()
     poller.stop()
-    clearToken()
+    session.clear()
     seenFile.remove()
     seen = null
     allPrs = []
-    token = null
+    sessionWarning = null
     publish(loggedOutState())
   }
 
-  const pollOnce = async (): Promise<{ retryAt?: number } | void> => {
-    if (!token) return
+  /** The session can't be renewed: sign out but keep seen/dismissed PRs for the next login. */
+  const expireSession = (reason: ExpiryReason) => {
+    logger.warn('session expired', { reason })
+    deviceLogin.cancel()
+    poller.stop()
+    session.clear()
+    allPrs = []
+    sessionWarning = null
+    publish(loggedOutState(reason === 'refresh_unsupported' ? 'refresh_unsupported' : 'session_expired'))
+    if (settings.notifications) notifyLoggedOut(showPanel)
+  }
+
+  let loggedTokenExpiration = false
+
+  /** Fetches with a valid token; on 401 renews once and retries. */
+  const fetchWithSession = async (): Promise<FetchResult> => {
+    const token = await session.getAccessToken()
     try {
-      const result = await fetchPullRequests(token, settings)
+      return await fetchPullRequests(token, settings)
+    } catch (err) {
+      if (!(err instanceof GithubError && err.kind === 'unauthorized')) throw err
+      logger.info('GitHub answered 401, renewing the token')
+      const renewed = await session.handleUnauthorized(token)
+      try {
+        return await fetchPullRequests(renewed, settings)
+      } catch (retryErr) {
+        if (retryErr instanceof GithubError && retryErr.kind === 'unauthorized') throw new SessionExpiredError('revoked')
+        throw retryErr
+      }
+    }
+  }
+
+  const pollOnce = async (): Promise<{ retryAt?: number } | void> => {
+    if (!session.current) return
+    try {
+      const result = await fetchWithSession()
+      session.setLogin(result.viewer.login)
+      if (!loggedTokenExpiration) {
+        loggedTokenExpiration = true
+        logger.info('token expiration header', { value: result.tokenExpiration ?? 'none' })
+      }
       const stored = seen?.login === result.viewer.login ? seen : null
       const diff = diffPrs(resetBaseline ? result.prs.map((p) => p.id) : (stored?.seenIds ?? null), result.prs)
       resetBaseline = false
@@ -117,16 +196,17 @@ function main(): void {
         myPrs: result.myPrs,
         lastUpdated: new Date().toISOString(),
         error: null,
-        warnings: result.warnings,
-        dismissedCount: dismissedIds.length
+        warnings: sessionWarning ? [...result.warnings, sessionWarning] : result.warnings,
+        dismissedCount: dismissedIds.length,
+        authNotice: null
       })
     } catch (err) {
-      if (err instanceof GithubError && err.kind === 'unauthorized') {
-        logout()
-        if (settings.notifications) notifyLoggedOut(showPanel)
+      if (err instanceof SessionExpiredError) {
+        expireSession(err.reason)
         return
       }
-      const kind = err instanceof GithubError ? err.kind : 'unknown'
+      logger.warn('poll failed', err)
+      const kind = err instanceof GithubError ? err.kind : 'network'
       publish({
         ...state,
         status: state.viewer ? 'ready' : 'error',
@@ -143,10 +223,8 @@ function main(): void {
   const tray = new AppTray(panel, {
     refresh: () => void poller.runNow(),
     logout,
-    isLoggedIn: () => token !== null
+    isLoggedIn: () => session.current !== null
   })
-
-  const clientId = () => import.meta.env.MAIN_VITE_GITHUB_CLIENT_ID?.trim() || settings.clientId.trim()
 
   registerIpc({
     getState: () => state,
@@ -164,9 +242,28 @@ function main(): void {
         publishAuth({ phase: 'error', message: 'Falta el Client ID de la OAuth App.' })
         return
       }
-      const newToken = await deviceLogin.start(id)
-      if (!newToken) return
-      token = newToken
+      const tokens = await deviceLogin.start(id)
+      if (!tokens) return
+      session.setFromLogin('oauth_app', id, tokens)
+      logger.info('login', {
+        method: 'oauth_app',
+        hasRefresh: tokens.refreshToken !== null,
+        expiresInSec: tokens.expiresAt === null ? null : Math.round((tokens.expiresAt - Date.now()) / 1000)
+      })
+      sessionWarning = null
+      // Renew once right away so we know now, not in 8 h, whether renewal works for this app.
+      if (tokens.refreshToken) {
+        try {
+          await session.refreshNow()
+          logger.info('refresh probe ok')
+        } catch (err) {
+          logger.warn('refresh probe failed', err)
+          if (err instanceof SessionExpiredError && err.reason === 'refresh_unsupported') {
+            sessionWarning =
+              'GitHub no permite renovar la sesión de esta OAuth App: caducará en 8 h. En la OAuth App, desmarca "Expire user authorization tokens" y vuelve a conectar.'
+          }
+        }
+      }
       publish({ ...loggedOutState(), status: 'loading' })
       poller.start()
     },
@@ -181,7 +278,7 @@ function main(): void {
         (rest.showDrafts !== undefined && rest.showDrafts !== settings.showDrafts)
       settings = { ...settings, ...rest }
       settingsFile.write(settings)
-      if (filtersChanged && token) {
+      if (filtersChanged && session.current) {
         resetBaseline = true
         void poller.runNow()
       }
@@ -192,7 +289,7 @@ function main(): void {
 
   powerMonitor.on('suspend', () => poller.stop())
   const wake = () => {
-    if (token && !poller.isActive) poller.start()
+    if (session.current && !poller.isActive) poller.start()
   }
   powerMonitor.on('resume', wake)
   powerMonitor.on('unlock-screen', wake)
@@ -200,7 +297,7 @@ function main(): void {
   app.on('second-instance', showPanel)
 
   tray.update(state)
-  if (token) {
+  if (session.current) {
     poller.start()
   } else {
     // First launch: open the panel so the user sees how to connect.

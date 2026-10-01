@@ -15,6 +15,18 @@ export interface DeviceCode {
   interval: number
 }
 
+/**
+ * Tokens from GitHub. When the OAuth/GitHub App has "Expire user access tokens" enabled,
+ * the access token lasts 8 h and comes with a refresh token (~6 months).
+ */
+export interface TokenSet {
+  accessToken: string
+  /** Epoch ms, or null when the token does not expire. */
+  expiresAt: number | null
+  refreshToken: string | null
+  refreshTokenExpiresAt: number | null
+}
+
 export class DeviceFlowError extends Error {
   constructor(
     readonly code: string,
@@ -82,11 +94,25 @@ export async function requestDeviceCode(clientId: string, fetchFn: FetchFn = fet
   }
 }
 
+export function parseTokenResponse(body: Record<string, unknown>, now: number): TokenSet | null {
+  if (typeof body.access_token !== 'string' || body.access_token === '') return null
+  const seconds = (v: unknown) => (typeof v === 'number' || typeof v === 'string') && Number(v) > 0 ? Number(v) : null
+  const expiresIn = seconds(body.expires_in)
+  const refreshExpiresIn = seconds(body.refresh_token_expires_in)
+  const refreshToken = typeof body.refresh_token === 'string' && body.refresh_token !== '' ? body.refresh_token : null
+  return {
+    accessToken: body.access_token,
+    expiresAt: expiresIn === null ? null : now + expiresIn * 1000,
+    refreshToken,
+    refreshTokenExpiresAt: refreshToken && refreshExpiresIn !== null ? now + refreshExpiresIn * 1000 : null
+  }
+}
+
 export async function pollForToken(
   clientId: string,
   code: DeviceCode,
   opts: { fetchFn?: FetchFn; sleep?: SleepFn; signal?: AbortSignal; now?: () => number } = {}
-): Promise<string> {
+): Promise<TokenSet> {
   const fetchFn = opts.fetchFn ?? fetch
   const sleep = opts.sleep ?? defaultSleep
   const now = opts.now ?? Date.now
@@ -105,7 +131,8 @@ export async function pollForToken(
       },
       opts.signal
     )
-    if (typeof body.access_token === 'string') return body.access_token
+    const tokens = parseTokenResponse(body, now())
+    if (tokens) return tokens
 
     switch (body.error) {
       case 'authorization_pending':
@@ -125,4 +152,32 @@ export async function pollForToken(
     }
   }
   throw new DeviceFlowError('expired_token', 'El código expiró. Vuelve a intentarlo.')
+}
+
+/**
+ * Exchanges a refresh token for a new token pair. No client secret: GitHub does not
+ * require it for tokens obtained through the device flow.
+ */
+export async function refreshAccessToken(
+  clientId: string,
+  refreshToken: string,
+  opts: { fetchFn?: FetchFn; now?: () => number } = {}
+): Promise<TokenSet> {
+  const now = opts.now ?? Date.now
+  const body = await postForm(opts.fetchFn ?? fetch, ACCESS_TOKEN_URL, {
+    client_id: clientId,
+    grant_type: 'refresh_token',
+    refresh_token: refreshToken
+  })
+  const tokens = parseTokenResponse(body, now())
+  if (tokens) return tokens
+
+  const error = String(body.error ?? 'unknown')
+  const description = String(body.error_description ?? error)
+  if (error === 'bad_refresh_token') throw new DeviceFlowError('bad_refresh_token', description)
+  // The app would need its client secret to refresh (or the client ID is wrong).
+  if (['incorrect_client_credentials', 'unauthorized_client', 'invalid_client', 'Not Found'].includes(error)) {
+    throw new DeviceFlowError('refresh_unsupported', description)
+  }
+  throw new DeviceFlowError(error, description)
 }

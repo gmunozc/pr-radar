@@ -1,6 +1,7 @@
 import { Notification, shell } from 'electron'
 import type { NotifyResult, PullRequest } from '../shared/types'
 import type { NotificationPlan } from './diff'
+import { logger } from './log'
 
 // Keep references so macOS click handlers survive garbage collection.
 const live = new Set<Notification>()
@@ -30,7 +31,7 @@ function show(title: string, body: string, onClick: () => void, id?: string): Pr
     n.once('failed', (_e, error) => {
       clearTimeout(timer)
       live.delete(n)
-      console.error('[notify] failed:', error)
+      logger.error('notification failed', error)
       resolve({ ok: false, error })
     })
     n.show()
