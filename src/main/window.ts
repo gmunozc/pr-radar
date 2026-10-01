@@ -1,13 +1,14 @@
 import { BrowserWindow, screen, type Rectangle } from 'electron'
 import { join } from 'node:path'
+import { displayNearest, placePanel } from './position'
 
 export const PANEL_WIDTH = 380
 export const PANEL_HEIGHT = 540
-const GAP = 6
 
 export class Panel {
   readonly win: BrowserWindow
   private lastHiddenAt = 0
+  private lastDisplayId: number | null = null
   private loadFailures = 0
 
   constructor() {
@@ -85,9 +86,21 @@ export class Panel {
   }
 
   show(trayBounds?: Rectangle): void {
-    this.position(trayBounds)
+    const [width, height] = this.win.getSize()
+    const target = placePanel({
+      cursor: screen.getCursorScreenPoint(),
+      displays: screen.getAllDisplays(),
+      trayBounds,
+      size: { width, height },
+      platform: process.platform
+    })
+    this.lastDisplayId = target.displayId
+    this.win.setPosition(target.x, target.y, false)
     this.win.show()
     this.win.focus()
+    // macOS can keep a window on the screen it was last shown on; move it again if so.
+    const [x, y] = this.win.getPosition()
+    if (x !== target.x || y !== target.y) this.win.setPosition(target.x, target.y, false)
   }
 
   toggle(trayBounds?: Rectangle): void {
@@ -96,28 +109,10 @@ export class Panel {
       return
     }
     // On macOS clicking the tray icon blurs (and hides) the panel right before the
-    // click event arrives; don't reopen it in that case.
-    if (Date.now() - this.lastHiddenAt < 250) return
+    // click event arrives; don't reopen it in that case, unless the click came from
+    // the menu bar of another display.
+    const sameDisplay = displayNearest(screen.getAllDisplays(), screen.getCursorScreenPoint()).id === this.lastDisplayId
+    if (Date.now() - this.lastHiddenAt < 250 && sameDisplay) return
     this.show(trayBounds)
-  }
-
-  private position(trayBounds?: Rectangle): void {
-    const hasBounds = trayBounds && trayBounds.width > 0 && trayBounds.height > 0
-    const anchor = hasBounds
-      ? { x: trayBounds.x + trayBounds.width / 2, y: trayBounds.y, height: trayBounds.height }
-      : { ...screen.getCursorScreenPoint(), height: 0 }
-
-    const { workArea } = screen.getDisplayNearestPoint({ x: Math.round(anchor.x), y: Math.round(anchor.y) })
-    const [width, height] = this.win.getSize()
-
-    let x = Math.round(anchor.x - width / 2)
-    x = Math.min(Math.max(x, workArea.x + GAP), workArea.x + workArea.width - width - GAP)
-
-    // Tray in the top half (macOS menu bar, some Linux panels) → open below it; otherwise above.
-    const trayAtTop = anchor.y < workArea.y + workArea.height / 2
-    let y = trayAtTop ? Math.round(anchor.y + anchor.height + GAP) : Math.round(anchor.y - height - GAP)
-    y = Math.min(Math.max(y, workArea.y + GAP), workArea.y + workArea.height - height - GAP)
-
-    this.win.setPosition(x, y, false)
   }
 }

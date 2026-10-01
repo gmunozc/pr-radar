@@ -133,6 +133,20 @@ button {
   color: var(--text);
 }
 
+/* No browser focus ring on icon buttons and tabs (it lingered after clicks on macOS);
+   keyboard focus still shows as a hover-like highlight. */
+.icon-btn:focus,
+.tab:focus,
+.pr-dismiss:focus {
+  outline: none;
+}
+
+.icon-btn:focus-visible,
+.tab:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
 .icon-btn.spinning svg {
   animation: spin 0.9s linear infinite;
 }
