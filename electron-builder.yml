@@ -26,7 +26,7 @@ mac:
     LSUIElement: true
     NSUserNotificationAlertStyle: alert
 dmg:
-  artifactName: ${productName}-${version}-${arch}.${ext}
+  artifactName: PR-Radar-${version}-${arch}.${ext}
 win:
   icon: build/icon.png
   target:

@@ -1,4 +1,4 @@
-import { app, Menu, nativeImage, Tray } from 'electron'
+import { app, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron'
 import { join } from 'node:path'
 import type { AppState } from '../shared/types'
 import type { Panel } from './window'
@@ -20,6 +20,8 @@ export interface TrayActions {
   refresh(): void
   logout(): void
   isLoggedIn(): boolean
+  /** Extra items at the end of the context menu (development tools). */
+  extraMenu?(): MenuItemConstructorOptions[]
 }
 
 export class AppTray {
@@ -85,7 +87,8 @@ export class AppTray {
       },
       { label: 'Cerrar sesión de GitHub', enabled: loggedIn, click: () => this.actions.logout() },
       { type: 'separator' },
-      { label: 'Salir', accelerator: isMac ? 'Cmd+Q' : undefined, click: () => app.quit() }
+      { label: 'Salir', accelerator: isMac ? 'Cmd+Q' : undefined, click: () => app.quit() },
+      ...(this.actions.extraMenu?.() ?? [])
     ])
   }
 }

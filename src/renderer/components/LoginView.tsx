@@ -127,9 +127,15 @@ export function LoginView({ auth, notice }: { auth: AuthStatus; notice: AuthNoti
             {starting ? 'Conectando…' : 'Conectar con GitHub'}
           </button>
           {auth.phase === 'error' && (
-            <button className="link small" onClick={() => setHasClientId(false)}>
-              Cambiar Client ID
-            </button>
+            <div className="row">
+              <button className="link small" onClick={() => setHasClientId(false)}>
+                Cambiar Client ID
+              </button>
+              <span className="hint">·</span>
+              <button className="link small" onClick={() => void api.copyDiagnostics()}>
+                Copiar diagnóstico
+              </button>
+            </div>
           )}
         </>
       )}

@@ -1,32 +1,22 @@
-import { app, powerMonitor } from 'electron'
-import { join } from 'node:path'
-import {
-  DEFAULT_SETTINGS,
-  IPC,
-  type AppState,
-  type AuthNotice,
-  type AuthStatus,
-  type PullRequest,
-  type Settings
-} from '../shared/types'
+/** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
+import { app, clipboard, Notification, powerMonitor, screen, shell } from 'electron'
+import { dirname, join } from 'node:path'
+import { IPC, type AuthStatus, type Settings } from '../shared/types'
 import { createAuthStore, DeviceLogin } from './auth'
+import { debugMenu, FaultInjector } from './debug'
 import { refreshAccessToken } from './deviceFlow'
-import { applyDismissals, diffPrs, planNotifications } from './diff'
-import { fetchPullRequests, GithubError, type FetchResult } from './github'
+import { buildDiagnostics } from './diagnostics'
+import { Engine } from './engine'
+import { fetchPullRequests } from './github'
 import { registerIpc } from './ipc'
 import { logger } from './log'
-import { notify, notifyLoggedOut } from './notifier'
+import { deliverEvents } from './notifier'
 import { Poller } from './poller'
-import { Session, SessionExpiredError, type ExpiryReason } from './session'
+import { Session, SessionExpiredError } from './session'
+import { normalizeSettings } from './settings'
 import { JsonFile } from './store'
 import { AppTray } from './tray'
 import { Panel } from './window'
-
-interface SeenState {
-  login: string
-  seenIds: string[]
-  dismissedIds?: string[]
-}
 
 // Development runs use their own data folder (and a plain-text session, see createAuthStore)
 // so they never touch the installed app's session, Keychain item or single-instance lock.
@@ -38,6 +28,8 @@ if (!app.requestSingleInstanceLock()) {
   if (process.platform === 'win32') app.setAppUserModelId('com.gmunozc.prradar')
   // Keep running in the menu bar when the (hidden) panel is the only window.
   app.on('window-all-closed', () => {})
+  process.on('uncaughtException', (err) => logger.error('uncaught exception', err))
+  process.on('unhandledRejection', (reason) => logger.error('unhandled rejection', reason))
   void app.whenReady().then(main)
 }
 
@@ -52,10 +44,9 @@ function main(): void {
   })
   logger.info('PR Radar starting', { version: app.getVersion(), os: `${process.platform} ${process.arch}` })
 
-  const settingsFile = new JsonFile<Settings>(join(userData, 'settings.json'), () => DEFAULT_SETTINGS)
-  const seenFile = new JsonFile<SeenState | null>(join(userData, 'state.json'), () => null)
-
-  let settings: Settings = { ...DEFAULT_SETTINGS, ...settingsFile.read() }
+  const settingsFile = new JsonFile<unknown>(join(userData, 'settings.json'), () => ({}))
+  const stateFile = new JsonFile<unknown>(join(userData, 'state.json'), () => null)
+  let settings: Settings = normalizeSettings(settingsFile.read())
   const clientId = () => import.meta.env.MAIN_VITE_GITHUB_CLIENT_ID?.trim() || settings.clientId.trim()
 
   const authStore = createAuthStore(join(userData, 'auth.bin'), clientId, logger, { plain: !app.isPackaged })
@@ -71,166 +62,102 @@ function main(): void {
     const s = session.current
     logger.info('session loaded', { method: s.method, expires: s.expiresAt !== null, hasRefresh: s.refreshToken !== null })
   }
-  // Problems with the session that don't stop polling (shown as warnings in the panel).
-  let sessionWarning: string | null = null
-  let seen = seenFile.read()
-  // Last full result from GitHub, including dismissed PRs.
-  let allPrs: PullRequest[] = []
-  // When the search filter changes, the next result is a new baseline rather than "new" PRs.
-  let resetBaseline = false
 
-  let state: AppState = {
-    status: session.current ? 'loading' : 'logged_out',
-    viewer: null,
-    prs: [],
-    myPrs: [],
-    lastUpdated: null,
-    error: null,
-    warnings: [],
-    dismissedCount: 0,
-    authNotice: authStore.readError
-  }
-
+  const faults = app.isPackaged ? null : new FaultInjector()
   const panel = new Panel()
   const showPanel = () => panel.show(tray.getBounds())
-
-  const publish = (next: AppState) => {
-    state = next
-    tray.update(state)
-    if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.state, state)
-  }
 
   const publishAuth = (status: AuthStatus) => {
     if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.authStatus, status)
   }
-
-  const loggedOutState = (authNotice: AuthNotice | null = null): AppState => ({
-    status: 'logged_out',
-    viewer: null,
-    prs: [],
-    myPrs: [],
-    lastUpdated: null,
-    error: null,
-    warnings: [],
-    dismissedCount: 0,
-    authNotice
-  })
-
-  const saveSeen = (next: SeenState) => {
-    seen = next
-    seenFile.write(next)
-  }
-
-  const setDismissed = (ids: string[]) => {
-    if (!seen) return
-    const { visible, dismissedIds } = applyDismissals(allPrs, ids)
-    saveSeen({ ...seen, dismissedIds })
-    publish({ ...state, prs: visible, dismissedCount: dismissedIds.length })
-  }
-
-  /** Explicit "Cerrar sesión": forget the session and everything about this account. */
-  const logout = () => {
-    logger.info('logout')
-    deviceLogin.cancel()
-    poller.stop()
-    session.clear()
-    seenFile.remove()
-    seen = null
-    allPrs = []
-    sessionWarning = null
-    publish(loggedOutState())
-  }
-
-  /** The session can't be renewed: sign out but keep seen/dismissed PRs for the next login. */
-  const expireSession = (reason: ExpiryReason) => {
-    logger.warn('session expired', { reason })
-    deviceLogin.cancel()
-    poller.stop()
-    session.clear()
-    allPrs = []
-    sessionWarning = null
-    publish(loggedOutState(reason === 'refresh_unsupported' ? 'refresh_unsupported' : 'session_expired'))
-    if (settings.notifications) notifyLoggedOut(showPanel)
-  }
-
-  let loggedTokenExpiration = false
-
-  /** Fetches with a valid token; on 401 renews once and retries. */
-  const fetchWithSession = async (): Promise<FetchResult> => {
-    const token = await session.getAccessToken()
-    try {
-      return await fetchPullRequests(token, settings)
-    } catch (err) {
-      if (!(err instanceof GithubError && err.kind === 'unauthorized')) throw err
-      logger.info('GitHub answered 401, renewing the token')
-      const renewed = await session.handleUnauthorized(token)
-      try {
-        return await fetchPullRequests(renewed, settings)
-      } catch (retryErr) {
-        if (retryErr instanceof GithubError && retryErr.kind === 'unauthorized') throw new SessionExpiredError('revoked')
-        throw retryErr
-      }
-    }
-  }
-
-  const pollOnce = async (): Promise<{ retryAt?: number } | void> => {
-    if (!session.current) return
-    try {
-      const result = await fetchWithSession()
-      session.setLogin(result.viewer.login)
-      if (!loggedTokenExpiration) {
-        loggedTokenExpiration = true
-        logger.info('token expiration header', { value: result.tokenExpiration ?? 'none' })
-      }
-      const stored = seen?.login === result.viewer.login ? seen : null
-      const diff = diffPrs(resetBaseline ? result.prs.map((p) => p.id) : (stored?.seenIds ?? null), result.prs)
-      resetBaseline = false
-      allPrs = result.prs
-      const { visible, dismissedIds } = applyDismissals(result.prs, stored?.dismissedIds ?? [])
-      saveSeen({ login: result.viewer.login, seenIds: diff.seenIds, dismissedIds })
-      if (settings.notifications) notify(planNotifications(diff, visible.length), showPanel)
-      publish({
-        status: 'ready',
-        viewer: result.viewer,
-        prs: visible,
-        myPrs: result.myPrs,
-        lastUpdated: new Date().toISOString(),
-        error: null,
-        warnings: sessionWarning ? [...result.warnings, sessionWarning] : result.warnings,
-        dismissedCount: dismissedIds.length,
-        authNotice: null
-      })
-    } catch (err) {
-      if (err instanceof SessionExpiredError) {
-        expireSession(err.reason)
-        return
-      }
-      logger.warn('poll failed', err)
-      const kind = err instanceof GithubError ? err.kind : 'network'
-      publish({
-        ...state,
-        status: state.viewer ? 'ready' : 'error',
-        error: { kind, message: (err as Error).message }
-      })
-      return { retryAt: err instanceof GithubError ? err.retryAt : undefined }
-    }
-  }
-
-  const poller = new Poller(pollOnce, () => settings.pollIntervalSec)
-
   const deviceLogin = new DeviceLogin(publishAuth)
+
+  const engine = new Engine(
+    {
+      now: Date.now,
+      settings: () => settings,
+      session,
+      fetchPullRequests: faults ? faults.wrap(fetchPullRequests) : fetchPullRequests,
+      stateStore: {
+        read: () => stateFile.read(),
+        write: (state) => stateFile.write(state),
+        remove: () => stateFile.remove()
+      },
+      notify: (events) => deliverEvents(events, showPanel),
+      publish: (state) => {
+        tray.update(state)
+        if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.state, state)
+      },
+      onSessionEnded: () => {
+        poller.stop()
+        deviceLogin.cancel()
+      },
+      log: logger
+    },
+    authStore.readError
+  )
+
+  const poller = new Poller(() => engine.poll(), () => settings.pollIntervalSec)
+
+  const diagnostics = () =>
+    buildDiagnostics({
+      app: { version: app.getVersion(), packaged: app.isPackaged },
+      versions: { electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
+      os: { platform: process.platform, arch: process.arch, release: process.getSystemVersion() },
+      locales: app.getPreferredSystemLanguages(),
+      displays: screen.getAllDisplays().map((d) => ({
+        id: d.id,
+        bounds: d.bounds,
+        scaleFactor: d.scaleFactor,
+        primary: d.id === screen.getPrimaryDisplay().id
+      })),
+      panelDisplayId: panel.displayId,
+      settings,
+      clientIdConfigured: clientId() !== '',
+      auth: session.current,
+      state: engine.state,
+      consecutiveFailures: engine.consecutiveFailures,
+      notificationsSupported: Notification.isSupported(),
+      logs: logger.recent(50, 'warn'),
+      now: Date.now()
+    })
+  const copyDiagnostics = async () => {
+    try {
+      await clipboard.writeText(diagnostics())
+      logger.info('diagnostics copied')
+      return { ok: true }
+    } catch (err) {
+      logger.error('could not copy diagnostics', err)
+      return { ok: false }
+    }
+  }
 
   const tray = new AppTray(panel, {
     refresh: () => void poller.runNow(),
-    logout,
-    isLoggedIn: () => session.current !== null
+    logout: () => engine.logout(),
+    isLoggedIn: () => session.current !== null,
+    extraMenu: faults
+      ? () =>
+          debugMenu({
+            faults,
+            pollNow: () => void poller.runNow(),
+            renewToken: async () => {
+              try {
+                await session.refreshNow()
+              } catch (err) {
+                logger.warn('manual renewal failed', err)
+              }
+            },
+            copyDiagnostics: () => void copyDiagnostics()
+          })
+      : undefined
   })
 
   registerIpc({
-    getState: () => state,
+    getState: () => engine.state,
     refresh: () => poller.runNow(),
-    dismiss: (prId) => setDismissed([...(seen?.dismissedIds ?? []), prId]),
-    restoreDismissed: () => setDismissed([]),
+    dismiss: (prId) => engine.dismiss(prId),
+    restoreDismissed: () => engine.restoreDismissed(),
     hasClientId: () => clientId() !== '',
     accessUrl: () =>
       clientId()
@@ -250,7 +177,7 @@ function main(): void {
         hasRefresh: tokens.refreshToken !== null,
         expiresInSec: tokens.expiresAt === null ? null : Math.round((tokens.expiresAt - Date.now()) / 1000)
       })
-      sessionWarning = null
+      let warning: string | null = null
       // Renew once right away so we know now, not in 8 h, whether renewal works for this app.
       if (tokens.refreshToken) {
         try {
@@ -259,16 +186,16 @@ function main(): void {
         } catch (err) {
           logger.warn('refresh probe failed', err)
           if (err instanceof SessionExpiredError && err.reason === 'refresh_unsupported') {
-            sessionWarning =
+            warning =
               'GitHub no permite renovar la sesión de esta OAuth App: caducará en 8 h. En la OAuth App, desmarca "Expire user authorization tokens" y vuelve a conectar.'
           }
         }
       }
-      publish({ ...loggedOutState(), status: 'loading' })
+      engine.loggedIn(warning)
       poller.start()
     },
     cancelLogin: () => deviceLogin.cancel(),
-    logout,
+    logout: () => engine.logout(),
     getSettings: () => ({ ...settings, openAtLogin: app.getLoginItemSettings().openAtLogin }),
     setSettings: (patch) => {
       const { openAtLogin, ...rest } = patch
@@ -279,12 +206,18 @@ function main(): void {
       settings = { ...settings, ...rest }
       settingsFile.write(settings)
       if (filtersChanged && session.current) {
-        resetBaseline = true
+        engine.filtersChanged()
         void poller.runNow()
       }
       return { ...settings, openAtLogin: app.getLoginItemSettings().openAtLogin }
     },
-    showPanel
+    showPanel,
+    appInfo: () => ({ version: app.getVersion(), packaged: app.isPackaged }),
+    copyDiagnostics,
+    openLogs: async () => {
+      const file = logger.file
+      if (file) await shell.openPath(dirname(file))
+    }
   })
 
   powerMonitor.on('suspend', () => poller.stop())
@@ -296,7 +229,7 @@ function main(): void {
 
   app.on('second-instance', showPanel)
 
-  tray.update(state)
+  tray.update(engine.state)
   if (session.current) {
     poller.start()
   } else {

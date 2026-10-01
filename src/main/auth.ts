@@ -81,7 +81,7 @@ export class DeviceLogin {
     this.controller = controller
     try {
       const code = await requestDeviceCode(clientId)
-      clipboard.writeText(code.userCode)
+      void clipboard.writeText(code.userCode).catch(() => {})
       this.onStatus({
         phase: 'waiting',
         userCode: code.userCode,

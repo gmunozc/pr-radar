@@ -1,9 +1,9 @@
 import { app, ipcMain, shell } from 'electron'
-import { IPC, MIN_POLL_INTERVAL_SEC, type AppState, type Settings } from '../shared/types'
+import { IPC, type AppState, type Settings } from '../shared/types'
 import { testNotification } from './notifier'
+import { sanitizeSettingsPatch, type SettingsPatch } from './settings'
 
 type SettingsView = Settings & { openAtLogin: boolean }
-type SettingsPatch = Partial<Settings> & { openAtLogin?: boolean }
 
 export interface IpcContext {
   getState(): AppState
@@ -18,6 +18,9 @@ export interface IpcContext {
   getSettings(): SettingsView
   setSettings(patch: SettingsPatch): SettingsView
   showPanel(): void
+  appInfo(): { version: string; packaged: boolean }
+  copyDiagnostics(): Promise<{ ok: boolean }>
+  openLogs(): Promise<void>
 }
 
 export function isAllowedExternalUrl(url: string): boolean {
@@ -27,20 +30,6 @@ export function isAllowedExternalUrl(url: string): boolean {
   } catch {
     return false
   }
-}
-
-export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
-  if (!patch || typeof patch !== 'object') return {}
-  const p = patch as Record<string, unknown>
-  const out: SettingsPatch = {}
-  for (const key of ['includeTeams', 'notifications', 'showDrafts', 'openAtLogin'] as const) {
-    if (typeof p[key] === 'boolean') out[key] = p[key]
-  }
-  if (typeof p.pollIntervalSec === 'number' && Number.isFinite(p.pollIntervalSec)) {
-    out.pollIntervalSec = Math.min(3600, Math.max(MIN_POLL_INTERVAL_SEC, Math.round(p.pollIntervalSec)))
-  }
-  if (typeof p.clientId === 'string') out.clientId = p.clientId.trim()
-  return out
 }
 
 export function registerIpc(ctx: IpcContext): void {
@@ -71,4 +60,7 @@ export function registerIpc(ctx: IpcContext): void {
     if (process.platform === 'win32') return shell.openExternal('ms-settings:notifications')
   })
   ipcMain.handle(IPC.quit, () => app.quit())
+  ipcMain.handle(IPC.appInfo, () => ctx.appInfo())
+  ipcMain.handle(IPC.copyDiagnostics, () => ctx.copyDiagnostics())
+  ipcMain.handle(IPC.openLogs, () => ctx.openLogs())
 }

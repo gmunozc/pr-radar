@@ -29,6 +29,9 @@ const api: PrRadarApi = {
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
   testNotification: () => ipcRenderer.invoke(IPC.testNotification),
   openNotificationSettings: () => ipcRenderer.invoke(IPC.openNotificationSettings),
+  appInfo: () => ipcRenderer.invoke(IPC.appInfo),
+  copyDiagnostics: () => ipcRenderer.invoke(IPC.copyDiagnostics),
+  openLogs: () => ipcRenderer.invoke(IPC.openLogs),
   quit: () => ipcRenderer.invoke(IPC.quit)
 }
 

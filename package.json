@@ -1,7 +1,7 @@
 {
   "name": "pr-radar",
   "productName": "PR Radar",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Menu bar app that notifies you about GitHub pull requests waiting for your review",
   "main": "./out/main/index.js",
   "author": "gmunozc",
@@ -14,9 +14,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "icons": "node scripts/gen-icons.mjs",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --publish never"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",

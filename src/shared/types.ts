@@ -109,6 +109,9 @@ export interface PrRadarApi {
   openExternal(url: string): Promise<void>
   testNotification(): Promise<NotifyResult>
   openNotificationSettings(): Promise<void>
+  appInfo(): Promise<{ version: string; packaged: boolean }>
+  copyDiagnostics(): Promise<{ ok: boolean }>
+  openLogs(): Promise<void>
   quit(): Promise<void>
 }
 
@@ -129,5 +132,8 @@ export const IPC = {
   openExternal: 'shell:open-external',
   testNotification: 'notify:test',
   openNotificationSettings: 'notify:open-settings',
+  appInfo: 'app:info',
+  copyDiagnostics: 'diagnostics:copy',
+  openLogs: 'logs:open',
   quit: 'app:quit'
 } as const

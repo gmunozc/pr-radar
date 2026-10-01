@@ -1,0 +1,84 @@
+name: Release
+
+# Pushing a tag vX.Y.Z builds the macOS app and creates a *draft* GitHub Release with the
+# dmg and its checksum. Review the draft and publish it by hand.
+# Manual runs (workflow_dispatch) only build and upload the dmg as a workflow artifact.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      - name: Tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          MAIN_VITE_GITHUB_CLIENT_ID: ${{ vars.OAUTH_CLIENT_ID }}
+
+      - name: Client ID is embedded in the build
+        if: vars.OAUTH_CLIENT_ID != ''
+        run: grep -q "${{ vars.OAUTH_CLIENT_ID }}" out/main/index.js
+
+      - name: Package (ad-hoc signed, universal)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          # hdiutil is occasionally flaky on CI runners.
+          for attempt in 1 2 3; do
+            npx electron-builder --mac --publish never && break
+            echo "electron-builder failed (attempt $attempt), retrying in 15 s"
+            sleep 15
+          done
+          ls dist/*.dmg
+
+      - name: Verify the app
+        run: |
+          APP="dist/mac-universal/PR Radar.app"
+          lipo -archs "$APP/Contents/MacOS/PR Radar" | grep -q "x86_64 arm64"
+          codesign -dv "$APP" 2>&1 | grep -q "Signature=adhoc"
+
+      - name: Checksums
+        working-directory: dist
+        run: shasum -a 256 *.dmg | tee SHA256SUMS.txt
+
+      - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/SHA256SUMS.txt
+          --draft --title "PR Radar ${GITHUB_REF_NAME#v}" --generate-notes
+
+      - name: Upload build (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-radar-macos
+          path: |
+            dist/*.dmg
+            dist/SHA256SUMS.txt
+          retention-days: 7

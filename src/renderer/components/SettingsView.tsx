@@ -32,6 +32,18 @@ export function SettingsView() {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [interval, setIntervalValue] = useState('')
   const [testResult, setTestResult] = useState<NotifyResult | 'sending' | null>(null)
+  const [version, setVersion] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    void api.appInfo().then((info) => setVersion(info.version))
+  }, [])
+
+  const copyDiagnostics = async () => {
+    const { ok } = await api.copyDiagnostics()
+    setCopied(ok)
+    if (ok) setTimeout(() => setCopied(false), 2000)
+  }
 
   useEffect(() => {
     void api.settings.get().then((s) => {
@@ -166,6 +178,29 @@ export function SettingsView() {
           </div>
           <button className="btn" onClick={() => void api.quit()}>
             Salir
+          </button>
+        </div>
+      </section>
+
+      <section className="group">
+        <div className="group-title">Ayuda</div>
+        <div className="setting">
+          <div className="setting-text">
+            <div className="setting-label">Diagnóstico</div>
+            <div className="setting-hint">
+              Copia un informe sin tokens para reportar un problema{version ? ` · versión ${version}` : ''}.
+            </div>
+          </div>
+          <button className="btn" onClick={() => void copyDiagnostics()}>
+            {copied ? 'Copiado' : 'Copiar'}
+          </button>
+        </div>
+        <div className="setting">
+          <div className="setting-text">
+            <div className="setting-label">Registro de actividad</div>
+          </div>
+          <button className="btn" onClick={() => void api.openLogs()}>
+            Abrir carpeta
           </button>
         </div>
       </section>
