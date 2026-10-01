@@ -23,6 +23,10 @@ export interface IpcContext {
   appInfo(): { version: string; packaged: boolean }
   copyDiagnostics(): Promise<{ ok: boolean }>
   openLogs(): Promise<void>
+  checkUpdates(): Promise<void>
+  downloadUpdate(): Promise<void>
+  openUpdateNotes(): Promise<void>
+  skipUpdate(): void
 }
 
 export function isAllowedExternalUrl(url: string): boolean {
@@ -68,6 +72,10 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.appInfo, () => ctx.appInfo())
   ipcMain.handle(IPC.copyDiagnostics, () => ctx.copyDiagnostics())
   ipcMain.handle(IPC.openLogs, () => ctx.openLogs())
+  ipcMain.handle(IPC.updateCheck, () => ctx.checkUpdates())
+  ipcMain.handle(IPC.updateDownload, () => ctx.downloadUpdate())
+  ipcMain.handle(IPC.updateNotes, () => ctx.openUpdateNotes())
+  ipcMain.handle(IPC.updateSkip, () => ctx.skipUpdate())
   ipcMain.on(IPC.rendererError, (_e, message: unknown) => {
     logger.error('panel error', typeof message === 'string' ? message.slice(0, 4000) : 'unknown')
   })

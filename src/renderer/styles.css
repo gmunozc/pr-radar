@@ -255,6 +255,35 @@ html[data-platform='darwin'] .tab-active {
   color: var(--error-fg);
 }
 
+.banner-update {
+  background: var(--direct-bg);
+  color: var(--text);
+}
+
+.update-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.update-title {
+  font-weight: 600;
+}
+
+.update-hint {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.update-actions {
+  margin-top: 7px;
+  gap: 10px;
+}
+
+.update-skip {
+  color: var(--text-muted);
+}
+
 .banner-warn {
   background: var(--warn-bg);
   color: var(--warn-fg);

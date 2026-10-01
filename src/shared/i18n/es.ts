@@ -142,6 +142,18 @@ export const es: Record<MessageKey, string> = {
   'settings.workHours': 'Horario laboral',
   'settings.to': 'a',
 
+  // Updates
+  'update.available': 'PR Radar {version} está disponible',
+  'update.download': 'Descargar',
+  'update.notes': 'Novedades',
+  'update.skip': 'Omitir esta versión',
+  'update.keychainHint': 'Al instalarla, macOS pedirá acceso al Llavero: pulsa "Permitir siempre".',
+  'tray.downloadUpdate': 'Descargar actualización ({version})…',
+  'settings.checkUpdates': 'Buscar actualizaciones',
+  'settings.checkUpdatesHint': 'Versión {version}. Consulta GitHub cada 6 horas.',
+  'settings.checkNow': 'Buscar ahora',
+  'settings.upToDate': 'Al día',
+
   // Settings
   'settings.whatToReview': 'Qué revisar',
   'settings.includeTeams': 'Incluir solicitudes a mis equipos',
@@ -221,6 +233,8 @@ export const es: Record<MessageKey, string> = {
   'notif.catchUpReady.one': '{count} PR listo para merge',
   'notif.catchUpReady.other': '{count} PRs listos para merge',
   'notif.catchUpSession': 'tu sesión caducó',
+  'notif.updateTitle': 'PR Radar {version} disponible',
+  'notif.updateBody': 'Descárgala desde GitHub.',
   'notif.sessionExpired': 'Tu sesión de GitHub expiró. Vuelve a conectar tu cuenta.',
   'notif.test': 'Las notificaciones funcionan correctamente.',
 

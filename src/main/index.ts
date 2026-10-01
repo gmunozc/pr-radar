@@ -17,6 +17,7 @@ import { Session, SessionExpiredError } from './session'
 import { normalizeSettings } from './settings'
 import { JsonFile } from './store'
 import { AppTray } from './tray'
+import { fetchLatestRelease, isReleaseUrl, UpdateChecker, type UpdateCheckerState } from './updates'
 import { Panel } from './window'
 
 // Development runs use their own data folder (and a plain-text session, see createAuthStore)
@@ -103,6 +104,31 @@ function main(): void {
 
   const poller = new Poller(() => engine.poll(), () => settings.pollIntervalSec)
 
+  // Update notice: packaged builds only, against this repository's GitHub releases.
+  const updateRepo = (import.meta.env.MAIN_VITE_UPDATE_REPO ?? 'gmunozc/pr-radar').trim()
+  const appFile = new JsonFile<UpdateCheckerState>(join(userData, 'app.json'), () => ({}))
+  const updates =
+    app.isPackaged && updateRepo
+      ? new UpdateChecker({
+          repo: updateRepo,
+          currentVersion: app.getVersion(),
+          now: Date.now,
+          load: () => appFile.read(),
+          save: (state) => appFile.write(state),
+          fetchLatest: (repo, etag) => fetchLatestRelease(repo, etag),
+          log: logger
+        })
+      : null
+  const runUpdateCheck = async (force = false) => {
+    if (!updates || (!force && !settings.checkUpdates)) return
+    const announce = await updates.check(force)
+    engine.setUpdate(updates.available)
+    if (announce) engine.announceUpdate(announce.version, announce.releaseUrl)
+  }
+  const openRelease = async (url: string | null | undefined) => {
+    if (url && isReleaseUrl(url, updateRepo)) await shell.openExternal(url)
+  }
+
   const diagnostics = () =>
     buildDiagnostics({
       app: { version: app.getVersion(), packaged: app.isPackaged },
@@ -138,6 +164,7 @@ function main(): void {
 
   const tray = new AppTray(panel, {
     refresh: () => void poller.runNow(),
+    downloadUpdate: () => void openRelease(updates?.available?.downloadUrl ?? updates?.available?.releaseUrl),
     logout: () => engine.logout(),
     isLoggedIn: () => session.current !== null,
     extraMenu: faults
@@ -226,12 +253,22 @@ function main(): void {
     openLogs: async () => {
       const file = logger.file
       if (file) await shell.openPath(dirname(file))
+    },
+    checkUpdates: () => runUpdateCheck(true),
+    downloadUpdate: () => openRelease(updates?.available?.downloadUrl ?? updates?.available?.releaseUrl),
+    openUpdateNotes: () => openRelease(updates?.available?.releaseUrl),
+    skipUpdate: () => {
+      const available = updates?.available
+      if (!available || !updates) return
+      updates.skip(available.version)
+      engine.setUpdate(null)
     }
   })
 
   powerMonitor.on('suspend', () => poller.stop())
   const wake = () => {
     if (session.current && !poller.isActive) poller.start()
+    void runUpdateCheck()
   }
   powerMonitor.on('resume', wake)
   powerMonitor.on('unlock-screen', wake)
@@ -240,6 +277,12 @@ function main(): void {
 
   // Snoozes, quiet hours and the digest are time-based: check them every minute.
   setInterval(() => engine.tick(), 60_000)
+
+  // Show a release found earlier right away; check GitHub shortly after launch and then
+  // hourly (the checker itself only hits GitHub every 6 h unless asked).
+  engine.setUpdate(updates?.available ?? null)
+  setTimeout(() => void runUpdateCheck(), 30_000)
+  setInterval(() => void runUpdateCheck(), 3_600_000)
 
   tray.update(engine.state)
   if (session.current) {

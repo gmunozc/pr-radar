@@ -144,6 +144,18 @@ export const en = {
   'settings.workHours': 'Working hours',
   'settings.to': 'to',
 
+  // Updates
+  'update.available': 'PR Radar {version} is available',
+  'update.download': 'Download',
+  'update.notes': "What's new",
+  'update.skip': 'Skip this version',
+  'update.keychainHint': 'After installing it, macOS asks for Keychain access: choose "Always Allow".',
+  'tray.downloadUpdate': 'Download update ({version})…',
+  'settings.checkUpdates': 'Check for updates',
+  'settings.checkUpdatesHint': 'Version {version}. Checks GitHub every 6 hours.',
+  'settings.checkNow': 'Check now',
+  'settings.upToDate': 'Up to date',
+
   // Settings
   'settings.whatToReview': 'What to review',
   'settings.includeTeams': 'Include requests to my teams',
@@ -223,6 +235,8 @@ export const en = {
   'notif.catchUpReady.one': '{count} PR ready to merge',
   'notif.catchUpReady.other': '{count} PRs ready to merge',
   'notif.catchUpSession': 'your session expired',
+  'notif.updateTitle': 'PR Radar {version} is available',
+  'notif.updateBody': 'Download it from GitHub.',
   'notif.sessionExpired': 'Your GitHub session expired. Reconnect your account.',
   'notif.test': 'Notifications are working.',
 

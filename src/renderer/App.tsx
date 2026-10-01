@@ -6,6 +6,7 @@ import { MyPrList } from './components/MyPrList'
 import { PrList } from './components/PrList'
 import { SettingsView } from './components/SettingsView'
 import { Tabs, type Tab } from './components/Tabs'
+import { UpdateBanner } from './components/UpdateBanner'
 import { I18nProvider } from './i18n'
 
 const api = window.prRadar
@@ -66,6 +67,7 @@ function Panel() {
         <SettingsView />
       ) : (
         <>
+          {state.update && <UpdateBanner update={state.update} />}
           <Tabs tab={tab} onChange={setTab} reviewCount={state.prs.length} mineCount={state.myPrs.length} />
           {tab === 'review' ? <PrList state={state} /> : <MyPrList state={state} />}
         </>

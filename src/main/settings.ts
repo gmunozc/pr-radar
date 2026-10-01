@@ -16,6 +16,7 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
     'notifyMyPrs',
     'quietHours',
     'digest',
+    'checkUpdates',
     'openAtLogin'
   ] as const) {
     if (typeof p[key] === 'boolean') out[key] = p[key]

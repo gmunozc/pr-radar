@@ -60,6 +60,13 @@ export function SettingsView() {
   const [testResult, setTestResult] = useState<NotifyResult | 'sending' | null>(null)
   const [version, setVersion] = useState('')
   const [copied, setCopied] = useState(false)
+  const [updateCheck, setUpdateCheck] = useState<'idle' | 'checking' | 'up_to_date' | 'available'>('idle')
+
+  const checkNow = async () => {
+    setUpdateCheck('checking')
+    await api.updates.check()
+    setUpdateCheck((await api.getState()).update ? 'available' : 'up_to_date')
+  }
 
   useEffect(() => {
     void api.appInfo().then((info) => setVersion(info.version))
@@ -280,6 +287,24 @@ export function SettingsView() {
 
       <section className="group">
         <div className="group-title">{t('settings.help')}</div>
+        <label className="setting">
+          <div className="setting-text">
+            <div className="setting-label">{t('settings.checkUpdates')}</div>
+            <div className="setting-hint">
+              {t('settings.checkUpdatesHint', { version })}
+              {updateCheck === 'up_to_date' ? ` · ${t('settings.upToDate')}` : ''}
+            </div>
+          </div>
+          <button className="btn" onClick={() => void checkNow()} disabled={updateCheck === 'checking'}>
+            {updateCheck === 'checking' ? '…' : t('settings.checkNow')}
+          </button>
+          <input
+            type="checkbox"
+            className="switch"
+            checked={settings.checkUpdates}
+            onChange={(e) => void update({ checkUpdates: e.target.checked })}
+          />
+        </label>
         <div className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.diagnostics')}</div>

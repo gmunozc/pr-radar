@@ -68,6 +68,7 @@ export function loggedOutState(authNotice: AuthNotice | null = null, locale: Loc
     snoozedCount: 0,
     quietUntil: null,
     snoozeTomorrowAt: 0,
+    update: null,
     authNotice,
     connection: 'ok',
     locale
@@ -88,6 +89,7 @@ export class Engine {
   private failures = 0
   private lastSuccessAt: number | null = null
   private wasQuiet = false
+  private updateInfo: AppState['update'] = null
 
   constructor(
     private readonly deps: EngineDeps,
@@ -234,6 +236,19 @@ export class Engine {
       this.wasQuiet = quiet
       this.publish(this.current)
     }
+  }
+
+  /** A newer release is available (or null once installed/skipped). */
+  setUpdate(update: AppState['update']): void {
+    this.updateInfo = update
+    this.publish(this.current)
+  }
+
+  /** Announces a new release once, unless notifications are off or it's quiet time. */
+  announceUpdate(version: string, releaseUrl: string): void {
+    const settings = this.deps.settings()
+    if (!settings.notifications || isQuiet(new Date(this.deps.now()), settings)) return
+    this.emit([{ kind: 'update_available', version, releaseUrl }])
   }
 
   /** Quiet hours, the digest or the notification settings changed. */
@@ -401,7 +416,8 @@ export class Engine {
       ...state,
       locale: this.deps.locale(),
       quietUntil: quietEnd ? quietEnd.getTime() : null,
-      snoozeTomorrowAt: nextWorkdayStart(now, settings).getTime()
+      snoozeTomorrowAt: nextWorkdayStart(now, settings).getTime(),
+      update: this.updateInfo
     }
     this.deps.publish(this.current)
   }

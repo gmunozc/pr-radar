@@ -26,6 +26,7 @@ const ICON_FILES: Record<TrayIcon, string> = isMac
 
 export interface TrayActions {
   refresh(): void
+  downloadUpdate?(): void
   logout(): void
   isLoggedIn(): boolean
   /** Extra items at the end of the context menu (development tools). */
@@ -56,6 +57,7 @@ export class AppTray {
   ) as Record<TrayIcon, Electron.NativeImage>
   private count = 0
   private status: TrayStatus = { kind: 'signed_out' }
+  private updateVersion: string | null = null
   private iconKind: TrayIcon = 'idle'
 
   constructor(
@@ -76,6 +78,7 @@ export class AppTray {
   update(state: AppState): void {
     const visual = trayVisual(state)
     this.count = visual.count ?? 0
+    this.updateVersion = state.update?.version ?? null
     this.status = visual.status
     if (visual.icon !== this.iconKind) {
       this.iconKind = visual.icon
@@ -109,8 +112,15 @@ export class AppTray {
           { type: 'separator' }
         ]
       : []
+    const updateItems: MenuItemConstructorOptions[] = this.updateVersion
+      ? [
+          { label: t('tray.downloadUpdate', { version: this.updateVersion }), click: () => this.actions.downloadUpdate?.() },
+          { type: 'separator' }
+        ]
+      : []
     return Menu.buildFromTemplate([
       ...statusItems,
+      ...updateItems,
       {
         label: this.count > 0 ? t('tray.openCount', { count: this.count }) : t('tray.open'),
         click: () => this.panel.show(this.tray.getBounds())

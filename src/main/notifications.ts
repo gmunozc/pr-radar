@@ -17,6 +17,7 @@ export type NotificationEvent =
   | MyPrEvent
   | { kind: 'my_prs_grouped'; count: number }
   | { kind: 'snooze_returned'; prs: PullRequest[] }
+  | { kind: 'update_available'; version: string; releaseUrl: string }
   | { kind: 'catch_up'; counts: CatchUp }
   | {
       kind: 'digest'
@@ -132,6 +133,13 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
             action: { kind: 'open_url', url: event.prs[0].url }
           }
         : { title: 'PR Radar', body: t('notif.snoozeReturnedMany', { count: event.prs.length }), action: openPanel }
+    case 'update_available':
+      return {
+        id: 'pr-radar-update',
+        title: t('notif.updateTitle', { version: event.version }),
+        body: t('notif.updateBody'),
+        action: { kind: 'open_url', url: event.releaseUrl }
+      }
     case 'catch_up':
       return { id: 'pr-radar-catch-up', title: t('notif.catchUpTitle'), body: catchUpParts(event.counts, t).join(' · '), action: openPanel }
     case 'digest': {

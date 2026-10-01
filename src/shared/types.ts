@@ -100,6 +100,8 @@ export interface AppState {
   quietUntil: number | null
   /** When "snooze until tomorrow" would bring a PR back (epoch ms). */
   snoozeTomorrowAt: number
+  /** A newer PR Radar release, unless the user skipped it. */
+  update: { version: string; releaseUrl: string; downloadUrl: string | null } | null
   /** Why the user is signed out (shown on the login screen), or null. */
   authNotice: AuthNotice | null
 }
@@ -125,6 +127,8 @@ export interface Settings {
   /** A summary notification on working days at `digestTime`. */
   digest: boolean
   digestTime: string
+  /** Look for new PR Radar releases on GitHub. */
+  checkUpdates: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -140,7 +144,8 @@ export const DEFAULT_SETTINGS: Settings = {
   workEnd: '19:00',
   workDays: [1, 2, 3, 4, 5],
   digest: true,
-  digestTime: '09:30'
+  digestTime: '09:30',
+  checkUpdates: true
 }
 
 export const MIN_POLL_INTERVAL_SEC = 15
@@ -193,6 +198,12 @@ export interface PrRadarApi {
   quit(): Promise<void>
   /** Sends a panel error to the main-process log. */
   reportError(message: string): void
+  updates: {
+    check(): Promise<void>
+    download(): Promise<void>
+    openNotes(): Promise<void>
+    skip(): Promise<void>
+  }
 }
 
 export const IPC = {
@@ -217,5 +228,9 @@ export const IPC = {
   copyDiagnostics: 'diagnostics:copy',
   openLogs: 'logs:open',
   rendererError: 'renderer:error',
+  updateCheck: 'update:check',
+  updateDownload: 'update:download',
+  updateNotes: 'update:notes',
+  updateSkip: 'update:skip',
   quit: 'app:quit'
 } as const
