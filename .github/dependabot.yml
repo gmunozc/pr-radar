@@ -7,6 +7,15 @@ updates:
     groups:
       dev-dependencies:
         patterns: ['*']
+    ignore:
+      # Node types follow the Node version inside Electron (24 in Electron 44).
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # electron-vite 5 supports Vite up to 7. Remove these once electron-vite 6.0.0 is stable.
+      - dependency-name: 'vite'
+        versions: ['>=8.0.0']
+      - dependency-name: '@vitejs/plugin-react'
+        versions: ['>=6.0.0']
   - package-ecosystem: github-actions
     directory: /
     schedule:
