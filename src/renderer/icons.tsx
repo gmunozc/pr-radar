@@ -1,3 +1,4 @@
+// Icons from GitHub Octicons (MIT License), see THIRD_PARTY_NOTICES.md.
 import type { SVGProps } from 'react'
 
 type IconProps = SVGProps<SVGSVGElement> & { size?: number }

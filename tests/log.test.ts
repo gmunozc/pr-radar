@@ -7,8 +7,8 @@ import { AppLogger, redact } from '../src/main/log'
 describe('redact', () => {
   it('removes GitHub tokens in every common shape', () => {
     const text = [
-      'token gho_16C7e42F292c6912E7710c838347Ae178B4a',
-      'refresh ghr_1B4a2e77838347a7E420ce178F2E7c6912E1692',
+      'token gho_FAKEaccessTOKENforTESTSonly0000000',
+      'refresh ghr_FAKErefreshTOKENforTESTSonly00000000',
       'app ghu_abcdefghijklmnopqrstuvwxyz',
       'pat github_pat_11ABCDEFG0123456789_abcdef',
       'Authorization: Bearer abc.def-123',
@@ -16,14 +16,14 @@ describe('redact', () => {
       '{"accessToken":"anything-here","refreshToken":"x"}'
     ].join('\n')
     const out = redact(text)
-    expect(out).not.toMatch(/16C7e42F|1B4a2e77|abcdefghijk|11ABCDEFG|abc\.def|secretvalue|anything-here/)
+    expect(out).not.toMatch(/FAKEaccess|FAKErefresh|abcdefghijk|11ABCDEFG|abc\.def|secretvalue|anything-here/)
     expect(out).toContain('gho_***')
     expect(out).toContain('Bearer ***')
     expect(out).toContain('"accessToken":"***"')
   })
 
   it('leaves normal text alone', () => {
-    expect(redact('poll ok: 16 PRs in orion/hub#12')).toBe('poll ok: 16 PRs in orion/hub#12')
+    expect(redact('poll ok: 16 PRs in acme/web#12')).toBe('poll ok: 16 PRs in acme/web#12')
   })
 })
 

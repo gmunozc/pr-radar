@@ -20,9 +20,9 @@ const input = (over: Partial<DiagnosticsInput> = {}): DiagnosticsInput => ({
     method: 'oauth_app',
     clientId: 'Ov23liSECRETISH',
     login: 'octo',
-    accessToken: 'gho_16C7e42F292c6912E7710c838347Ae178B4a',
+    accessToken: 'gho_FAKEaccessTOKENforTESTSonly0000000',
     expiresAt: Date.UTC(2026, 9, 2, 4, 41),
-    refreshToken: 'ghr_1B4a2e77838347a7E420ce178F2E7c6912E169246c34',
+    refreshToken: 'ghr_FAKErefreshTOKENforTESTSonly000000000',
     refreshTokenExpiresAt: Date.UTC(2027, 3, 1),
     updatedAt: Date.UTC(2026, 9, 1, 20, 41)
   },
@@ -49,7 +49,7 @@ describe('buildDiagnostics', () => {
 
   it('never contains tokens or the client ID', () => {
     const text = buildDiagnostics(input())
-    expect(text).not.toMatch(/16C7e42F|1B4a2e77|leakedtoken|SECRETISH/)
+    expect(text).not.toMatch(/FAKEaccess|FAKErefresh|leakedtoken|SECRETISH/)
     expect(text).toContain('token=gho_…')
   })
 

@@ -1,0 +1,29 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting! Please don't include tokens or private repository names.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: In PR Radar, Settings → Help → **Copy diagnostics**, then paste it here. It contains no tokens.
+      render: text
+    validations:
+      required: true

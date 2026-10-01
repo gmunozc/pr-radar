@@ -10,6 +10,9 @@ on:
 
 permissions:
   contents: write
+  # Build provenance attestation (public repository only).
+  id-token: write
+  attestations: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -67,6 +70,12 @@ jobs:
       - name: Checksums
         working-directory: dist
         run: shasum -a 256 *.dmg | tee SHA256SUMS.txt
+
+      - name: Build provenance attestation
+        if: startsWith(github.ref, 'refs/tags/') && !github.event.repository.private
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*.dmg
 
       - name: Create draft release
         if: startsWith(github.ref, 'refs/tags/')
