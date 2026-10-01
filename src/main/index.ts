@@ -1,9 +1,9 @@
 import { app, powerMonitor } from 'electron'
 import { join } from 'node:path'
-import { DEFAULT_SETTINGS, IPC, type AppState, type AuthStatus, type Settings } from '../shared/types'
+import { DEFAULT_SETTINGS, IPC, type AppState, type AuthStatus, type PullRequest, type Settings } from '../shared/types'
 import { clearToken, DeviceLogin, loadToken } from './auth'
-import { diffPrs, planNotifications } from './diff'
-import { fetchReviewRequests, GithubError } from './github'
+import { applyDismissals, diffPrs, planNotifications } from './diff'
+import { fetchPullRequests, GithubError } from './github'
 import { registerIpc } from './ipc'
 import { notify, notifyLoggedOut } from './notifier'
 import { Poller } from './poller'
@@ -14,6 +14,7 @@ import { Panel } from './window'
 interface SeenState {
   login: string
   seenIds: string[]
+  dismissedIds?: string[]
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -34,6 +35,9 @@ function main(): void {
 
   let settings: Settings = { ...DEFAULT_SETTINGS, ...settingsFile.read() }
   let token = loadToken()
+  let seen = seenFile.read()
+  // Last full result from GitHub, including dismissed PRs.
+  let allPrs: PullRequest[] = []
   // When the search filter changes, the next result is a new baseline rather than "new" PRs.
   let resetBaseline = false
 
@@ -41,9 +45,11 @@ function main(): void {
     status: token ? 'loading' : 'logged_out',
     viewer: null,
     prs: [],
+    myPrs: [],
     lastUpdated: null,
     error: null,
-    warnings: []
+    warnings: [],
+    dismissedCount: 0
   }
 
   const panel = new Panel()
@@ -63,16 +69,32 @@ function main(): void {
     status: 'logged_out',
     viewer: null,
     prs: [],
+    myPrs: [],
     lastUpdated: null,
     error: null,
-    warnings: []
+    warnings: [],
+    dismissedCount: 0
   })
+
+  const saveSeen = (next: SeenState) => {
+    seen = next
+    seenFile.write(next)
+  }
+
+  const setDismissed = (ids: string[]) => {
+    if (!seen) return
+    const { visible, dismissedIds } = applyDismissals(allPrs, ids)
+    saveSeen({ ...seen, dismissedIds })
+    publish({ ...state, prs: visible, dismissedCount: dismissedIds.length })
+  }
 
   const logout = () => {
     deviceLogin.cancel()
     poller.stop()
     clearToken()
     seenFile.remove()
+    seen = null
+    allPrs = []
     token = null
     publish(loggedOutState())
   }
@@ -80,20 +102,23 @@ function main(): void {
   const pollOnce = async (): Promise<{ retryAt?: number } | void> => {
     if (!token) return
     try {
-      const result = await fetchReviewRequests(token, settings)
-      const stored = seenFile.read()
-      const prevSeen = stored && stored.login === result.viewer.login ? stored.seenIds : null
-      const diff = diffPrs(resetBaseline ? result.prs.map((p) => p.id) : prevSeen, result.prs)
+      const result = await fetchPullRequests(token, settings)
+      const stored = seen?.login === result.viewer.login ? seen : null
+      const diff = diffPrs(resetBaseline ? result.prs.map((p) => p.id) : (stored?.seenIds ?? null), result.prs)
       resetBaseline = false
-      seenFile.write({ login: result.viewer.login, seenIds: diff.seenIds })
-      if (settings.notifications) notify(planNotifications(diff, result.prs.length), showPanel)
+      allPrs = result.prs
+      const { visible, dismissedIds } = applyDismissals(result.prs, stored?.dismissedIds ?? [])
+      saveSeen({ login: result.viewer.login, seenIds: diff.seenIds, dismissedIds })
+      if (settings.notifications) notify(planNotifications(diff, visible.length), showPanel)
       publish({
         status: 'ready',
         viewer: result.viewer,
-        prs: result.prs,
+        prs: visible,
+        myPrs: result.myPrs,
         lastUpdated: new Date().toISOString(),
         error: null,
-        warnings: result.warnings
+        warnings: result.warnings,
+        dismissedCount: dismissedIds.length
       })
     } catch (err) {
       if (err instanceof GithubError && err.kind === 'unauthorized') {
@@ -126,6 +151,8 @@ function main(): void {
   registerIpc({
     getState: () => state,
     refresh: () => poller.runNow(),
+    dismiss: (prId) => setDismissed([...(seen?.dismissedIds ?? []), prId]),
+    restoreDismissed: () => setDismissed([]),
     hasClientId: () => clientId() !== '',
     accessUrl: () =>
       clientId()

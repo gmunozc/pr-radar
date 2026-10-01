@@ -12,6 +12,8 @@ const api: PrRadarApi = {
   getState: () => ipcRenderer.invoke(IPC.getState),
   onState: (cb) => subscribe<AppState>(IPC.state, cb),
   refresh: () => ipcRenderer.invoke(IPC.refresh),
+  dismiss: (prId) => ipcRenderer.invoke(IPC.dismiss, prId),
+  restoreDismissed: () => ipcRenderer.invoke(IPC.restoreDismissed),
   auth: {
     start: () => ipcRenderer.invoke(IPC.authStart),
     cancel: () => ipcRenderer.invoke(IPC.authCancel),
@@ -26,6 +28,7 @@ const api: PrRadarApi = {
   },
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
   testNotification: () => ipcRenderer.invoke(IPC.testNotification),
+  openNotificationSettings: () => ipcRenderer.invoke(IPC.openNotificationSettings),
   quit: () => ipcRenderer.invoke(IPC.quit)
 }
 

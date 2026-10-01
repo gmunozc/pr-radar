@@ -23,6 +23,21 @@ export function diffPrs(prevSeenIds: string[] | null, current: PullRequest[]): D
   return { newPrs: current.filter((pr) => !prev.has(pr.id)), firstRun: false, seenIds }
 }
 
+/**
+ * Hides dismissed PRs. Dismissals of PRs that left the list are forgotten, so a
+ * review that is requested again shows up again.
+ */
+export function applyDismissals(
+  prs: PullRequest[],
+  dismissedIds: readonly string[]
+): { visible: PullRequest[]; dismissedIds: string[] } {
+  const dismissed = new Set(dismissedIds)
+  return {
+    visible: prs.filter((pr) => !dismissed.has(pr.id)),
+    dismissedIds: prs.filter((pr) => dismissed.has(pr.id)).map((pr) => pr.id)
+  }
+}
+
 export const MAX_INDIVIDUAL_NOTIFICATIONS = 3
 
 export type NotificationPlan =

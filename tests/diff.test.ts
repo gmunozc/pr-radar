@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffPrs, planNotifications } from '../src/main/diff'
+import { applyDismissals, diffPrs, planNotifications } from '../src/main/diff'
 import type { PullRequest } from '../src/shared/types'
 
 const pr = (id: string): PullRequest => ({
@@ -54,5 +54,20 @@ describe('diffPrs', () => {
     expect(planNotifications(d, 4)).toMatchObject({ kind: 'grouped' })
     const three = diffPrs([], [pr('a'), pr('b'), pr('c')])
     expect(planNotifications(three, 3)).toMatchObject({ kind: 'individual' })
+  })
+})
+
+describe('applyDismissals', () => {
+  it('hides dismissed PRs and keeps their ids', () => {
+    const r = applyDismissals([pr('a'), pr('b'), pr('c')], ['b'])
+    expect(r.visible.map((p) => p.id)).toEqual(['a', 'c'])
+    expect(r.dismissedIds).toEqual(['b'])
+  })
+
+  it('forgets dismissals of PRs that left the list so a re-request shows again', () => {
+    const afterReview = applyDismissals([pr('a')], ['b'])
+    expect(afterReview.dismissedIds).toEqual([])
+    const reRequested = applyDismissals([pr('a'), pr('b')], afterReview.dismissedIds)
+    expect(reRequested.visible.map((p) => p.id)).toEqual(['a', 'b'])
   })
 })

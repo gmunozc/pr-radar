@@ -1,6 +1,6 @@
 export type ReviewSource = { kind: 'direct' } | { kind: 'team'; slug: string }
 
-export interface PullRequest {
+interface PullRequestBase {
   id: string
   number: number
   title: string
@@ -12,7 +12,24 @@ export interface PullRequest {
   updatedAt: string
   additions: number
   deletions: number
+}
+
+/** A PR someone asked you to review. */
+export interface PullRequest extends PullRequestBase {
   source: ReviewSource
+}
+
+export type Reviewer = { kind: 'user'; login: string; avatarUrl: string } | { kind: 'team'; slug: string }
+
+export type ReviewState = 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISMISSED' | 'PENDING'
+
+export type MyReviewStatus = 'approved' | 'changes_requested' | 'waiting' | 'no_reviewers'
+
+/** A PR you opened, with where its review stands. */
+export interface MyPullRequest extends PullRequestBase {
+  status: MyReviewStatus
+  pendingReviewers: Reviewer[]
+  reviews: Array<{ login: string; avatarUrl: string; state: ReviewState }>
 }
 
 export interface Viewer {
@@ -27,11 +44,16 @@ export type GithubErrorKind = 'unauthorized' | 'rate_limited' | 'network' | 'unk
 export interface AppState {
   status: AppStatus
   viewer: Viewer | null
+  /** Review requests for you, newest first. */
   prs: PullRequest[]
+  /** Your own open PRs, newest first. */
+  myPrs: MyPullRequest[]
   lastUpdated: string | null
   error: { kind: GithubErrorKind; message: string } | null
   /** Non-fatal problems, e.g. SAML SSO hiding some organizations. */
   warnings: string[]
+  /** PRs hidden by the user; not included in `prs`. */
+  dismissedCount: number
 }
 
 export interface Settings {
@@ -52,6 +74,8 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export const MIN_POLL_INTERVAL_SEC = 15
 
+export type NotifyResult = { ok: true } | { ok: false; error: string }
+
 export type AuthStatus =
   | { phase: 'idle' }
   | { phase: 'waiting'; userCode: string; verificationUri: string; expiresAt: number }
@@ -63,6 +87,8 @@ export interface PrRadarApi {
   getState(): Promise<AppState>
   onState(cb: (state: AppState) => void): () => void
   refresh(): Promise<void>
+  dismiss(prId: string): Promise<void>
+  restoreDismissed(): Promise<void>
   auth: {
     start(): Promise<void>
     cancel(): Promise<void>
@@ -77,7 +103,8 @@ export interface PrRadarApi {
     set(patch: Partial<Settings> & { openAtLogin?: boolean }): Promise<Settings & { openAtLogin: boolean }>
   }
   openExternal(url: string): Promise<void>
-  testNotification(): Promise<void>
+  testNotification(): Promise<NotifyResult>
+  openNotificationSettings(): Promise<void>
   quit(): Promise<void>
 }
 
@@ -85,6 +112,8 @@ export const IPC = {
   getState: 'state:get',
   state: 'state:update',
   refresh: 'state:refresh',
+  dismiss: 'prs:dismiss',
+  restoreDismissed: 'prs:restore',
   authStart: 'auth:start',
   authCancel: 'auth:cancel',
   authLogout: 'auth:logout',
@@ -95,5 +124,6 @@ export const IPC = {
   settingsSet: 'settings:set',
   openExternal: 'shell:open-external',
   testNotification: 'notify:test',
+  openNotificationSettings: 'notify:open-settings',
   quit: 'app:quit'
 } as const

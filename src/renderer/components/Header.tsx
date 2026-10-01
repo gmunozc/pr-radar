@@ -1,10 +1,12 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import type { AppState } from '../../shared/types'
+import type { Tab } from './Tabs'
 import { AlertIcon, ArrowLeftIcon, GearIcon, SyncIcon } from '../icons'
 import { timeAgo } from '../time'
 
 interface Props {
   state: AppState
+  tab: Tab
   refreshing: boolean
   inSettings: boolean
   onRefresh(): void
@@ -22,9 +24,20 @@ function useNow(intervalMs: number): number {
   return now
 }
 
-export function Header({ state, refreshing, inSettings, onRefresh, onToggleSettings }: Props) {
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+function listTitle(state: AppState, tab: Tab): string {
+  if (state.status === 'loading' && !state.lastUpdated) return 'Buscando PRs…'
+  if (tab === 'review') {
+    return state.prs.length === 0 ? 'Nada pendiente' : plural(state.prs.length, 'review pendiente', 'reviews pendientes')
+  }
+  const waiting = state.myPrs.filter((pr) => pr.status === 'waiting').length
+  if (waiting > 0) return `${waiting} esperando review`
+  return state.myPrs.length === 0 ? 'Sin PRs abiertos' : plural(state.myPrs.length, 'PR abierto', 'PRs abiertos')
+}
+
+export function Header({ state, tab, refreshing, inSettings, onRefresh, onToggleSettings }: Props) {
   const now = useNow(5_000)
-  const count = state.prs.length
 
   let subtitle = 'Cargando…'
   if (state.lastUpdated) subtitle = `Actualizado ${timeAgo(state.lastUpdated, now)}`
@@ -43,13 +56,7 @@ export function Header({ state, refreshing, inSettings, onRefresh, onToggleSetti
         )}
         <div className="header-text">
           <div className="header-title">
-            {inSettings
-              ? 'Ajustes'
-              : state.status === 'loading' && !state.lastUpdated
-                ? 'Buscando reviews…'
-                : count === 0
-                  ? 'Nada pendiente'
-                  : `${count} ${count === 1 ? 'review pendiente' : 'reviews pendientes'}`}
+            {inSettings ? 'Ajustes' : listTitle(state, tab)}
           </div>
           <div className="header-sub">
             {state.viewer ? `@${state.viewer.login} · ` : ''}

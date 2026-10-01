@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import type { AppState, AuthStatus } from '../shared/types'
 import { Header } from './components/Header'
 import { LoginView } from './components/LoginView'
+import { MyPrList } from './components/MyPrList'
 import { PrList } from './components/PrList'
 import { SettingsView } from './components/SettingsView'
+import { Tabs, type Tab } from './components/Tabs'
 
 const api = window.prRadar
 
@@ -11,6 +13,7 @@ export function App() {
   const [state, setState] = useState<AppState | null>(null)
   const [auth, setAuth] = useState<AuthStatus>({ phase: 'idle' })
   const [view, setView] = useState<'list' | 'settings'>('list')
+  const [tab, setTab] = useState<Tab>('review')
   const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
@@ -27,7 +30,10 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (state?.status === 'logged_out') setView('list')
+    if (state?.status === 'logged_out') {
+      setView('list')
+      setTab('review')
+    }
   }, [state?.status])
 
   if (!state) return <div className="app" />
@@ -49,12 +55,20 @@ export function App() {
     <div className="app">
       <Header
         state={state}
+        tab={tab}
         refreshing={refreshing || state.status === 'loading'}
         inSettings={view === 'settings'}
         onRefresh={refresh}
         onToggleSettings={() => setView(view === 'settings' ? 'list' : 'settings')}
       />
-      {view === 'settings' ? <SettingsView /> : <PrList state={state} />}
+      {view === 'settings' ? (
+        <SettingsView />
+      ) : (
+        <>
+          <Tabs tab={tab} onChange={setTab} reviewCount={state.prs.length} mineCount={state.myPrs.length} />
+          {tab === 'review' ? <PrList state={state} /> : <MyPrList state={state} />}
+        </>
+      )}
     </div>
   )
 }

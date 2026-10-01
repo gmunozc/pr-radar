@@ -8,6 +8,8 @@ type SettingsPatch = Partial<Settings> & { openAtLogin?: boolean }
 export interface IpcContext {
   getState(): AppState
   refresh(): Promise<void>
+  dismiss(prId: string): void
+  restoreDismissed(): void
   hasClientId(): boolean
   accessUrl(): string
   startLogin(): Promise<void>
@@ -44,6 +46,10 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
 export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.getState, () => ctx.getState())
   ipcMain.handle(IPC.refresh, () => ctx.refresh())
+  ipcMain.handle(IPC.dismiss, (_e, prId: unknown) => {
+    if (typeof prId === 'string') ctx.dismiss(prId)
+  })
+  ipcMain.handle(IPC.restoreDismissed, () => ctx.restoreDismissed())
   ipcMain.handle(IPC.authHasClientId, () => ctx.hasClientId())
   ipcMain.handle(IPC.authAccessUrl, () => ctx.accessUrl())
   // Login runs in the background; progress is pushed through IPC.authStatus.
@@ -58,5 +64,11 @@ export function registerIpc(ctx: IpcContext): void {
     if (typeof url === 'string' && isAllowedExternalUrl(url)) await shell.openExternal(url)
   })
   ipcMain.handle(IPC.testNotification, () => testNotification(ctx.showPanel))
+  ipcMain.handle(IPC.openNotificationSettings, () => {
+    if (process.platform === 'darwin') {
+      return shell.openExternal('x-apple.systempreferences:com.apple.Notifications-Settings.extension')
+    }
+    if (process.platform === 'win32') return shell.openExternal('ms-settings:notifications')
+  })
   ipcMain.handle(IPC.quit, () => app.quit())
 }

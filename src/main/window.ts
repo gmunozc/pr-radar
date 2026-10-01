@@ -8,6 +8,7 @@ const GAP = 6
 export class Panel {
   readonly win: BrowserWindow
   private lastHiddenAt = 0
+  private loadFailures = 0
 
   constructor() {
     const isMac = process.platform === 'darwin'
@@ -47,6 +48,29 @@ export class Panel {
     this.win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     this.win.webContents.on('will-navigate', (event) => event.preventDefault())
 
+    // The panel lives for days; recover if it fails to load, loads blank, or its renderer dies.
+    this.win.webContents.on('did-fail-load', (_e, code, _desc, _url, isMainFrame) => {
+      if (isMainFrame && code !== -3 /* ERR_ABORTED */) this.retryLoad()
+    })
+    this.win.webContents.on('did-finish-load', () => {
+      this.win.webContents
+        .executeJavaScript('Boolean(document.getElementById("root"))')
+        .then((ok) => (ok ? (this.loadFailures = 0) : this.retryLoad()))
+        .catch(() => this.retryLoad())
+    })
+    this.win.webContents.on('render-process-gone', () => this.retryLoad())
+
+    this.load()
+  }
+
+  private retryLoad(): void {
+    if (this.loadFailures >= 5) return
+    this.loadFailures++
+    setTimeout(() => this.load(), 1000 * this.loadFailures)
+  }
+
+  private load(): void {
+    if (this.win.isDestroyed()) return
     if (process.env.ELECTRON_RENDERER_URL) {
       void this.win.loadURL(process.env.ELECTRON_RENDERER_URL)
     } else {

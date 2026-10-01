@@ -4,7 +4,9 @@ PR Radar es una app de barra de menú para macOS (también funciona en Windows y
 
 - Icono en la barra de menú con el número de reviews pendientes. No aparece en el Dock.
 - Notificación nativa cuando te asignan una review, a ti o a uno de tus equipos. Al hacer clic se abre el PR.
-- Panel con los PRs, los más recientes primero: repo, autor, tamaño del diff, Draft y si la review es directa o de equipo.
+- Panel con dos pestañas, con los PRs más recientes primero:
+  - **Por revisar:** los PRs donde te pidieron review, con repo, autor, tamaño del diff, Draft y si la review es directa o de equipo. Cada uno se puede **descartar** con la ✕; vuelve a aparecer si te piden review de nuevo.
+  - **Mis PRs:** tus PRs abiertos con su estado (esperando review, aprobado, cambios solicitados o sin reviewers) y quién aprobó, quién pidió cambios y quién falta por revisar.
 - Login con GitHub mediante Device Flow. El token se guarda cifrado en el Llavero de macOS.
 
 ## 1. Crea la OAuth App (una sola vez)

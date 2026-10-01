@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MIN_POLL_INTERVAL_SEC, type Settings } from '../../shared/types'
+import { MIN_POLL_INTERVAL_SEC, type NotifyResult, type Settings } from '../../shared/types'
 import { openOrgAccess } from './PrList'
 
 const api = window.prRadar
@@ -31,6 +31,7 @@ function Toggle({
 export function SettingsView() {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [interval, setIntervalValue] = useState('')
+  const [testResult, setTestResult] = useState<NotifyResult | 'sending' | null>(null)
 
   useEffect(() => {
     void api.settings.get().then((s) => {
@@ -54,6 +55,11 @@ export function SettingsView() {
   }
 
   const isLinux = api.platform === 'linux'
+
+  const runTest = async () => {
+    setTestResult('sending')
+    setTestResult(await api.testNotification())
+  }
 
   return (
     <main className="settings">
@@ -102,10 +108,28 @@ export function SettingsView() {
         <div className="setting">
           <div className="setting-text">
             <div className="setting-label">Probar notificación</div>
-            <div className="setting-hint">En macOS, la primera vez pedirá permiso.</div>
+            {testResult === null || testResult === 'sending' ? (
+              <div className="setting-hint">En macOS, la primera vez pedirá permiso.</div>
+            ) : testResult.ok ? (
+              <div className="setting-hint">
+                Enviada al Centro de notificaciones. Si no apareció el aviso, desactiva Concentración o activa
+                los avisos de PR Radar en{' '}
+                <button className="link small" onClick={() => void api.openNotificationSettings()}>
+                  Ajustes de notificaciones
+                </button>
+                .
+              </div>
+            ) : (
+              <div className="setting-hint setting-error">
+                No se pudo mostrar: {testResult.error}{' '}
+                <button className="link small" onClick={() => void api.openNotificationSettings()}>
+                  Abrir ajustes de notificaciones
+                </button>
+              </div>
+            )}
           </div>
-          <button className="btn" onClick={() => void api.testNotification()}>
-            Probar
+          <button className="btn" onClick={() => void runTest()} disabled={testResult === 'sending'}>
+            {testResult === 'sending' ? 'Enviando…' : 'Probar'}
           </button>
         </div>
       </section>

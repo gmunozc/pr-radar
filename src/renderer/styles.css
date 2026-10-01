@@ -20,6 +20,7 @@
   --error-fg: #a40e26;
   --warn-bg: rgba(191, 135, 0, 0.13);
   --warn-fg: #7d4e00;
+  --surface-strong: rgba(255, 255, 255, 0.85);
   --radius: 10px;
   color-scheme: light dark;
 }
@@ -46,6 +47,7 @@
     --error-fg: #ff8a80;
     --warn-bg: rgba(210, 153, 34, 0.16);
     --warn-fg: #e3b341;
+    --surface-strong: rgba(255, 255, 255, 0.12);
   }
 }
 
@@ -159,6 +161,60 @@ button {
   border: 1px solid var(--border);
 }
 
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin: 8px 10px 0;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--surface-hover);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.tab:hover:not(.tab-active) {
+  color: var(--text);
+}
+
+.tab-active {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+html[data-platform='darwin'] .tab-active {
+  background: var(--surface-strong);
+}
+
+.tab-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--border);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tab-active .tab-count {
+  background: var(--direct-bg);
+  color: var(--direct-fg);
+}
+
 /* Banners */
 .banner {
   display: flex;
@@ -233,6 +289,7 @@ button {
 }
 
 .pr {
+  position: relative;
   display: flex;
   gap: 10px;
   width: 100%;
@@ -325,6 +382,22 @@ button {
   color: var(--team-fg);
 }
 
+.chip-approved {
+  background: rgba(26, 127, 55, 0.14);
+  color: var(--green);
+}
+
+.chip-changes {
+  background: var(--error-bg);
+  color: var(--error-fg);
+}
+
+.chip-waiting {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.chip-none,
 .chip-draft {
   background: var(--draft-bg);
   color: var(--draft-fg);
@@ -343,15 +416,124 @@ button {
   color: var(--red);
 }
 
+.pr-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text-muted);
+  opacity: 0;
+}
+
+/* The dismiss button takes the place of the age while hovering. */
+.pr:hover .pr-dismiss,
+.pr:focus-visible .pr-dismiss,
+.pr-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.pr:hover .pr-age,
+.pr:focus-visible .pr-age {
+  visibility: hidden;
+}
+
+.pr-dismiss:hover {
+  background: var(--error-bg);
+  color: var(--error-fg);
+}
+
+/* Status icon in place of the avatar on "Mis PRs" */
+.status-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-waiting {
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+
+.status-approved {
+  background: rgba(26, 127, 55, 0.14);
+  color: var(--green);
+}
+
+.status-changes {
+  background: var(--error-bg);
+  color: var(--error-fg);
+}
+
+.status-none {
+  background: var(--draft-bg);
+  color: var(--draft-fg);
+}
+
+.reviewers {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.reviewer {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface-hover);
+}
+
+.ring-approved {
+  box-shadow: 0 0 0 1.5px var(--green);
+}
+
+.ring-changes {
+  box-shadow: 0 0 0 1.5px var(--red);
+}
+
+.ring-waiting {
+  box-shadow: 0 0 0 1.5px var(--warn-fg);
+  opacity: 0.8;
+}
+
+.reviewer-team,
+.reviewer-more {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.empty-icon-muted {
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+
 .pr-author {
   color: var(--text-faint);
   margin-left: auto;
 }
 
 .footer {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 14px;
   padding: 8px 14px 10px;
   border-top: 1px solid var(--border);
-  text-align: center;
+}
+
+.dismissed {
+  font-size: 12px;
+  color: var(--text-faint);
 }
 
 /* Controls */
@@ -601,6 +783,10 @@ code {
   font-size: 11.5px;
   color: var(--text-muted);
   margin-top: 1px;
+}
+
+.setting-error {
+  color: var(--error-fg);
 }
 
 .switch {
