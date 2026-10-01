@@ -47,7 +47,7 @@ const defaultSleep: SleepFn = (ms, signal) =>
       'abort',
       () => {
         clearTimeout(timer)
-        reject(new DeviceFlowError('cancelled', 'Inicio de sesión cancelado'))
+        reject(new DeviceFlowError('cancelled', 'Sign-in cancelled'))
       },
       { once: true }
     )
@@ -63,12 +63,12 @@ async function postForm(fetchFn: FetchFn, url: string, params: Record<string, st
       signal
     })
   } catch (err) {
-    if (signal?.aborted) throw new DeviceFlowError('cancelled', 'Inicio de sesión cancelado')
-    throw new DeviceFlowError('network', `No se pudo contactar con GitHub (${(err as Error).message})`)
+    if (signal?.aborted) throw new DeviceFlowError('cancelled', 'Sign-in cancelled')
+    throw new DeviceFlowError('network', `Could not reach GitHub (${(err as Error).message})`)
   }
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>
   if (!res.ok && !body.error) {
-    throw new DeviceFlowError('http', `GitHub respondió ${res.status}`)
+    throw new DeviceFlowError('http', `GitHub answered ${res.status}`)
   }
   return body
 }
@@ -77,11 +77,11 @@ export async function requestDeviceCode(clientId: string, fetchFn: FetchFn = fet
   const body = await postForm(fetchFn, DEVICE_CODE_URL, { client_id: clientId, scope: SCOPES })
   if (body.error) {
     if (body.error === 'device_flow_disabled') {
-      throw new DeviceFlowError('device_flow_disabled', 'La OAuth App no tiene activado "Enable Device Flow".')
+      throw new DeviceFlowError('device_flow_disabled', 'The OAuth App does not have "Enable Device Flow" turned on')
     }
     // GitHub answers 404 "Not Found" for client IDs that don't exist.
     if (body.error === 'Not Found' || body.error === 'incorrect_client_credentials') {
-      throw new DeviceFlowError('invalid_client', 'Client ID no válido: no existe ninguna OAuth App con ese ID.')
+      throw new DeviceFlowError('invalid_client', 'No OAuth App exists with that client ID')
     }
     throw new DeviceFlowError(String(body.error), String(body.error_description ?? body.error))
   }
@@ -141,17 +141,17 @@ export async function pollForToken(
         intervalSec = Number(body.interval) || intervalSec + 5
         continue
       case 'expired_token':
-        throw new DeviceFlowError('expired_token', 'El código expiró. Vuelve a intentarlo.')
+        throw new DeviceFlowError('expired_token', 'The device code expired')
       case 'access_denied':
-        throw new DeviceFlowError('access_denied', 'Autorización denegada en GitHub.')
+        throw new DeviceFlowError('access_denied', 'Authorization denied on GitHub')
       default:
         throw new DeviceFlowError(
           String(body.error ?? 'unknown'),
-          String(body.error_description ?? body.error ?? 'Error desconocido de GitHub')
+          String(body.error_description ?? body.error ?? 'Unknown GitHub error')
         )
     }
   }
-  throw new DeviceFlowError('expired_token', 'El código expiró. Vuelve a intentarlo.')
+  throw new DeviceFlowError('expired_token', 'The device code expired')
 }
 
 /**

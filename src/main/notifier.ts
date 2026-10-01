@@ -1,5 +1,6 @@
 import { Notification, shell } from 'electron'
 import type { NotifyResult } from '../shared/types'
+import { t } from './i18n'
 import { logger } from './log'
 import { renderNotification, type NotificationEvent, type RenderedNotification } from './notifications'
 
@@ -12,7 +13,7 @@ const CONFIRM_TIMEOUT_MS = 4000
 /** Shows a native notification; posting again with the same id replaces the previous one. */
 export function deliver(n: RenderedNotification, openPanel: () => void): Promise<NotifyResult> {
   if (!Notification.isSupported()) {
-    return Promise.resolve({ ok: false, error: 'Este sistema no soporta notificaciones.' })
+    return Promise.resolve({ ok: false, error: 'unsupported' })
   }
   const notification = new Notification({
     title: n.title,
@@ -46,9 +47,9 @@ export function deliver(n: RenderedNotification, openPanel: () => void): Promise
 }
 
 export function deliverEvents(events: NotificationEvent[], openPanel: () => void): void {
-  for (const event of events) void deliver(renderNotification(event), openPanel)
+  for (const event of events) void deliver(renderNotification(event, t), openPanel)
 }
 
 export function testNotification(openPanel: () => void): Promise<NotifyResult> {
-  return deliver(renderNotification({ kind: 'test' }), openPanel)
+  return deliver(renderNotification({ kind: 'test' }, t), openPanel)
 }

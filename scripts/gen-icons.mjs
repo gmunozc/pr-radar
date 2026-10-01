@@ -13,11 +13,21 @@ const PR_PATH =
 // macOS template image: pure black + alpha; the system tints it for light/dark menu bars.
 const trayTemplate = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#000" d="${PR_PATH}"/></svg>`
 
+// Offline / rate limited: the same glyph, faded (template images use alpha).
+const trayOfflineTemplate = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#000" fill-opacity="0.38" d="${PR_PATH}"/></svg>`
+
+// Session expired: the glyph shrunk towards the bottom-left, with a solid badge in the freed corner.
+const trayAlertTemplate = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <g transform="translate(0 3.4) scale(0.79)"><path fill="#000" d="${PR_PATH}"/></g>
+  <circle cx="13.1" cy="2.9" r="2.75" fill="#000"/>
+</svg>`
+
 // Windows/Linux: a filled badge readable on both light and dark taskbars.
-const trayColor = (dot) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect x="1" y="1" width="30" height="30" rx="8" fill="#2f81f7"/>
+const trayColor = (dot, { bg = '#2f81f7', dotColor = '#f85149', bang = false } = {}) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect x="1" y="1" width="30" height="30" rx="8" fill="${bg}"/>
   <g transform="translate(6 6) scale(1.25)"><path fill="#fff" d="${PR_PATH}"/></g>
-  ${dot ? '<circle cx="25" cy="7" r="6" fill="#f85149" stroke="#fff" stroke-width="2"/>' : ''}
+  ${dot ? `<circle cx="25" cy="7" r="6" fill="${dotColor}" stroke="#fff" stroke-width="2"/>` : ''}
+  ${bang ? '<rect x="24" y="3.6" width="2" height="4.4" rx="1" fill="#fff"/><circle cx="25" cy="9.8" r="1.1" fill="#fff"/>' : ''}
 </svg>`
 
 const appIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
@@ -44,6 +54,12 @@ function render(svg, width, out) {
 console.log('Generating icons:')
 render(trayTemplate, 16, 'resources/trayTemplate.png')
 render(trayTemplate, 32, 'resources/trayTemplate@2x.png')
+render(trayOfflineTemplate, 16, 'resources/trayOfflineTemplate.png')
+render(trayOfflineTemplate, 32, 'resources/trayOfflineTemplate@2x.png')
+render(trayAlertTemplate, 16, 'resources/trayAlertTemplate.png')
+render(trayAlertTemplate, 32, 'resources/trayAlertTemplate@2x.png')
 render(trayColor(false), 32, 'resources/tray.png')
 render(trayColor(true), 32, 'resources/trayActive.png')
+render(trayColor(false, { bg: '#6e7781' }), 32, 'resources/trayOffline.png')
+render(trayColor(true, { dotColor: '#d29922', bang: true }), 32, 'resources/trayAlert.png')
 render(appIcon, 1024, 'build/icon.png')

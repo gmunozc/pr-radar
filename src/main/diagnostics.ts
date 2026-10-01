@@ -41,8 +41,8 @@ export function buildDiagnostics(d: DiagnosticsInput): string {
       : 'Session none',
     `State ${state.status} reviews=${state.prs.length} mine=${state.myPrs.length} dismissed=${state.dismissedCount} ` +
       `lastUpdated=${state.lastUpdated ?? 'never'} failures=${d.consecutiveFailures} notice=${state.authNotice ?? 'none'}`,
-    `Error ${state.error ? `${state.error.kind}: ${state.error.message}` : 'none'}`,
-    `Warnings ${state.warnings.length ? state.warnings.join(' | ') : 'none'}`,
+    `Error ${state.error ? `${state.error.code}: ${state.error.detail ?? ''}` : 'none'} connection=${state.connection} locale=${state.locale}`,
+    `Warnings ${state.warnings.length ? state.warnings.map((w) => w.code).join(', ') : 'none'}`,
     `Notifications supported=${d.notificationsSupported}`,
     `Generated ${iso(d.now)}`,
     '',

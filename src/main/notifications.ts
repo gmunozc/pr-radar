@@ -1,4 +1,5 @@
 /** What PR Radar can notify about, and how each notification reads. Free of Electron APIs. */
+import type { Translate } from '../shared/i18n'
 import type { PullRequest } from '../shared/types'
 import type { NotificationPlan } from './diff'
 
@@ -39,36 +40,29 @@ function describe(pr: PullRequest): string {
 
 const openPanel: NotificationAction = { kind: 'open_panel' }
 
-export function renderNotification(event: NotificationEvent): RenderedNotification {
+export function renderNotification(event: NotificationEvent, t: Translate): RenderedNotification {
   switch (event.kind) {
     case 'review_requested': {
       const { pr } = event
       const title =
         pr.source.kind === 'team'
-          ? `Review solicitada a tu equipo${pr.source.slug ? ` ${pr.source.slug}` : ''}`
-          : 'Nueva review solicitada'
+          ? pr.source.slug
+            ? t('notif.reviewRequestedTeam', { slug: pr.source.slug })
+            : t('notif.reviewRequestedTeamUnnamed')
+          : t('notif.reviewRequested')
       return { id: pr.id, title, body: describe(pr), action: { kind: 'open_url', url: pr.url } }
     }
     case 'reviews_summary':
-      return {
-        title: 'PR Radar',
-        body: event.count === 1 ? 'Tienes 1 PR pendiente de revisar' : `Tienes ${event.count} PRs pendientes de revisar`,
-        action: openPanel
-      }
+      return { title: 'PR Radar', body: t('notif.summary', { count: event.count }), action: openPanel }
     case 'reviews_grouped':
       return {
-        title: `${event.prs.length} nuevas reviews solicitadas`,
+        title: t('notif.grouped', { count: event.prs.length }),
         body: event.prs.slice(0, 3).map((pr) => `${pr.repo}#${pr.number}`).join(', ') + '…',
         action: openPanel
       }
     case 'session_expired':
-      return {
-        id: 'pr-radar-logged-out',
-        title: 'PR Radar',
-        body: 'Tu sesión de GitHub expiró. Vuelve a conectar tu cuenta.',
-        action: openPanel
-      }
+      return { id: 'pr-radar-logged-out', title: 'PR Radar', body: t('notif.sessionExpired'), action: openPanel }
     case 'test':
-      return { id: 'pr-radar-test', title: 'PR Radar', body: 'Las notificaciones funcionan correctamente.', action: openPanel }
+      return { id: 'pr-radar-test', title: 'PR Radar', body: t('notif.test'), action: openPanel }
   }
 }

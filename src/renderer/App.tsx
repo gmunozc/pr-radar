@@ -6,10 +6,11 @@ import { MyPrList } from './components/MyPrList'
 import { PrList } from './components/PrList'
 import { SettingsView } from './components/SettingsView'
 import { Tabs, type Tab } from './components/Tabs'
+import { I18nProvider } from './i18n'
 
 const api = window.prRadar
 
-export function App() {
+function Panel() {
   const [state, setState] = useState<AppState | null>(null)
   const [auth, setAuth] = useState<AuthStatus>({ phase: 'idle' })
   const [view, setView] = useState<'list' | 'settings'>('list')
@@ -70,5 +71,18 @@ export function App() {
         </>
       )}
     </div>
+  )
+}
+
+export function App() {
+  const [locale, setLocale] = useState<AppState['locale'] | undefined>(undefined)
+  useEffect(() => {
+    void api.getState().then((s) => setLocale(s.locale))
+    return api.onState((s) => setLocale(s.locale))
+  }, [])
+  return (
+    <I18nProvider locale={locale}>
+      <Panel />
+    </I18nProvider>
   )
 }

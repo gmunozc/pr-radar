@@ -5,7 +5,7 @@ import { GithubError, type FetchResult } from '../src/main/github'
 import type { Logger } from '../src/main/log'
 import type { NotificationEvent } from '../src/main/notifications'
 import { Session, type StoredAuth } from '../src/main/session'
-import { DEFAULT_SETTINGS, type AppState, type PullRequest, type Settings } from '../src/shared/types'
+import { DEFAULT_SETTINGS, type AppState, type PullRequest, type Settings, type Warning } from '../src/shared/types'
 
 const HOUR = 3_600_000
 const NOW = 100 * HOUR
@@ -26,7 +26,7 @@ const pr = (id: string): PullRequest => ({
   source: { kind: 'direct' }
 })
 
-const result = (ids: string[], login = 'me', warnings: string[] = []): FetchResult => ({
+const result = (ids: string[], login = 'me', warnings: Warning[] = []): FetchResult => ({
   viewer: { login, avatarUrl: '' },
   prs: ids.map(pr),
   myPrs: [],
@@ -50,6 +50,7 @@ interface Options {
   auth?: StoredAuth | null
   refresh?: (clientId: string, refreshToken: string) => Promise<TokenSet>
   settings?: Partial<Settings>
+  online?: () => boolean
 }
 
 function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
@@ -84,6 +85,8 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     notify: (e) => events.push(...e),
     publish: (s) => published.push(s),
     onSessionEnded,
+    isOnline: opts.online ?? (() => true),
+    locale: () => 'es',
     log: silent
   }
   const engine = new Engine(deps)
@@ -231,10 +234,16 @@ describe('Engine sessions', () => {
   })
 
   it('shows session warnings next to GitHub warnings', async () => {
-    const t = setup([result(['a'], 'me', ['from github'])])
-    t.engine.loggedIn('renewal disabled')
+    const t = setup([result(['a'], 'me', [{ code: 'saml' }])])
+    t.engine.loggedIn({ code: 'refresh_unsupported' })
     await t.engine.poll()
-    expect(t.engine.state.warnings).toEqual(['from github', 'renewal disabled'])
+    expect(t.engine.state.warnings).toEqual([{ code: 'saml' }, { code: 'refresh_unsupported' }])
+  })
+
+  it('publishes the UI language with every state', async () => {
+    const t = setup([result(['a'])])
+    await t.engine.poll()
+    expect(t.published.every((s) => s.locale === 'es')).toBe(true)
   })
 })
 
@@ -247,7 +256,7 @@ describe('Engine errors', () => {
     ])
     await t.engine.poll()
     await expect(t.engine.poll()).resolves.toEqual({ retryAt: undefined })
-    expect(t.engine.state).toMatchObject({ status: 'ready', error: { kind: 'network' } })
+    expect(t.engine.state).toMatchObject({ status: 'ready', error: { code: 'network', detail: 'offline' } })
     expect(t.engine.state.prs.map((p) => p.id)).toEqual(['a'])
     expect(t.engine.consecutiveFailures).toBe(1)
 
@@ -258,6 +267,35 @@ describe('Engine errors', () => {
   it('reports an error state when the very first poll fails', async () => {
     const t = setup([new GithubError('network', 'offline')])
     await t.engine.poll()
-    expect(t.engine.state).toMatchObject({ status: 'error', error: { kind: 'network', message: 'offline' } })
+    expect(t.engine.state).toMatchObject({ status: 'error', error: { code: 'network', detail: 'offline' } })
+  })
+})
+
+describe('Engine connection state', () => {
+  it('only reports offline after two network failures in a row', async () => {
+    const t = setup([result(['a']), new GithubError('network', 'x'), new GithubError('network', 'x'), result(['a'])])
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.engine.state.connection).toBe('ok')
+    await t.engine.poll()
+    expect(t.engine.state.connection).toBe('offline')
+    await t.engine.poll()
+    expect(t.engine.state.connection).toBe('ok')
+  })
+
+  it('reports offline right away when the OS says there is no network', async () => {
+    const t = setup([result(['a']), new GithubError('network', 'x')], { online: () => false })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.engine.state.connection).toBe('offline')
+  })
+
+  it('reports rate limits and other GitHub errors immediately, keeping the retry time', async () => {
+    const t = setup([result(['a']), new GithubError('rate_limited', 'x', NOW + 60_000), new GithubError('unknown', 'boom')])
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.engine.state).toMatchObject({ connection: 'rate_limited', error: { code: 'rate_limited', retryAt: NOW + 60_000 } })
+    await t.engine.poll()
+    expect(t.engine.state.connection).toBe('error')
   })
 })

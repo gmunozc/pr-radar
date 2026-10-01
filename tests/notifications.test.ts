@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { planToEvents, renderNotification } from '../src/main/notifications'
+import { planToEvents, renderNotification as render, type NotificationEvent } from '../src/main/notifications'
+import { translator } from '../src/shared/i18n'
 import type { PullRequest } from '../src/shared/types'
 
 const pr = (over: Partial<PullRequest> = {}): PullRequest => ({
@@ -27,6 +28,10 @@ describe('planToEvents', () => {
   })
 })
 
+const es = translator('es')
+const en = translator('en')
+const renderNotification = (event: NotificationEvent) => render(event, es)
+
 describe('renderNotification', () => {
   it('opens the PR for a single review request and replaces by PR id', () => {
     expect(renderNotification({ kind: 'review_requested', pr: pr() })).toEqual({
@@ -53,5 +58,19 @@ describe('renderNotification', () => {
   it('uses fixed ids for the session and test notifications', () => {
     expect(renderNotification({ kind: 'session_expired' }).id).toBe('pr-radar-logged-out')
     expect(renderNotification({ kind: 'test' }).id).toBe('pr-radar-test')
+  })
+})
+
+describe('renderNotification in English', () => {
+  it('translates every notification', () => {
+    expect(render({ kind: 'review_requested', pr: pr() }, en).title).toBe('New review requested')
+    expect(render({ kind: 'review_requested', pr: pr({ source: { kind: 'team', slug: 'core' } }) }, en).title).toBe(
+      'Review requested from your team core'
+    )
+    expect(render({ kind: 'reviews_summary', count: 1 }, en).body).toBe('You have 1 PR to review')
+    expect(render({ kind: 'reviews_summary', count: 2 }, en).body).toBe('You have 2 PRs to review')
+    expect(render({ kind: 'reviews_grouped', prs: [pr(), pr()] }, en).title).toBe('2 new review requests')
+    expect(render({ kind: 'session_expired' }, en).body).toBe('Your GitHub session expired. Reconnect your account.')
+    expect(render({ kind: 'test' }, en).body).toBe('Notifications are working.')
   })
 })

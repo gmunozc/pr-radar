@@ -3,7 +3,8 @@
  * and decides what to notify. Electron-free, with every dependency injected, so it can be
  * unit tested; index.ts wires it to the real app.
  */
-import type { AppState, AuthNotice, PullRequest, Settings } from '../shared/types'
+import type { Locale } from '../shared/i18n'
+import type { AppState, AuthNotice, ConnectionState, PullRequest, Settings, Warning } from '../shared/types'
 import { applyDismissals, diffPrs, planNotifications } from './diff'
 import { GithubError, type FetchResult } from './github'
 import type { Logger } from './log'
@@ -29,10 +30,16 @@ export interface EngineDeps {
   publish(state: AppState): void
   /** The session ended (expired or logged out): stop polling and any login in progress. */
   onSessionEnded(): void
+  /** Whether the OS thinks there is a network connection. */
+  isOnline(): boolean
+  locale(): Locale
   log: Logger
 }
 
-export function loggedOutState(authNotice: AuthNotice | null = null): AppState {
+/** Network failures in a row before the menu bar icon shows "offline". */
+export const OFFLINE_AFTER_FAILURES = 2
+
+export function loggedOutState(authNotice: AuthNotice | null = null, locale: Locale = 'en'): AppState {
   return {
     status: 'logged_out',
     viewer: null,
@@ -42,7 +49,9 @@ export function loggedOutState(authNotice: AuthNotice | null = null): AppState {
     error: null,
     warnings: [],
     dismissedCount: 0,
-    authNotice
+    authNotice,
+    connection: 'ok',
+    locale
   }
 }
 
@@ -54,7 +63,8 @@ export class Engine {
   /** When the search filter changes, the next result is a new baseline rather than "new" PRs. */
   private resetBaseline = false
   /** A problem with the session that doesn't stop polling, shown as a warning. */
-  private sessionWarning: string | null = null
+  private sessionWarning: Warning | null = null
+  private connection: ConnectionState = 'ok'
   private loggedTokenExpiration = false
   private failures = 0
 
@@ -63,7 +73,10 @@ export class Engine {
     authNotice: AuthNotice | null = null
   ) {
     this.persisted = migrateState(deps.stateStore.read())
-    this.current = deps.session.current ? { ...loggedOutState(), status: 'loading' } : loggedOutState(authNotice)
+    const locale = deps.locale()
+    this.current = deps.session.current
+      ? { ...loggedOutState(null, locale), status: 'loading' }
+      : loggedOutState(authNotice, locale)
   }
 
   get state(): AppState {
@@ -81,6 +94,7 @@ export class Engine {
     try {
       const result = await this.withToken((token) => this.deps.fetchPullRequests(token, settings))
       this.failures = 0
+      this.connection = 'ok'
       this.deps.session.setLogin(result.viewer.login)
       if (!this.loggedTokenExpiration) {
         this.loggedTokenExpiration = true
@@ -104,7 +118,9 @@ export class Engine {
         error: null,
         warnings: this.sessionWarning ? [...result.warnings, this.sessionWarning] : result.warnings,
         dismissedCount: dismissedIds.length,
-        authNotice: null
+        authNotice: null,
+        connection: this.connection,
+        locale: this.deps.locale()
       })
     } catch (err) {
       if (err instanceof SessionExpiredError) {
@@ -113,14 +129,22 @@ export class Engine {
       }
       this.failures++
       this.deps.log.warn('poll failed', err)
-      const kind = err instanceof GithubError ? err.kind : 'network'
+      const code = err instanceof GithubError ? err.kind : 'network'
+      const retryAt = err instanceof GithubError ? err.retryAt : undefined
+      this.connection = this.connectionAfterFailure(code)
       this.publish({
         ...this.current,
         status: this.current.viewer ? 'ready' : 'error',
-        error: { kind, message: (err as Error).message }
+        error: { code, detail: (err as Error).message, retryAt },
+        connection: this.connection
       })
-      return { retryAt: err instanceof GithubError ? err.retryAt : undefined }
+      return { retryAt }
     }
+  }
+
+  /** Republishes the current state in the new UI language. */
+  relocalize(): void {
+    this.publish(this.current)
   }
 
   dismiss(prId: string): void {
@@ -138,9 +162,10 @@ export class Engine {
   }
 
   /** A new login succeeded; `warning` explains a session problem that doesn't block polling. */
-  loggedIn(warning: string | null): void {
+  loggedIn(warning: Warning | null): void {
     this.sessionWarning = warning
     this.failures = 0
+    this.connection = 'ok'
     this.publish({ ...loggedOutState(), status: 'loading' })
   }
 
@@ -201,8 +226,15 @@ export class Engine {
     if (events.length > 0) this.deps.notify(events)
   }
 
+  private connectionAfterFailure(code: string): ConnectionState {
+    if (code === 'rate_limited') return 'rate_limited'
+    if (code !== 'network') return 'error'
+    // A single blip is not worth a different icon; the OS knowing we're offline is.
+    return this.failures >= OFFLINE_AFTER_FAILURES || !this.deps.isOnline() ? 'offline' : this.connection
+  }
+
   private publish(state: AppState): void {
-    this.current = state
-    this.deps.publish(state)
+    this.current = { ...state, locale: this.deps.locale() }
+    this.deps.publish(this.current)
   }
 }

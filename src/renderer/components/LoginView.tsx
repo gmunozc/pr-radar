@@ -1,27 +1,25 @@
 import { useEffect, useState } from 'react'
 import type { AuthNotice, AuthStatus } from '../../shared/types'
 import { PullRequestIcon } from '../icons'
+import { Rich, useT } from '../i18n'
 
 const api = window.prRadar
 const NEW_OAUTH_APP_URL = 'https://github.com/settings/applications/new'
 
 function Countdown({ expiresAt }: { expiresAt: number }) {
+  const t = useT()
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
   const left = Math.max(0, Math.round((expiresAt - now) / 1000))
-  const mm = Math.floor(left / 60)
-  const ss = String(left % 60).padStart(2, '0')
-  return (
-    <span>
-      El código expira en {mm}:{ss}
-    </span>
-  )
+  const time = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
+  return <span>{t('login.expiresIn', { time })}</span>
 }
 
 function ClientIdForm({ onSaved }: { onSaved(): void }) {
+  const t = useT()
   const [value, setValue] = useState('')
   const save = async () => {
     if (!value.trim()) return
@@ -31,19 +29,19 @@ function ClientIdForm({ onSaved }: { onSaved(): void }) {
   return (
     <div className="setup">
       <p className="login-text">
-        Para conectar con GitHub necesitas el <b>Client ID</b> de una OAuth App con <b>Device Flow</b> activado.
+        <Rich text={t('setup.intro')} />
       </p>
       <ol className="steps">
         <li>
           <button className="link" onClick={() => void api.openExternal(NEW_OAUTH_APP_URL)}>
-            Crea una OAuth App
+            {t('setup.createApp')}
           </button>{' '}
-          (Homepage y Callback: <code>http://localhost</code>).
+          <Rich text={t('setup.createAppRest')} />
         </li>
         <li>
-          Marca <b>Enable Device Flow</b> y guarda.
+          <Rich text={t('setup.enableDeviceFlow')} />
         </li>
-        <li>Copia el Client ID y pégalo aquí:</li>
+        <li>{t('setup.paste')}</li>
       </ol>
       <div className="row">
         <input
@@ -55,21 +53,15 @@ function ClientIdForm({ onSaved }: { onSaved(): void }) {
           autoFocus
         />
         <button className="btn btn-primary" onClick={() => void save()} disabled={!value.trim()}>
-          Guardar
+          {t('setup.save')}
         </button>
       </div>
     </div>
   )
 }
 
-const NOTICES: Record<AuthNotice, string> = {
-  session_expired: 'Tu sesión de GitHub caducó. Vuelve a conectar; tus PRs descartados se conservan.',
-  refresh_unsupported:
-    'GitHub no permitió renovar la sesión. En tu OAuth App, desmarca "Expire user authorization tokens" y vuelve a conectar.',
-  keychain_denied: 'No se pudo leer la sesión guardada (acceso al Llavero denegado). Vuelve a conectar y pulsa "Permitir siempre".'
-}
-
 export function LoginView({ auth, notice }: { auth: AuthStatus; notice: AuthNotice | null }) {
+  const t = useT()
   const [hasClientId, setHasClientId] = useState<boolean | null>(null)
   const [starting, setStarting] = useState(false)
 
@@ -97,50 +89,50 @@ export function LoginView({ auth, notice }: { auth: AuthStatus; notice: AuthNoti
         <ClientIdForm onSaved={() => setHasClientId(true)} />
       ) : auth.phase === 'waiting' ? (
         <div className="device">
-          <p className="login-text">Introduce este código en GitHub para autorizar la app:</p>
-          <div className="code" title="Copiado al portapapeles">
+          <p className="login-text">{t('login.enterCode')}</p>
+          <div className="code" title={t('login.copied')}>
             {auth.userCode}
           </div>
-          <div className="hint">Copiado al portapapeles</div>
+          <div className="hint">{t('login.copied')}</div>
           <button className="btn btn-primary" onClick={() => void api.openExternal(auth.verificationUri)}>
-            Abrir {auth.verificationUri.replace(/^https:\/\//, '')}
+            {t('login.open', { host: auth.verificationUri.replace(/^https:\/\//, '') })}
           </button>
           <div className="waiting">
             <div className="spinner spinner-sm" />
-            <span>Esperando autorización…</span>
+            <span>{t('login.waiting')}</span>
           </div>
           <div className="hint">
             <Countdown expiresAt={auth.expiresAt} />
           </div>
           <button className="btn btn-ghost" onClick={() => void api.auth.cancel()}>
-            Cancelar
+            {t('login.cancel')}
           </button>
         </div>
       ) : (
         <>
-          <p className="login-text">
-            Conecta tu cuenta de GitHub y te avisaremos cada vez que te pidan revisar un pull request.
-          </p>
-          {notice && auth.phase !== 'error' && <div className="banner banner-warn inline">{NOTICES[notice]}</div>}
-          {auth.phase === 'error' && <div className="banner banner-error inline">{auth.message}</div>}
+          <p className="login-text">{t('login.tagline')}</p>
+          {notice && auth.phase !== 'error' && <div className="banner banner-warn inline">{t(`notice.${notice}`)}</div>}
+          {auth.phase === 'error' && (
+            <div className="banner banner-error inline">{t(`authError.${auth.code}`, { detail: auth.detail ?? '' })}</div>
+          )}
           <button className="btn btn-primary btn-lg" onClick={start} disabled={starting || hasClientId === null}>
-            {starting ? 'Conectando…' : 'Conectar con GitHub'}
+            {starting ? t('login.connecting') : t('login.connect')}
           </button>
           {auth.phase === 'error' && (
             <div className="row">
               <button className="link small" onClick={() => setHasClientId(false)}>
-                Cambiar Client ID
+                {t('login.changeClientId')}
               </button>
               <span className="hint">·</span>
               <button className="link small" onClick={() => void api.copyDiagnostics()}>
-                Copiar diagnóstico
+                {t('login.copyDiagnostics')}
               </button>
             </div>
           )}
         </>
       )}
       <button className="link small quit" onClick={() => void api.quit()}>
-        Salir
+        {t('login.quit')}
       </button>
     </div>
   )

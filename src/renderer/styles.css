@@ -627,6 +627,13 @@ html[data-platform='darwin'] .tab-active {
   outline-offset: -1px;
 }
 
+.select {
+  flex: none;
+  width: auto;
+  padding: 4px 8px;
+  cursor: default;
+}
+
 .input-num {
   width: 64px;
   flex: none;

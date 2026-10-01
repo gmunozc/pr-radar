@@ -14,10 +14,15 @@ describe('sanitizeSettingsPatch', () => {
 
 describe('normalizeSettings', () => {
   it('fills in defaults and drops invalid or unknown values from settings.json', () => {
-    expect(normalizeSettings({ includeTeams: false, pollIntervalSec: 'fast', junk: true, openAtLogin: true })).toEqual({
-      ...DEFAULT_SETTINGS,
-      includeTeams: false
-    })
+    expect(
+      normalizeSettings({ includeTeams: false, pollIntervalSec: 'fast', junk: true, openAtLogin: true, language: 'system' })
+    ).toEqual({ ...DEFAULT_SETTINGS, includeTeams: false })
+  })
+
+  it('keeps Spanish for settings written before the language option existed', () => {
+    expect(normalizeSettings({ includeTeams: true }).language).toBe('es')
+    expect(normalizeSettings({ language: 'en' }).language).toBe('en')
+    expect(normalizeSettings({}).language).toBe('system')
   })
 
   it('survives a missing or corrupt file', () => {

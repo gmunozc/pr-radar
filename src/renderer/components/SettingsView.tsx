@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import type { LanguagePref } from '../../shared/i18n'
 import { MIN_POLL_INTERVAL_SEC, type NotifyResult, type Settings } from '../../shared/types'
+import { useT } from '../i18n'
 import { openOrgAccess } from './PrList'
 
 const api = window.prRadar
@@ -29,6 +31,7 @@ function Toggle({
 }
 
 export function SettingsView() {
+  const t = useT()
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [interval, setIntervalValue] = useState('')
   const [testResult, setTestResult] = useState<NotifyResult | 'sending' | null>(null)
@@ -37,15 +40,6 @@ export function SettingsView() {
 
   useEffect(() => {
     void api.appInfo().then((info) => setVersion(info.version))
-  }, [])
-
-  const copyDiagnostics = async () => {
-    const { ok } = await api.copyDiagnostics()
-    setCopied(ok)
-    if (ok) setTimeout(() => setCopied(false), 2000)
-  }
-
-  useEffect(() => {
     void api.settings.get().then((s) => {
       setSettings(s)
       setIntervalValue(String(s.pollIntervalSec))
@@ -66,42 +60,48 @@ export function SettingsView() {
     else setIntervalValue(String(settings.pollIntervalSec))
   }
 
-  const isLinux = api.platform === 'linux'
-
   const runTest = async () => {
     setTestResult('sending')
     setTestResult(await api.testNotification())
   }
 
+  const copyDiagnostics = async () => {
+    const { ok } = await api.copyDiagnostics()
+    setCopied(ok)
+    if (ok) setTimeout(() => setCopied(false), 2000)
+  }
+
+  const isLinux = api.platform === 'linux'
+
   return (
     <main className="settings">
       <section className="group">
-        <div className="group-title">Qué revisar</div>
+        <div className="group-title">{t('settings.whatToReview')}</div>
         <Toggle
-          label="Incluir solicitudes a mis equipos"
-          hint="Si está desactivado, solo las reviews pedidas a ti directamente."
+          label={t('settings.includeTeams')}
+          hint={t('settings.includeTeamsHint')}
           checked={settings.includeTeams}
           onChange={(v) => void update({ includeTeams: v })}
         />
         <Toggle
-          label="Mostrar PRs en draft"
+          label={t('settings.showDrafts')}
           checked={settings.showDrafts}
           onChange={(v) => void update({ showDrafts: v })}
         />
       </section>
 
       <section className="group">
-        <div className="group-title">Avisos</div>
+        <div className="group-title">{t('settings.alerts')}</div>
         <Toggle
-          label="Notificaciones"
-          hint="Aviso nativo cuando te asignen una review nueva."
+          label={t('settings.notifications')}
+          hint={t('settings.notificationsHint')}
           checked={settings.notifications}
           onChange={(v) => void update({ notifications: v })}
         />
         <label className="setting">
           <div className="setting-text">
-            <div className="setting-label">Revisar cada</div>
-            <div className="setting-hint">Segundos entre consultas (mínimo {MIN_POLL_INTERVAL_SEC}).</div>
+            <div className="setting-label">{t('settings.interval')}</div>
+            <div className="setting-hint">{t('settings.intervalHint', { min: MIN_POLL_INTERVAL_SEC })}</div>
           </div>
           <div className="row">
             <input
@@ -119,88 +119,101 @@ export function SettingsView() {
         </label>
         <div className="setting">
           <div className="setting-text">
-            <div className="setting-label">Probar notificación</div>
+            <div className="setting-label">{t('settings.test')}</div>
             {testResult === null || testResult === 'sending' ? (
-              <div className="setting-hint">En macOS, la primera vez pedirá permiso.</div>
+              <div className="setting-hint">{t('settings.testHint')}</div>
             ) : testResult.ok ? (
               <div className="setting-hint">
-                Enviada al Centro de notificaciones. Si no apareció el aviso, desactiva Concentración o activa
-                los avisos de PR Radar en{' '}
+                {t('settings.testSent')}{' '}
                 <button className="link small" onClick={() => void api.openNotificationSettings()}>
-                  Ajustes de notificaciones
+                  {t('settings.notificationSettings')}
                 </button>
                 .
               </div>
             ) : (
               <div className="setting-hint setting-error">
-                No se pudo mostrar: {testResult.error}{' '}
+                {t('settings.testFailed', {
+                  error: testResult.error === 'unsupported' ? t('notify.unsupported') : testResult.error
+                })}{' '}
                 <button className="link small" onClick={() => void api.openNotificationSettings()}>
-                  Abrir ajustes de notificaciones
+                  {t('settings.openNotificationSettings')}
                 </button>
               </div>
             )}
           </div>
           <button className="btn" onClick={() => void runTest()} disabled={testResult === 'sending'}>
-            {testResult === 'sending' ? 'Enviando…' : 'Probar'}
+            {testResult === 'sending' ? t('settings.sending') : t('settings.testButton')}
           </button>
         </div>
       </section>
 
       <section className="group">
-        <div className="group-title">General</div>
+        <div className="group-title">{t('settings.general')}</div>
+        <label className="setting">
+          <div className="setting-text">
+            <div className="setting-label">{t('settings.language')}</div>
+          </div>
+          <select
+            className="input select"
+            value={settings.language}
+            onChange={(e) => void update({ language: e.target.value as LanguagePref })}
+          >
+            <option value="system">{t('settings.languageSystem')}</option>
+            <option value="en">English</option>
+            <option value="es">Español</option>
+          </select>
+        </label>
         {!isLinux && (
           <Toggle
-            label="Abrir al iniciar sesión"
+            label={t('settings.openAtLogin')}
             checked={settings.openAtLogin}
             onChange={(v) => void update({ openAtLogin: v })}
           />
         )}
         <div className="setting">
           <div className="setting-text">
-            <div className="setting-label">Acceso a organizaciones</div>
-            <div className="setting-hint">Si faltan PRs de una org, concede o solicita acceso a la app.</div>
+            <div className="setting-label">{t('settings.orgAccess')}</div>
+            <div className="setting-hint">{t('settings.orgAccessHint')}</div>
           </div>
           <button className="btn" onClick={() => void openOrgAccess()}>
-            Abrir
+            {t('settings.open')}
           </button>
         </div>
         <div className="setting">
           <div className="setting-text">
-            <div className="setting-label">Cuenta de GitHub</div>
+            <div className="setting-label">{t('settings.account')}</div>
           </div>
           <button className="btn btn-danger" onClick={() => void api.auth.logout()}>
-            Cerrar sesión
+            {t('settings.logout')}
           </button>
         </div>
         <div className="setting">
           <div className="setting-text">
-            <div className="setting-label">Salir de PR Radar</div>
+            <div className="setting-label">{t('settings.quitApp')}</div>
           </div>
           <button className="btn" onClick={() => void api.quit()}>
-            Salir
+            {t('settings.quit')}
           </button>
         </div>
       </section>
 
       <section className="group">
-        <div className="group-title">Ayuda</div>
+        <div className="group-title">{t('settings.help')}</div>
         <div className="setting">
           <div className="setting-text">
-            <div className="setting-label">Diagnóstico</div>
-            <div className="setting-hint">
-              Copia un informe sin tokens para reportar un problema{version ? ` · versión ${version}` : ''}.
-            </div>
+            <div className="setting-label">{t('settings.diagnostics')}</div>
+            <div className="setting-hint">{t('settings.diagnosticsHint', { version })}</div>
           </div>
           <button className="btn" onClick={() => void copyDiagnostics()}>
-            {copied ? 'Copiado' : 'Copiar'}
+            {copied ? t('settings.copied') : t('settings.copy')}
           </button>
         </div>
         <div className="setting">
           <div className="setting-text">
-            <div className="setting-label">Registro de actividad</div>
+            <div className="setting-label">{t('settings.logs')}</div>
           </div>
           <button className="btn" onClick={() => void api.openLogs()}>
-            Abrir carpeta
+            {t('settings.openFolder')}
           </button>
         </div>
       </section>

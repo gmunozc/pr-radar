@@ -7,7 +7,8 @@ import type {
   ReviewSource,
   ReviewState,
   Settings,
-  Viewer
+  Viewer,
+  Warning
 } from '../shared/types'
 
 export const GRAPHQL_URL = 'https://api.github.com/graphql'
@@ -91,7 +92,7 @@ export interface FetchResult {
   viewer: Viewer
   prs: PullRequest[]
   myPrs: MyPullRequest[]
-  warnings: string[]
+  warnings: Warning[]
   /** `github-authentication-token-expiration` header: present when the token expires. */
   tokenExpiration?: string | null
 }
@@ -235,7 +236,7 @@ export function mapResponse(body: RawResponse): FetchResult {
   if (!data?.viewer || !data.requested || !data.mine) {
     const first = body.errors?.[0]
     if (first?.type === 'RATE_LIMITED') throw new GithubError('rate_limited', first.message)
-    throw new GithubError('unknown', first?.message ?? 'Respuesta inesperada de GitHub')
+    throw new GithubError('unknown', first?.message ?? 'Unexpected response from GitHub')
   }
 
   const viewer = data.viewer
@@ -245,20 +246,16 @@ export function mapResponse(body: RawResponse): FetchResult {
     .sort(newestFirst)
   const myPrs: MyPullRequest[] = data.mine.nodes.filter(isPr).map(toMyPr).sort(newestFirst)
 
-  const warnings: string[] = []
+  const warnings: Warning[] = []
   if (body.errors?.length) {
     const saml = body.errors.some((e) => /SAML/i.test(e.message))
-    warnings.push(
-      saml
-        ? 'Algunas organizaciones requieren autorizar SAML SSO para este token; sus PRs no aparecen.'
-        : `GitHub devolvió resultados parciales: ${body.errors[0].message}`
-    )
+    warnings.push(saml ? { code: 'saml' } : { code: 'partial', params: { detail: body.errors[0].message } })
   }
   if (data.requested.issueCount > data.requested.nodes.length) {
-    warnings.push(`Mostrando ${prs.length} de ${data.requested.issueCount} PRs por revisar.`)
+    warnings.push({ code: 'truncated_requested', params: { shown: prs.length, total: data.requested.issueCount } })
   }
   if (data.mine.issueCount > data.mine.nodes.length) {
-    warnings.push(`Mostrando ${myPrs.length} de ${data.mine.issueCount} de tus PRs.`)
+    warnings.push({ code: 'truncated_mine', params: { shown: myPrs.length, total: data.mine.issueCount } })
   }
   return { viewer, prs, myPrs, warnings }
 }
@@ -293,27 +290,27 @@ export async function fetchPullRequests(
       signal: AbortSignal.timeout(20_000)
     })
   } catch (err) {
-    throw new GithubError('network', `Sin conexión con GitHub (${(err as Error).message})`)
+    throw new GithubError('network', `Could not reach GitHub (${(err as Error).message})`)
   }
 
   if (res.status === 401) {
-    throw new GithubError('unauthorized', 'El token de GitHub no es válido o fue revocado.')
+    throw new GithubError('unauthorized', 'GitHub rejected the token (invalid or revoked)')
   }
   if (
     res.status === 429 ||
     (res.status === 403 && (res.headers.get('x-ratelimit-remaining') === '0' || res.headers.has('retry-after')))
   ) {
-    throw new GithubError('rate_limited', 'Límite de peticiones de GitHub alcanzado.', rateLimitResetAt(res))
+    throw new GithubError('rate_limited', 'GitHub rate limit reached', rateLimitResetAt(res))
   }
   if (!res.ok) {
-    throw new GithubError('unknown', `GitHub respondió ${res.status} ${res.statusText}`)
+    throw new GithubError('unknown', `GitHub answered ${res.status} ${res.statusText}`)
   }
 
   let body: RawResponse
   try {
     body = (await res.json()) as RawResponse
   } catch {
-    throw new GithubError('unknown', 'GitHub devolvió una respuesta que no es JSON')
+    throw new GithubError('unknown', 'GitHub answered with something that is not JSON')
   }
   return { ...mapResponse(body), tokenExpiration: res.headers.get('github-authentication-token-expiration') }
 }

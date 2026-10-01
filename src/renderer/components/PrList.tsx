@@ -1,5 +1,6 @@
 import type { AppState } from '../../shared/types'
 import { CheckCircleIcon } from '../icons'
+import { useT } from '../i18n'
 import { PrItem } from './PrItem'
 
 const REVIEW_REQUESTED_URL = 'https://github.com/pulls/review-requested'
@@ -8,17 +9,20 @@ const REVIEW_REQUESTED_URL = 'https://github.com/pulls/review-requested'
 export const openOrgAccess = async () => window.prRadar.openExternal(await window.prRadar.auth.accessUrl())
 
 function RestoreDismissed({ count }: { count: number }) {
+  const t = useT()
   return (
     <span className="dismissed">
-      {count === 1 ? '1 descartado' : `${count} descartados`} ·{' '}
+      {t('list.dismissed', { count })} ·{' '}
       <button className="link" onClick={() => void window.prRadar.restoreDismissed()}>
-        Restaurar
+        {t('list.restore')}
       </button>
     </span>
   )
 }
 
 export function PrList({ state }: { state: AppState }) {
+  const t = useT()
+
   if (state.status === 'loading' && state.prs.length === 0) {
     return (
       <main className="list list-empty">
@@ -31,19 +35,19 @@ export function PrList({ state }: { state: AppState }) {
     return (
       <main className="list list-empty">
         <CheckCircleIcon size={36} className="empty-icon" />
-        <div className="empty-title">Nada pendiente de revisar</div>
-        <div className="empty-sub">Te avisaremos cuando alguien te pida una review.</div>
+        <div className="empty-title">{t('list.emptyTitle')}</div>
+        <div className="empty-sub">{t('list.emptySub')}</div>
         {state.dismissedCount > 0 ? (
           <div className="empty-hint">
             <RestoreDismissed count={state.dismissedCount} />
           </div>
         ) : (
           <div className="empty-hint">
-            <div>¿Esperabas ver PRs de tu organización?</div>
+            <div>{t('list.orgHintTitle')}</div>
             <div>
-              Puede que la org restrinja las OAuth Apps.{' '}
+              {t('list.orgHint')}{' '}
               <button className="link small" onClick={() => void openOrgAccess()}>
-                Dar acceso a la org
+                {t('list.orgAccess')}
               </button>
             </div>
           </div>
@@ -61,7 +65,7 @@ export function PrList({ state }: { state: AppState }) {
       </main>
       <footer className="footer">
         <button className="link" onClick={() => void window.prRadar.openExternal(REVIEW_REQUESTED_URL)}>
-          Ver todo en GitHub
+          {t('list.viewAll')}
         </button>
         {state.dismissedCount > 0 && <RestoreDismissed count={state.dismissedCount} />}
       </footer>

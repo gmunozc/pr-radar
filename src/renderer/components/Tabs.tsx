@@ -1,3 +1,6 @@
+import type { MessageKey } from '../../shared/i18n/en'
+import { useT } from '../i18n'
+
 export type Tab = 'review' | 'mine'
 
 interface Props {
@@ -7,26 +10,27 @@ interface Props {
   mineCount: number
 }
 
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'review', label: 'Por revisar' },
-  { id: 'mine', label: 'Mis PRs' }
+const TABS: Array<{ id: Tab; label: MessageKey }> = [
+  { id: 'review', label: 'tabs.review' },
+  { id: 'mine', label: 'tabs.mine' }
 ]
 
 export function Tabs({ tab, onChange, reviewCount, mineCount }: Props) {
+  const t = useT()
   const counts: Record<Tab, number> = { review: reviewCount, mine: mineCount }
   return (
     <nav className="tabs" role="tablist">
-      {TABS.map((t) => (
+      {TABS.map((item) => (
         <button
-          key={t.id}
+          key={item.id}
           role="tab"
-          aria-selected={tab === t.id}
-          className={`tab ${tab === t.id ? 'tab-active' : ''}`}
+          aria-selected={tab === item.id}
+          className={`tab ${tab === item.id ? 'tab-active' : ''}`}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onChange(t.id)}
+          onClick={() => onChange(item.id)}
         >
-          {t.label}
-          <span className="tab-count">{counts[t.id]}</span>
+          {t(item.label)}
+          <span className="tab-count">{counts[item.id]}</span>
         </button>
       ))}
     </nav>

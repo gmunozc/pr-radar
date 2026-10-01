@@ -1,13 +1,14 @@
 /** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
-import { app, clipboard, Notification, powerMonitor, screen, shell } from 'electron'
+import { app, clipboard, net, Notification, powerMonitor, screen, shell } from 'electron'
 import { dirname, join } from 'node:path'
-import { IPC, type AuthStatus, type Settings } from '../shared/types'
+import { IPC, type AuthStatus, type Settings, type Warning } from '../shared/types'
 import { createAuthStore, DeviceLogin } from './auth'
 import { debugMenu, FaultInjector } from './debug'
 import { refreshAccessToken } from './deviceFlow'
 import { buildDiagnostics } from './diagnostics'
 import { Engine } from './engine'
 import { fetchPullRequests } from './github'
+import { applyLanguage, currentLocale } from './i18n'
 import { registerIpc } from './ipc'
 import { logger } from './log'
 import { deliverEvents } from './notifier'
@@ -48,6 +49,7 @@ function main(): void {
   const stateFile = new JsonFile<unknown>(join(userData, 'state.json'), () => null)
   let settings: Settings = normalizeSettings(settingsFile.read())
   const clientId = () => import.meta.env.MAIN_VITE_GITHUB_CLIENT_ID?.trim() || settings.clientId.trim()
+  applyLanguage(settings.language, app.getPreferredSystemLanguages())
 
   const authStore = createAuthStore(join(userData, 'auth.bin'), clientId, logger, { plain: !app.isPackaged })
   const devTtlSec = Number(process.env.PR_RADAR_DEV_TOKEN_TTL_SEC)
@@ -92,6 +94,8 @@ function main(): void {
         poller.stop()
         deviceLogin.cancel()
       },
+      isOnline: () => net.isOnline(),
+      locale: currentLocale,
       log: logger
     },
     authStore.readError
@@ -166,7 +170,7 @@ function main(): void {
     startLogin: async () => {
       const id = clientId()
       if (!id) {
-        publishAuth({ phase: 'error', message: 'Falta el Client ID de la OAuth App.' })
+        publishAuth({ phase: 'error', code: 'missing_client_id' })
         return
       }
       const tokens = await deviceLogin.start(id)
@@ -177,7 +181,7 @@ function main(): void {
         hasRefresh: tokens.refreshToken !== null,
         expiresInSec: tokens.expiresAt === null ? null : Math.round((tokens.expiresAt - Date.now()) / 1000)
       })
-      let warning: string | null = null
+      let warning: Warning | null = null
       // Renew once right away so we know now, not in 8 h, whether renewal works for this app.
       if (tokens.refreshToken) {
         try {
@@ -186,8 +190,7 @@ function main(): void {
         } catch (err) {
           logger.warn('refresh probe failed', err)
           if (err instanceof SessionExpiredError && err.reason === 'refresh_unsupported') {
-            warning =
-              'GitHub no permite renovar la sesión de esta OAuth App: caducará en 8 h. En la OAuth App, desmarca "Expire user authorization tokens" y vuelve a conectar.'
+            warning = { code: 'refresh_unsupported' }
           }
         }
       }
@@ -205,6 +208,10 @@ function main(): void {
         (rest.showDrafts !== undefined && rest.showDrafts !== settings.showDrafts)
       settings = { ...settings, ...rest }
       settingsFile.write(settings)
+      if (applyLanguage(settings.language, app.getPreferredSystemLanguages())) {
+        logger.info('language changed', { locale: currentLocale() })
+        engine.relocalize()
+      }
       if (filtersChanged && session.current) {
         engine.filtersChanged()
         void poller.runNow()

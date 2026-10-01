@@ -49,7 +49,7 @@ describe('requestDeviceCode', () => {
     const fetchFn = vi.fn().mockResolvedValue(json({ error: 'Not Found' }, 404))
     await expect(requestDeviceCode('bogus', fetchFn)).rejects.toMatchObject({
       code: 'invalid_client',
-      message: expect.stringContaining('Client ID no válido')
+      message: expect.stringContaining('client ID')
     })
   })
 })

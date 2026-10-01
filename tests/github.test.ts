@@ -154,7 +154,7 @@ describe('fetchPullRequests', () => {
     )
     const result = await fetchPullRequests('tok', settings, fetchFn)
     expect(result.prs).toHaveLength(1)
-    expect(result.warnings[0]).toMatch(/SAML/)
+    expect(result.warnings).toEqual([{ code: 'saml' }])
   })
 
   it('warns when results are truncated', async () => {
@@ -162,7 +162,7 @@ describe('fetchPullRequests', () => {
       data: { viewer: { login: 'me', avatarUrl: 'x' }, requested: search([rawPr()], 80), mine: search([]) }
     })
     const result = await fetchPullRequests('tok', settings, vi.fn().mockResolvedValue(res))
-    expect(result.warnings).toContain('Mostrando 1 de 80 PRs por revisar.')
+    expect(result.warnings).toContainEqual({ code: 'truncated_requested', params: { shown: 1, total: 80 } })
   })
 
   it('classifies 401 as unauthorized', async () => {

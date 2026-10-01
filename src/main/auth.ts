@@ -1,6 +1,6 @@
 import { clipboard, safeStorage, shell } from 'electron'
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import type { AuthStatus } from '../shared/types'
+import type { AuthErrorCode, AuthStatus } from '../shared/types'
 import { DeviceFlowError, pollForToken, requestDeviceCode, type TokenSet } from './deviceFlow'
 import type { Logger } from './log'
 import { parseStoredAuth, serializeAuth, type AuthStore, type StoredAuth } from './session'
@@ -65,6 +65,21 @@ export function createAuthStore(
   }
 }
 
+const AUTH_ERROR_CODES: readonly AuthErrorCode[] = [
+  'device_flow_disabled',
+  'invalid_client',
+  'expired_token',
+  'access_denied',
+  'network',
+  'http'
+]
+
+/** Maps a device-flow failure to a code the panel can translate. */
+export function authErrorCode(err: unknown): AuthErrorCode {
+  const code = err instanceof DeviceFlowError ? err.code : ''
+  return (AUTH_ERROR_CODES as readonly string[]).includes(code) ? (code as AuthErrorCode) : 'unknown'
+}
+
 export class DeviceLogin {
   private controller: AbortController | null = null
 
@@ -96,7 +111,7 @@ export class DeviceLogin {
       if (err instanceof DeviceFlowError && err.code === 'cancelled') {
         this.onStatus({ phase: 'idle' })
       } else {
-        this.onStatus({ phase: 'error', message: (err as Error).message })
+        this.onStatus({ phase: 'error', code: authErrorCode(err), detail: (err as Error).message })
       }
       return null
     } finally {
