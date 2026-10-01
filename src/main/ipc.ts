@@ -1,5 +1,6 @@
 import { app, ipcMain, shell } from 'electron'
 import { IPC, type AppState, type Settings } from '../shared/types'
+import { logger } from './log'
 import { testNotification } from './notifier'
 import { sanitizeSettingsPatch, type SettingsPatch } from './settings'
 
@@ -63,4 +64,7 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.appInfo, () => ctx.appInfo())
   ipcMain.handle(IPC.copyDiagnostics, () => ctx.copyDiagnostics())
   ipcMain.handle(IPC.openLogs, () => ctx.openLogs())
+  ipcMain.on(IPC.rendererError, (_e, message: unknown) => {
+    logger.error('panel error', typeof message === 'string' ? message.slice(0, 4000) : 'unknown')
+  })
 }

@@ -2,6 +2,10 @@ import type { MessageKey } from './en'
 
 /** Spanish strings. Typed against en.ts, so a missing key fails to compile. */
 export const es: Record<MessageKey, string> = {
+  // Shown if the panel itself crashes
+  'crash.title': 'Algo falló al mostrar el panel.',
+  'crash.reload': 'Recargar',
+
   // Header
   'header.loading': 'Cargando…',
   'header.updated': 'Actualizado {time}',

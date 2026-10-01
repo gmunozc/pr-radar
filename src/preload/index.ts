@@ -32,6 +32,7 @@ const api: PrRadarApi = {
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
   copyDiagnostics: () => ipcRenderer.invoke(IPC.copyDiagnostics),
   openLogs: () => ipcRenderer.invoke(IPC.openLogs),
+  reportError: (message) => ipcRenderer.send(IPC.rendererError, String(message).slice(0, 4000)),
   quit: () => ipcRenderer.invoke(IPC.quit)
 }
 

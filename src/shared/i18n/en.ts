@@ -5,6 +5,10 @@
  * by the panel's <Rich> component.
  */
 export const en = {
+  // Shown if the panel itself crashes
+  'crash.title': 'Something went wrong showing the panel.',
+  'crash.reload': 'Reload',
+
   // Header
   'header.loading': 'Loading…',
   'header.updated': 'Updated {time}',

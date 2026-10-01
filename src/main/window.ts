@@ -5,8 +5,12 @@ import { displayNearest, placePanel } from './position'
 
 export const PANEL_WIDTH = 380
 export const PANEL_HEIGHT = 540
-/** If the page isn't mounted this long after a load starts, reload it. */
+/** Check the panel this long after a load starts; a load still running by then is stuck. */
 const LOAD_CHECK_MS = 5000
+/** After the page loads, give React this long to mount before checking. */
+const MOUNT_CHECK_MS = 1500
+/** A health probe that takes longer than this counts as a failure. */
+const PROBE_TIMEOUT_MS = 3000
 
 export class Panel {
   readonly win: BrowserWindow
@@ -14,6 +18,7 @@ export class Panel {
   private lastDisplayId: number | null = null
   private loadFailures = 0
   private loadCheck: NodeJS.Timeout | undefined
+  private loadStartedAt = 0
 
   constructor() {
     const isMac = process.platform === 'darwin'
@@ -59,7 +64,7 @@ export class Panel {
       logger.warn('panel failed to load', { code, desc })
       this.retryLoad()
     })
-    this.win.webContents.on('did-finish-load', () => this.verifyLoaded())
+    this.win.webContents.on('did-finish-load', () => this.scheduleCheck(MOUNT_CHECK_MS))
     this.win.webContents.on('render-process-gone', (_e, details) => {
       logger.error('panel renderer gone', { reason: details.reason })
       this.retryLoad()
@@ -68,33 +73,59 @@ export class Panel {
     this.load()
   }
 
-  /** Reloads unless the app is mounted. Also catches loads aborted without did-fail-load. */
-  private verifyLoaded(): void {
+  private scheduleCheck(ms: number): void {
+    clearTimeout(this.loadCheck)
+    this.loadCheck = setTimeout(() => void this.checkHealth('timer'), ms)
+  }
+
+  /**
+   * Reloads the panel unless the app is mounted. Covers loads that never finish (seen when
+   * Chromium's network service restarts mid-load) and pages that load but stay empty.
+   * Never relies on executeJavaScript alone: it waits for a pending load and can hang.
+   */
+  private async checkHealth(reason: 'timer' | 'show'): Promise<void> {
     clearTimeout(this.loadCheck)
     if (this.win.isDestroyed()) return
-    this.win.webContents
-      .executeJavaScript('Boolean(document.getElementById("root"))')
-      .then((ok) => {
-        if (ok) {
-          this.loadFailures = 0
-        } else {
-          logger.warn('panel is blank, reloading', { url: this.win.webContents.getURL() })
-          this.retryLoad()
-        }
-      })
-      .catch(() => this.retryLoad())
+    const wc = this.win.webContents
+    if (wc.isLoading()) {
+      // Give a load that just started time to finish before calling it stuck.
+      const age = Date.now() - this.loadStartedAt
+      if (age < LOAD_CHECK_MS) {
+        this.scheduleCheck(LOAD_CHECK_MS - age)
+        return
+      }
+      logger.warn('panel load is stuck, restarting it', { reason, url: wc.getURL(), ms: age })
+      wc.stop()
+      if (reason === 'show') this.loadFailures = 0
+      this.retryLoad()
+      return
+    }
+    const mounted = await Promise.race([
+      wc.executeJavaScript('document.getElementById("root")?.childElementCount ?? 0').catch(() => -1) as Promise<number>,
+      new Promise<number>((resolve) => setTimeout(() => resolve(-1), PROBE_TIMEOUT_MS))
+    ])
+    if (mounted > 0) {
+      this.loadFailures = 0
+      return
+    }
+    logger.warn('panel is blank, reloading', { reason, url: wc.getURL(), mounted })
+    if (reason === 'show') this.loadFailures = 0
+    this.retryLoad()
   }
 
   private retryLoad(): void {
-    if (this.loadFailures >= 5) return
+    if (this.loadFailures >= 5) {
+      logger.error('panel keeps failing to load; will retry when it is opened')
+      return
+    }
     this.loadFailures++
     setTimeout(() => this.load(), 1000 * this.loadFailures)
   }
 
   private load(): void {
     if (this.win.isDestroyed()) return
-    clearTimeout(this.loadCheck)
-    this.loadCheck = setTimeout(() => this.verifyLoaded(), LOAD_CHECK_MS)
+    this.loadStartedAt = Date.now()
+    this.scheduleCheck(LOAD_CHECK_MS)
     if (process.env.ELECTRON_RENDERER_URL) {
       void this.win.loadURL(process.env.ELECTRON_RENDERER_URL)
     } else {
@@ -126,6 +157,8 @@ export class Panel {
     this.win.setPosition(target.x, target.y, false)
     this.win.show()
     this.win.focus()
+    // If the panel is somehow blank, fix it now that the user is looking at it.
+    void this.checkHealth('show')
     // macOS can keep a window on the screen it was last shown on; move it again if so.
     const [x, y] = this.win.getPosition()
     if (x !== target.x || y !== target.y) this.win.setPosition(target.x, target.y, false)

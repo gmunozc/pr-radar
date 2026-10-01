@@ -169,6 +169,8 @@ export interface PrRadarApi {
   copyDiagnostics(): Promise<{ ok: boolean }>
   openLogs(): Promise<void>
   quit(): Promise<void>
+  /** Sends a panel error to the main-process log. */
+  reportError(message: string): void
 }
 
 export const IPC = {
@@ -191,5 +193,6 @@ export const IPC = {
   appInfo: 'app:info',
   copyDiagnostics: 'diagnostics:copy',
   openLogs: 'logs:open',
+  rendererError: 'renderer:error',
   quit: 'app:quit'
 } as const
