@@ -7,13 +7,16 @@ describe('migrateState', () => {
       v: 2,
       login: 'octo',
       seenIds: ['a', 'b'],
-      dismissedIds: []
+      dismissedIds: [],
+      snoozed: {},
+      queued: { reviews: [], reminders: [], approved: [], changes: [], ready: [], sessionExpired: false },
+      lastDigestDay: null
     })
     expect(migrateState({ login: 'octo', seenIds: ['a'], dismissedIds: ['a'] })?.dismissedIds).toEqual(['a'])
   })
 
   it('keeps v2 as is and drops non-string ids', () => {
-    expect(migrateState({ v: 2, login: 'octo', seenIds: ['a', 3], dismissedIds: [null, 'b'] })).toEqual({
+    expect(migrateState({ v: 2, login: 'octo', seenIds: ['a', 3], dismissedIds: [null, 'b'] })).toMatchObject({
       v: 2,
       login: 'octo',
       seenIds: ['a'],
@@ -43,5 +46,22 @@ describe('migrateState and your PRs snapshot', () => {
 
   it('leaves the snapshot undefined for older state files', () => {
     expect(migrateState({ login: 'me', seenIds: [] })?.myPrs).toBeUndefined()
+  })
+})
+
+describe('migrateState and phase 4 fields', () => {
+  it('keeps snoozes, queued alerts and the digest day, dropping invalid values', () => {
+    const state = migrateState({
+      login: 'me',
+      seenIds: [],
+      snoozed: { a: 123, b: 'later', c: Number.NaN },
+      queued: { reviews: ['x', 1], sessionExpired: true },
+      lastDigestDay: '2026-10-05'
+    })
+    expect(state).toMatchObject({
+      snoozed: { a: 123 },
+      queued: { reviews: ['x'], reminders: [], sessionExpired: true },
+      lastDigestDay: '2026-10-05'
+    })
   })
 })

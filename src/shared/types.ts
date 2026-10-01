@@ -95,6 +95,11 @@ export interface AppState {
   locale: Locale
   /** PRs hidden by the user; not included in `prs`. */
   dismissedCount: number
+  snoozedCount: number
+  /** While quiet hours hold notifications back: when they end (epoch ms). */
+  quietUntil: number | null
+  /** When "snooze until tomorrow" would bring a PR back (epoch ms). */
+  snoozeTomorrowAt: number
   /** Why the user is signed out (shown on the login screen), or null. */
   authNotice: AuthNotice | null
 }
@@ -110,6 +115,16 @@ export interface Settings {
   language: LanguagePref
   /** Notify when your PRs are approved, get changes requested or become ready to merge. */
   notifyMyPrs: boolean
+  /** Only notify during working hours; alerts outside them arrive together afterwards. */
+  quietHours: boolean
+  /** "HH:MM", local time. */
+  workStart: string
+  workEnd: string
+  /** 0 = Sunday … 6 = Saturday. */
+  workDays: number[]
+  /** A summary notification on working days at `digestTime`. */
+  digest: boolean
+  digestTime: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -119,7 +134,13 @@ export const DEFAULT_SETTINGS: Settings = {
   pollIntervalSec: 30,
   clientId: '',
   language: 'system',
-  notifyMyPrs: true
+  notifyMyPrs: true,
+  quietHours: false,
+  workStart: '09:00',
+  workEnd: '19:00',
+  workDays: [1, 2, 3, 4, 5],
+  digest: true,
+  digestTime: '09:30'
 }
 
 export const MIN_POLL_INTERVAL_SEC = 15
@@ -148,6 +169,7 @@ export interface PrRadarApi {
   onState(cb: (state: AppState) => void): () => void
   refresh(): Promise<void>
   dismiss(prId: string): Promise<void>
+  snooze(prId: string, option: 'hour' | 'tomorrow'): Promise<void>
   restoreDismissed(): Promise<void>
   auth: {
     start(): Promise<void>
@@ -178,6 +200,7 @@ export const IPC = {
   state: 'state:update',
   refresh: 'state:refresh',
   dismiss: 'prs:dismiss',
+  snooze: 'prs:snooze',
   restoreDismissed: 'prs:restore',
   authStart: 'auth:start',
   authCancel: 'auth:cancel',

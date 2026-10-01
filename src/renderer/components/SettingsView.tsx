@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { LanguagePref } from '../../shared/i18n'
 import { MIN_POLL_INTERVAL_SEC, type NotifyResult, type Settings } from '../../shared/types'
-import { useT } from '../i18n'
+import { useLocale, useT } from '../i18n'
 import { openOrgAccess } from './PrList'
 
 const api = window.prRadar
@@ -30,8 +30,31 @@ function Toggle({
   )
 }
 
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+
+/** A time field that saves on blur/Enter and reverts invalid input. */
+function TimeInput({ value, onCommit }: { value: string; onCommit(v: string): void }) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  const commit = () => (TIME.test(draft) && draft !== value ? onCommit(draft) : setDraft(value))
+  return (
+    <input
+      className="input input-time"
+      type="time"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === 'Enter' && commit()}
+    />
+  )
+}
+
+// Monday first; 0 = Sunday. 2026-01-04 was a Sunday, so 4 + d is weekday d.
+const WEEK = [1, 2, 3, 4, 5, 6, 0]
+
 export function SettingsView() {
   const t = useT()
+  const locale = useLocale()
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [interval, setIntervalValue] = useState('')
   const [testResult, setTestResult] = useState<NotifyResult | 'sending' | null>(null)
@@ -104,6 +127,58 @@ export function SettingsView() {
           checked={settings.notifyMyPrs}
           onChange={(v) => void update({ notifyMyPrs: v })}
         />
+        <label className="setting">
+          <div className="setting-text">
+            <div className="setting-label">{t('settings.digest')}</div>
+            <div className="setting-hint">{t('settings.digestHint')}</div>
+          </div>
+          {settings.digest && <TimeInput value={settings.digestTime} onCommit={(v) => void update({ digestTime: v })} />}
+          <input
+            type="checkbox"
+            className="switch"
+            checked={settings.digest}
+            onChange={(e) => void update({ digest: e.target.checked })}
+          />
+        </label>
+        <Toggle
+          label={t('settings.quietHours')}
+          hint={t('settings.quietHoursHint')}
+          checked={settings.quietHours}
+          onChange={(v) => void update({ quietHours: v })}
+        />
+        {settings.quietHours && (
+          <div className="setting setting-column">
+            <div className="row">
+              <span className="setting-label">{t('settings.workHours')}</span>
+              <span className="spacer" />
+              <TimeInput value={settings.workStart} onCommit={(v) => void update({ workStart: v })} />
+              <span className="unit">{t('settings.to')}</span>
+              <TimeInput value={settings.workEnd} onCommit={(v) => void update({ workEnd: v })} />
+            </div>
+            <div className="days">
+              {WEEK.map((day) => {
+                const on = settings.workDays.includes(day)
+                const label = new Intl.DateTimeFormat(locale, { weekday: 'narrow' }).format(new Date(2026, 0, 4 + day))
+                const name = new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(new Date(2026, 0, 4 + day))
+                return (
+                  <button
+                    key={day}
+                    className={`day ${on ? 'day-on' : ''}`}
+                    title={name}
+                    aria-pressed={on}
+                    // Keep at least one working day.
+                    disabled={on && settings.workDays.length === 1}
+                    onClick={() =>
+                      void update({ workDays: on ? settings.workDays.filter((d) => d !== day) : [...settings.workDays, day] })
+                    }
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
         <label className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.interval')}</div>

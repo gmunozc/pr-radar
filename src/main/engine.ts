@@ -5,12 +5,13 @@
  */
 import type { Locale } from '../shared/i18n'
 import type { AppState, AuthNotice, ConnectionState, PullRequest, Settings, Warning } from '../shared/types'
-import { applyDismissals, diffMyPrs, diffPrs, planNotifications } from './diff'
+import { applyHidden, diffMyPrs, diffPrs, planNotifications, type MyPrEvent, type NotificationPlan } from './diff'
 import { GithubError, type FetchResult } from './github'
 import type { Logger } from './log'
-import { capMyPrEvents, planToEvents, type NotificationEvent } from './notifications'
+import { capMyPrEvents, planToEvents, type CatchUp, type NotificationEvent } from './notifications'
 import { SessionExpiredError, type ExpiryReason, type Session } from './session'
-import { migrateState, type PersistedState } from './state'
+import { dayKey, digestDue, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil, type SnoozeOption } from './schedule'
+import { emptyQueue, migrateState, type PersistedState, type QueuedAlerts } from './state'
 
 export type SessionLike = Pick<Session, 'current' | 'getAccessToken' | 'handleUnauthorized' | 'setLogin' | 'clear'>
 
@@ -38,6 +39,21 @@ export interface EngineDeps {
 
 /** Network failures in a row before the menu bar icon shows "offline". */
 export const OFFLINE_AFTER_FAILURES = 2
+/** The digest is only built from data at most this old. */
+export const DIGEST_FRESHNESS_MS = 5 * 60_000
+const DAY_MS = 24 * 3_600_000
+
+/** Alerts produced by one poll (or tick), before quiet hours and grouping are applied. */
+interface Alerts {
+  reviewPlan: NotificationPlan
+  returned: PullRequest[]
+  mine: MyPrEvent[]
+  sessionExpired?: boolean
+}
+
+const hasAny = (c: CatchUp) => c.reviews + c.reminders + c.approved + c.changes + c.ready > 0 || c.sessionExpired
+const queueHasItems = (q: QueuedAlerts) =>
+  q.reviews.length + q.reminders.length + q.approved.length + q.changes.length + q.ready.length > 0 || q.sessionExpired
 
 export function loggedOutState(authNotice: AuthNotice | null = null, locale: Locale = 'en'): AppState {
   return {
@@ -49,6 +65,9 @@ export function loggedOutState(authNotice: AuthNotice | null = null, locale: Loc
     error: null,
     warnings: [],
     dismissedCount: 0,
+    snoozedCount: 0,
+    quietUntil: null,
+    snoozeTomorrowAt: 0,
     authNotice,
     connection: 'ok',
     locale
@@ -67,6 +86,8 @@ export class Engine {
   private connection: ConnectionState = 'ok'
   private loggedTokenExpiration = false
   private failures = 0
+  private lastSuccessAt: number | null = null
+  private wasQuiet = false
 
   constructor(
     private readonly deps: EngineDeps,
@@ -102,32 +123,45 @@ export class Engine {
         this.deps.log.info('token expiration header', { value: result.tokenExpiration ?? 'none' })
       }
 
+      const now = this.deps.now()
       const stored = this.persisted?.login === result.viewer.login ? this.persisted : null
       const diff = diffPrs(this.resetBaseline ? result.prs.map((p) => p.id) : (stored?.seenIds ?? null), result.prs)
       this.resetBaseline = false
       this.allPrs = result.prs
-      const { visible, dismissedIds } = applyDismissals(result.prs, stored?.dismissedIds ?? [])
+      const hidden = applyHidden(result.prs, { dismissedIds: stored?.dismissedIds ?? [], snoozed: stored?.snoozed ?? {} }, now)
       const mine = diffMyPrs(stored?.myPrs, result.myPrs)
-      this.save({ v: 2, login: result.viewer.login, seenIds: diff.seenIds, dismissedIds, myPrs: mine.snapshot })
-      if (settings.notifications) {
-        const events = planToEvents(planNotifications(diff, visible.length))
-        if (settings.notifyMyPrs) events.push(...capMyPrEvents(mine.events))
-        this.emit(events)
-      }
+      this.save({
+        v: 2,
+        login: result.viewer.login,
+        seenIds: diff.seenIds,
+        dismissedIds: hidden.dismissedIds,
+        snoozed: hidden.snoozed,
+        myPrs: mine.snapshot,
+        queued: stored?.queued ?? emptyQueue(),
+        lastDigestDay: stored?.lastDigestDay ?? null
+      })
+      this.lastSuccessAt = now
 
       this.publish({
+        ...this.current,
         status: 'ready',
         viewer: result.viewer,
-        prs: visible,
+        prs: hidden.visible,
         myPrs: result.myPrs,
-        lastUpdated: new Date(this.deps.now()).toISOString(),
+        lastUpdated: new Date(now).toISOString(),
         error: null,
         warnings: this.sessionWarning ? [...result.warnings, this.sessionWarning] : result.warnings,
-        dismissedCount: dismissedIds.length,
+        dismissedCount: hidden.dismissedIds.length,
+        snoozedCount: Object.keys(hidden.snoozed).length,
         authNotice: null,
-        connection: this.connection,
-        locale: this.deps.locale()
+        connection: this.connection
       })
+      this.dispatch({
+        reviewPlan: planNotifications(diff, hidden.visible.length),
+        returned: hidden.returned,
+        mine: mine.events
+      })
+      this.tick()
     } catch (err) {
       if (err instanceof SessionExpiredError) {
         this.expire(err.reason)
@@ -155,11 +189,57 @@ export class Engine {
 
   dismiss(prId: string): void {
     if (!this.persisted) return
-    this.setDismissed([...this.persisted.dismissedIds, prId])
+    this.setHidden({ ...this.persisted, dismissedIds: [...this.persisted.dismissedIds, prId] })
   }
 
-  restoreDismissed(): void {
-    this.setDismissed([])
+  /** Hides a review request until later ("in 1 hour" / next working day). */
+  snooze(prId: string, option: SnoozeOption): void {
+    if (!this.persisted) return
+    const until = snoozeUntil(new Date(this.deps.now()), option, this.deps.settings()).getTime()
+    this.setHidden({ ...this.persisted, snoozed: { ...this.persisted.snoozed, [prId]: until } })
+  }
+
+  /** Brings back every dismissed and snoozed PR, without notifying. */
+  restoreHidden(): void {
+    if (!this.persisted) return
+    this.setHidden({ ...this.persisted, dismissedIds: [], snoozed: {} })
+  }
+
+  /**
+   * Runs every minute and after each poll: brings back snoozes that ran out, delivers what
+   * quiet hours held back once they end, and sends the daily digest.
+   */
+  tick(): void {
+    const settings = this.deps.settings()
+    const nowMs = this.deps.now()
+    const now = new Date(nowMs)
+    const persisted = this.persisted
+    if (persisted && this.deps.session.current && Object.values(persisted.snoozed).some((until) => until <= nowMs)) {
+      const hidden = applyHidden(this.allPrs, persisted, nowMs)
+      this.save({ ...persisted, dismissedIds: hidden.dismissedIds, snoozed: hidden.snoozed })
+      this.publish({ ...this.current, prs: hidden.visible, snoozedCount: Object.keys(hidden.snoozed).length })
+      if (hidden.returned.length) this.dispatch({ reviewPlan: { kind: 'none' }, returned: hidden.returned, mine: [] })
+    }
+
+    const quiet = settings.notifications && isQuiet(now, settings)
+    if (settings.notifications && !quiet) {
+      if (this.persisted && queueHasItems(this.persisted.queued)) this.flushQueue(now)
+      const fresh = this.lastSuccessAt !== null && nowMs - this.lastSuccessAt <= DIGEST_FRESHNESS_MS
+      if (this.persisted && this.deps.session.current && fresh && digestDue(now, settings, this.persisted.lastDigestDay)) {
+        this.sendDigest(now, null)
+      }
+    }
+    // Keep "alerts paused until …" in the header in sync.
+    if (quiet !== this.wasQuiet) {
+      this.wasQuiet = quiet
+      this.publish(this.current)
+    }
+  }
+
+  /** Quiet hours, the digest or the notification settings changed. */
+  settingsChanged(): void {
+    this.tick()
+    this.publish(this.current)
   }
 
   /** The search filters changed: the next poll sets a new baseline without notifying. */
@@ -183,7 +263,7 @@ export class Engine {
     this.sessionWarning = null
     this.deps.onSessionEnded()
     this.publish(loggedOutState(reason === 'refresh_unsupported' ? 'refresh_unsupported' : 'session_expired'))
-    if (this.deps.settings().notifications) this.emit([{ kind: 'session_expired' }])
+    this.dispatch({ reviewPlan: { kind: 'none' }, returned: [], mine: [], sessionExpired: true })
   }
 
   /** Explicit "Cerrar sesión": forget the session and everything about this account. */
@@ -216,11 +296,85 @@ export class Engine {
     }
   }
 
-  private setDismissed(ids: string[]): void {
-    if (!this.persisted) return
-    const { visible, dismissedIds } = applyDismissals(this.allPrs, ids)
-    this.save({ ...this.persisted, dismissedIds })
-    this.publish({ ...this.current, prs: visible, dismissedCount: dismissedIds.length })
+  private setHidden(next: PersistedState): void {
+    const hidden = applyHidden(this.allPrs, next, this.deps.now())
+    this.save({ ...next, dismissedIds: hidden.dismissedIds, snoozed: hidden.snoozed })
+    this.publish({
+      ...this.current,
+      prs: hidden.visible,
+      dismissedCount: hidden.dismissedIds.length,
+      snoozedCount: Object.keys(hidden.snoozed).length
+    })
+  }
+
+  /** Delivers alerts now, or holds them back during quiet hours. */
+  private dispatch(alerts: Alerts): void {
+    const settings = this.deps.settings()
+    if (!settings.notifications) return
+    const mine = settings.notifyMyPrs ? alerts.mine : []
+    const reviewEvents = planToEvents(alerts.reviewPlan)
+    if (!reviewEvents.length && !alerts.returned.length && !mine.length && !alerts.sessionExpired) return
+
+    if (isQuiet(new Date(this.deps.now()), settings) && this.persisted) {
+      const q = this.persisted.queued
+      const reviews = alerts.reviewPlan.kind === 'individual' || alerts.reviewPlan.kind === 'grouped' ? alerts.reviewPlan.prs : []
+      const ids = (kind: MyPrEvent['kind']) => mine.filter((e) => e.kind === kind).map((e) => e.pr.id)
+      // A first-run summary isn't queued: the digest covers what's pending.
+      this.save({
+        ...this.persisted,
+        queued: {
+          reviews: [...new Set([...q.reviews, ...reviews.map((p) => p.id)])],
+          reminders: [...new Set([...q.reminders, ...alerts.returned.map((p) => p.id)])],
+          approved: [...new Set([...q.approved, ...ids('my_pr_approved')])],
+          changes: [...new Set([...q.changes, ...ids('my_pr_changes_requested')])],
+          ready: [...new Set([...q.ready, ...ids('my_pr_ready')])],
+          sessionExpired: q.sessionExpired || alerts.sessionExpired === true
+        }
+      })
+      return
+    }
+
+    const events: NotificationEvent[] = [...reviewEvents]
+    if (alerts.returned.length) events.push({ kind: 'snooze_returned', prs: alerts.returned })
+    events.push(...capMyPrEvents(mine))
+    if (alerts.sessionExpired) events.push({ kind: 'session_expired' })
+    this.emit(events)
+  }
+
+  /** Quiet hours are over: one notification with what is still relevant. */
+  private flushQueue(now: Date): void {
+    const persisted = this.persisted!
+    const q = persisted.queued
+    const visible = new Set(this.current.prs.map((p) => p.id))
+    const mine = new Map(this.current.myPrs.map((p) => [p.id, p]))
+    const counts: CatchUp = {
+      reviews: q.reviews.filter((id) => visible.has(id)).length,
+      reminders: q.reminders.filter((id) => visible.has(id)).length,
+      approved: q.approved.filter((id) => mine.get(id)?.status === 'approved').length,
+      changes: q.changes.filter((id) => mine.get(id)?.status === 'changes_requested').length,
+      ready: q.ready.filter((id) => mine.get(id)?.readyToMerge).length,
+      sessionExpired: q.sessionExpired
+    }
+    this.save({ ...persisted, queued: emptyQueue() })
+    if (!hasAny(counts)) return
+    // Today's digest is (nearly) due: send one notification instead of two.
+    if (this.deps.session.current && digestNear(now, this.deps.settings(), persisted.lastDigestDay)) {
+      this.sendDigest(now, counts)
+      return
+    }
+    this.emit([{ kind: 'catch_up', counts }])
+  }
+
+  private sendDigest(now: Date, caughtUp: CatchUp | null): void {
+    const prs = this.current.prs
+    const oldest = prs.reduce((min, p) => Math.min(min, Date.parse(p.createdAt)), Number.POSITIVE_INFINITY)
+    const oldestDays = Number.isFinite(oldest) ? Math.floor((now.getTime() - oldest) / DAY_MS) : 0
+    const ready = this.current.myPrs.filter((p) => p.readyToMerge).length
+    const changes = this.current.myPrs.filter((p) => p.status === 'changes_requested').length
+    if (this.persisted) this.save({ ...this.persisted, lastDigestDay: dayKey(now) })
+    const caught = caughtUp && hasAny(caughtUp) ? caughtUp : null
+    if (!prs.length && !ready && !changes && !caught) return
+    this.emit([{ kind: 'digest', reviews: prs.length, oldestDays, ready, changes, caughtUp: caught }])
   }
 
   private save(state: PersistedState): void {
@@ -240,7 +394,15 @@ export class Engine {
   }
 
   private publish(state: AppState): void {
-    this.current = { ...state, locale: this.deps.locale() }
+    const settings = this.deps.settings()
+    const now = new Date(this.deps.now())
+    const quietEnd = settings.notifications ? quietEndsAt(now, settings) : null
+    this.current = {
+      ...state,
+      locale: this.deps.locale(),
+      quietUntil: quietEnd ? quietEnd.getTime() : null,
+      snoozeTomorrowAt: nextWorkdayStart(now, settings).getTime()
+    }
     this.deps.publish(this.current)
   }
 }

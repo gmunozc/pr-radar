@@ -2,12 +2,22 @@ import { DEFAULT_SETTINGS, MIN_POLL_INTERVAL_SEC, type Settings } from '../share
 
 export type SettingsPatch = Partial<Settings> & { openAtLogin?: boolean }
 
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+
 /** Keeps only known settings with the right types; used for IPC input and settings.json. */
 export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (!patch || typeof patch !== 'object') return {}
   const p = patch as Record<string, unknown>
   const out: SettingsPatch = {}
-  for (const key of ['includeTeams', 'notifications', 'showDrafts', 'notifyMyPrs', 'openAtLogin'] as const) {
+  for (const key of [
+    'includeTeams',
+    'notifications',
+    'showDrafts',
+    'notifyMyPrs',
+    'quietHours',
+    'digest',
+    'openAtLogin'
+  ] as const) {
     if (typeof p[key] === 'boolean') out[key] = p[key]
   }
   if (typeof p.pollIntervalSec === 'number' && Number.isFinite(p.pollIntervalSec)) {
@@ -15,6 +25,13 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   }
   if (typeof p.clientId === 'string') out.clientId = p.clientId.trim()
   if (p.language === 'system' || p.language === 'en' || p.language === 'es') out.language = p.language
+  for (const key of ['workStart', 'workEnd', 'digestTime'] as const) {
+    if (typeof p[key] === 'string' && TIME.test(p[key])) out[key] = p[key]
+  }
+  if (Array.isArray(p.workDays)) {
+    const days = [...new Set(p.workDays.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6))].sort()
+    if (days.length > 0) out.workDays = days
+  }
   return out
 }
 

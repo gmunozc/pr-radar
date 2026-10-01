@@ -161,7 +161,8 @@ function main(): void {
     getState: () => engine.state,
     refresh: () => poller.runNow(),
     dismiss: (prId) => engine.dismiss(prId),
-    restoreDismissed: () => engine.restoreDismissed(),
+    restoreDismissed: () => engine.restoreHidden(),
+    snooze: (prId, option) => engine.snooze(prId, option),
     hasClientId: () => clientId() !== '',
     accessUrl: () =>
       clientId()
@@ -216,6 +217,7 @@ function main(): void {
         engine.filtersChanged()
         void poller.runNow()
       }
+      engine.settingsChanged()
       return { ...settings, openAtLogin: app.getLoginItemSettings().openAtLogin }
     },
     showPanel,
@@ -235,6 +237,9 @@ function main(): void {
   powerMonitor.on('unlock-screen', wake)
 
   app.on('second-instance', showPanel)
+
+  // Snoozes, quiet hours and the digest are time-based: check them every minute.
+  setInterval(() => engine.tick(), 60_000)
 
   tray.update(engine.state)
   if (session.current) {

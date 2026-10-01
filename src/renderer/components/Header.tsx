@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent } from 'react'
-import { formatClock, timeAgo } from '../../shared/format'
+import { formatClock, formatDayTime, timeAgo } from '../../shared/format'
 import type { Translate } from '../../shared/i18n'
 import type { AppState } from '../../shared/types'
 import { AlertIcon, ArrowLeftIcon, GearIcon, SyncIcon } from '../icons'
@@ -78,7 +78,7 @@ export function Header({ state, tab, refreshing, inSettings, onRefresh, onToggle
           <div className="header-title">{inSettings ? t('header.settings') : listTitle(state, tab, t)}</div>
           <div className="header-sub">
             {state.viewer ? `@${state.viewer.login} · ` : ''}
-            {subtitle}
+            {state.quietUntil ? t('header.quietUntil', { when: formatDayTime(state.quietUntil, now, locale) }) : subtitle}
           </div>
         </div>
         {!inSettings && (

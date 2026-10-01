@@ -98,3 +98,35 @@ describe('notifications about your PRs', () => {
     expect(render({ kind: 'review_requested', pr: pr({ newCommitsSinceReview: true }) }, es).title).toBe('Te piden revisar de nuevo')
   })
 })
+
+describe('reminders, catch-up and digest notifications', () => {
+  const none = { reviews: 0, reminders: 0, approved: 0, changes: 0, ready: 0, sessionExpired: false }
+
+  it('reminds about one snoozed PR by opening it, and summarizes several', () => {
+    expect(render({ kind: 'snooze_returned', prs: [pr()] }, es)).toMatchObject({
+      id: 'PR_1',
+      title: 'Recordatorio: review pendiente',
+      action: { kind: 'open_url' }
+    })
+    expect(render({ kind: 'snooze_returned', prs: [pr(), pr()] }, en).body).toBe('2 snoozed reviews are pending again')
+  })
+
+  it('lists what happened while you were away', () => {
+    const counts = { ...none, reviews: 2, approved: 1, sessionExpired: true }
+    expect(render({ kind: 'catch_up', counts }, es)).toMatchObject({
+      title: 'Mientras no estabas',
+      body: '2 reviews nuevas · 1 PR aprobado · tu sesión caducó'
+    })
+  })
+
+  it('builds the daily digest, with the caught-up alerts first', () => {
+    const digest = { kind: 'digest' as const, reviews: 3, oldestDays: 4, ready: 1, changes: 0, caughtUp: null }
+    expect(render(digest, en)).toMatchObject({
+      title: 'PR Radar · daily summary',
+      body: '3 reviews pending (oldest: 4 days) · 1 PR ready to merge'
+    })
+    expect(render({ ...digest, oldestDays: 0, ready: 0, caughtUp: { ...none, reviews: 1 } }, es).body).toBe(
+      'Mientras no estabas: 1 review nueva. 3 reviews pendientes'
+    )
+  })
+})

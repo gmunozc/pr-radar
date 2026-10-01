@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyDismissals, diffMyPrs, diffPrs, planNotifications } from '../src/main/diff'
+import { applyDismissals, applyHidden, diffMyPrs, diffPrs, planNotifications } from '../src/main/diff'
 import type { MyPullRequest, PullRequest } from '../src/shared/types'
 
 const pr = (id: string): PullRequest => ({
@@ -124,5 +124,23 @@ describe('diffMyPrs', () => {
     const snap = diffMyPrs({}, [mine('a', { status: 'approved', readyToMerge: true, headOid: 'h1' })]).snapshot
     expect(snap.a.readyNotifiedOid).toBe('h1')
     expect(diffMyPrs(snap, [mine('a', { status: 'approved', readyToMerge: true, headOid: 'h1' })]).events).toEqual([])
+  })
+})
+
+describe('applyHidden', () => {
+  it('hides snoozed PRs until their time, then brings them back', () => {
+    const hidden = { dismissedIds: ['c'], snoozed: { a: 100, b: 500 } }
+    const early = applyHidden([pr('a'), pr('b'), pr('c'), pr('d')], hidden, 50)
+    expect(early.visible.map((p) => p.id)).toEqual(['d'])
+    expect(early.returned).toEqual([])
+    const later = applyHidden([pr('a'), pr('b'), pr('c'), pr('d')], hidden, 100)
+    expect(later.visible.map((p) => p.id)).toEqual(['a', 'd'])
+    expect(later.returned.map((p) => p.id)).toEqual(['a'])
+    expect(later.snoozed).toEqual({ b: 500 })
+    expect(later.dismissedIds).toEqual(['c'])
+  })
+
+  it('forgets snoozes of PRs that left the list', () => {
+    expect(applyHidden([pr('a')], { dismissedIds: [], snoozed: { gone: 999 } }, 0).snoozed).toEqual({})
   })
 })

@@ -13,6 +13,7 @@ const api: PrRadarApi = {
   onState: (cb) => subscribe<AppState>(IPC.state, cb),
   refresh: () => ipcRenderer.invoke(IPC.refresh),
   dismiss: (prId) => ipcRenderer.invoke(IPC.dismiss, prId),
+  snooze: (prId, option) => ipcRenderer.invoke(IPC.snooze, prId, option),
   restoreDismissed: () => ipcRenderer.invoke(IPC.restoreDismissed),
   auth: {
     start: () => ipcRenderer.invoke(IPC.authStart),

@@ -30,3 +30,20 @@ describe('normalizeSettings', () => {
     expect(normalizeSettings('oops')).toEqual(DEFAULT_SETTINGS)
   })
 })
+
+describe('schedule settings', () => {
+  it('accepts valid times and day lists', () => {
+    expect(sanitizeSettingsPatch({ workStart: '08:30', workEnd: '17:45', digestTime: '09:05', workDays: [5, 1, 1, 3] })).toEqual({
+      workStart: '08:30',
+      workEnd: '17:45',
+      digestTime: '09:05',
+      workDays: [1, 3, 5]
+    })
+    expect(sanitizeSettingsPatch({ quietHours: true, digest: false })).toEqual({ quietHours: true, digest: false })
+  })
+
+  it('rejects malformed times and empty or invalid day lists', () => {
+    expect(sanitizeSettingsPatch({ workStart: '9:00', workEnd: '24:00', digestTime: 'soon', workDays: [] })).toEqual({})
+    expect(sanitizeSettingsPatch({ workDays: [7, -1, 2.5, 'x'] })).toEqual({})
+  })
+})

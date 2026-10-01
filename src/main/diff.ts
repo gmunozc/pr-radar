@@ -38,6 +38,37 @@ export function applyDismissals(
   }
 }
 
+export interface HiddenPrs {
+  dismissedIds: readonly string[]
+  /** PR id → epoch ms when it comes back. */
+  snoozed: Readonly<Record<string, number>>
+}
+
+/**
+ * Hides dismissed and snoozed PRs. Snoozes that are over come back (`returned`); like
+ * dismissals, snoozes of PRs that left the list are forgotten.
+ */
+export function applyHidden(
+  prs: PullRequest[],
+  hidden: HiddenPrs,
+  now: number
+): { visible: PullRequest[]; dismissedIds: string[]; snoozed: Record<string, number>; returned: PullRequest[] } {
+  const { visible: notDismissed, dismissedIds } = applyDismissals(prs, hidden.dismissedIds)
+  const snoozed: Record<string, number> = {}
+  const visible: PullRequest[] = []
+  const returned: PullRequest[] = []
+  for (const pr of notDismissed) {
+    const until = hidden.snoozed[pr.id]
+    if (until === undefined) visible.push(pr)
+    else if (until > now) snoozed[pr.id] = until
+    else {
+      visible.push(pr)
+      returned.push(pr)
+    }
+  }
+  return { visible, dismissedIds, snoozed, returned }
+}
+
 export const MAX_INDIVIDUAL_NOTIFICATIONS = 3
 
 export type NotificationPlan =

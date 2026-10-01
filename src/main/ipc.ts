@@ -10,6 +10,7 @@ export interface IpcContext {
   getState(): AppState
   refresh(): Promise<void>
   dismiss(prId: string): void
+  snooze(prId: string, option: 'hour' | 'tomorrow'): void
   restoreDismissed(): void
   hasClientId(): boolean
   accessUrl(): string
@@ -38,6 +39,9 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.refresh, () => ctx.refresh())
   ipcMain.handle(IPC.dismiss, (_e, prId: unknown) => {
     if (typeof prId === 'string') ctx.dismiss(prId)
+  })
+  ipcMain.handle(IPC.snooze, (_e, prId: unknown, option: unknown) => {
+    if (typeof prId === 'string' && (option === 'hour' || option === 'tomorrow')) ctx.snooze(prId, option)
   })
   ipcMain.handle(IPC.restoreDismissed, () => ctx.restoreDismissed())
   ipcMain.handle(IPC.authHasClientId, () => ctx.hasClientId())

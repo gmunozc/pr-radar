@@ -1,13 +1,14 @@
-import type { KeyboardEvent, MouseEvent } from 'react'
-import { formatDateTime, timeAgo } from '../../shared/format'
+import { useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { formatClock, formatDateTime, isTomorrow, timeAgo, weekdayName } from '../../shared/format'
 import type { PullRequest } from '../../shared/types'
-import { XIcon } from '../icons'
+import { ClockIcon, XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
 import { CiIcon } from './CiIcon'
 
-export function PrItem({ pr }: { pr: PullRequest }) {
+export function PrItem({ pr, snoozeTomorrowAt }: { pr: PullRequest; snoozeTomorrowAt: number }) {
   const t = useT()
   const locale = useLocale()
+  const [snoozing, setSnoozing] = useState(false)
   const open = () => void window.prRadar.openExternal(pr.url)
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -19,6 +20,18 @@ export function PrItem({ pr }: { pr: PullRequest }) {
     e.stopPropagation()
     void window.prRadar.dismiss(pr.id)
   }
+  const toggleSnooze = (e: MouseEvent) => {
+    e.stopPropagation()
+    setSnoozing(!snoozing)
+  }
+  const snooze = (option: 'hour' | 'tomorrow') => (e: MouseEvent) => {
+    e.stopPropagation()
+    void window.prRadar.snooze(pr.id, option)
+  }
+  const now = Date.now()
+  const tomorrowLabel = isTomorrow(snoozeTomorrowAt, now)
+    ? t('pr.snoozeTomorrow', { time: formatClock(snoozeTomorrowAt, locale) })
+    : t('pr.snoozeDay', { day: weekdayName(snoozeTomorrowAt, locale), time: formatClock(snoozeTomorrowAt, locale) })
   const [owner, name] = pr.repo.split('/')
 
   // A div rather than a <button>, because it contains the dismiss button.
@@ -64,17 +77,39 @@ export function PrItem({ pr }: { pr: PullRequest }) {
           </span>
           {pr.author && <span className="pr-author">@{pr.author.login}</span>}
         </div>
+        {snoozing && (
+          <div className="snooze-row" onClick={(e) => e.stopPropagation()}>
+            <ClockIcon size={12} />
+            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={snooze('hour')}>
+              {t('pr.snoozeHour')}
+            </button>
+            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={snooze('tomorrow')}>
+              {tomorrowLabel}
+            </button>
+          </div>
+        )}
       </div>
-      <button
-        className="pr-dismiss"
-        onClick={dismiss}
-        onMouseDown={(e) => e.preventDefault()}
-        onKeyDown={(e) => e.stopPropagation()}
-        title={t('pr.dismissHint')}
-        aria-label={t('pr.dismiss')}
-      >
-        <XIcon size={12} />
-      </button>
+      <div className={`pr-actions ${snoozing ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
+        <button
+          className="pr-action"
+          onClick={toggleSnooze}
+          onMouseDown={(e) => e.preventDefault()}
+          title={t('pr.snooze')}
+          aria-label={t('pr.snooze')}
+          aria-expanded={snoozing}
+        >
+          <ClockIcon size={12} />
+        </button>
+        <button
+          className="pr-action pr-action-dismiss"
+          onClick={dismiss}
+          onMouseDown={(e) => e.preventDefault()}
+          title={t('pr.dismissHint')}
+          aria-label={t('pr.dismiss')}
+        >
+          <XIcon size={12} />
+        </button>
+      </div>
     </div>
   )
 }

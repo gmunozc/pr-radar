@@ -9,6 +9,50 @@ export interface PersistedState {
   dismissedIds: string[]
   /** Your PRs as of the last poll; missing means "take a silent baseline". */
   myPrs?: Record<string, MyPrSnapshot>
+  /** PR id → epoch ms when a snoozed review request comes back. */
+  snoozed: Record<string, number>
+  /** Notifications held back by quiet hours, delivered together when they end. */
+  queued: QueuedAlerts
+  /** Local day ("YYYY-MM-DD") the last daily digest was handled. */
+  lastDigestDay: string | null
+}
+
+/** PR ids per kind of alert held back during quiet hours. */
+export interface QueuedAlerts {
+  reviews: string[]
+  reminders: string[]
+  approved: string[]
+  changes: string[]
+  ready: string[]
+  sessionExpired: boolean
+}
+
+export const emptyQueue = (): QueuedAlerts => ({
+  reviews: [],
+  reminders: [],
+  approved: [],
+  changes: [],
+  ready: [],
+  sessionExpired: false
+})
+
+function queue(v: unknown): QueuedAlerts {
+  const r = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>
+  return {
+    reviews: stringArray(r.reviews),
+    reminders: stringArray(r.reminders),
+    approved: stringArray(r.approved),
+    changes: stringArray(r.changes),
+    ready: stringArray(r.ready),
+    sessionExpired: r.sessionExpired === true
+  }
+}
+
+function snoozes(v: unknown): Record<string, number> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  return Object.fromEntries(
+    Object.entries(v as Record<string, unknown>).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1]))
+  )
 }
 
 function snapshot(v: unknown): Record<string, MyPrSnapshot> | undefined {
@@ -38,6 +82,9 @@ export function migrateState(raw: unknown): PersistedState | null {
     login: r.login,
     seenIds: stringArray(r.seenIds),
     dismissedIds: stringArray(r.dismissedIds),
-    ...(myPrs ? { myPrs } : {})
+    ...(myPrs ? { myPrs } : {}),
+    snoozed: snoozes(r.snoozed),
+    queued: queue(r.queued),
+    lastDigestDay: typeof r.lastDigestDay === 'string' ? r.lastDigestDay : null
   }
 }

@@ -73,6 +73,7 @@ interface Options {
   refresh?: (clientId: string, refreshToken: string) => Promise<TokenSet>
   settings?: Partial<Settings>
   online?: () => boolean
+  now?: number
 }
 
 function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
@@ -81,10 +82,11 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
   const refresh =
     opts.refresh ??
     vi.fn(async () => ({ accessToken: 'gho_new', expiresAt: NOW + 8 * HOUR, refreshToken: 'ghr_new', refreshTokenExpiresAt: null }))
+  let clock = opts.now ?? NOW
   const session = new Session({
     store: { load: () => authValue, save: (a) => (authValue = a), clear: () => (authValue = null) },
     refresh,
-    now: () => NOW,
+    now: () => clock,
     log: silent
   })
   const queue = [...responses]
@@ -99,7 +101,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
   const settings: Settings = { ...DEFAULT_SETTINGS, ...opts.settings }
   const onSessionEnded = vi.fn()
   const deps: EngineDeps = {
-    now: () => NOW,
+    now: () => clock,
     settings: () => settings,
     session,
     fetchPullRequests,
@@ -114,6 +116,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
   const engine = new Engine(deps)
   return {
     engine,
+    setNow: (t: number) => (clock = t),
     events,
     published,
     fetchPullRequests,
@@ -201,7 +204,7 @@ describe('Engine dismissals', () => {
     await t.engine.poll()
     expect(t.engine.state.prs.map((p) => p.id)).toEqual(['b'])
 
-    t.engine.restoreDismissed()
+    t.engine.restoreHidden()
     expect(t.engine.state.prs.map((p) => p.id)).toEqual(['a', 'b'])
     expect(t.engine.state.dismissedCount).toBe(0)
     expect(t.events).toEqual([])
@@ -354,5 +357,124 @@ describe('Engine and your own PRs', () => {
     await t.engine.poll()
     await t.engine.poll()
     expect(t.events).toEqual([{ kind: 'my_prs_grouped', count: 4 }])
+  })
+})
+
+// 2026-10-05 is a Monday; tests run with TZ=UTC.
+const at = (day: number, hhmm: string) => Date.parse(`2026-10-${String(day).padStart(2, '0')}T${hhmm}:00Z`)
+const fresh = (over: Partial<StoredAuth> = {}) => auth({ expiresAt: null, refreshToken: null, ...over })
+
+describe('Engine snooze', () => {
+  it('hides a snoozed PR, then brings it back with a reminder', async () => {
+    const t = setup([result(['a', 'b'])], { auth: fresh(), now: at(5, '10:00') })
+    await t.engine.poll()
+    t.events.length = 0
+
+    t.engine.snooze('a', 'hour')
+    expect(t.engine.state.prs.map((p) => p.id)).toEqual(['b'])
+    expect(t.engine.state.snoozedCount).toBe(1)
+    expect(t.stored).toMatchObject({ snoozed: { a: at(5, '11:00') } })
+
+    t.setNow(at(5, '10:59'))
+    t.engine.tick()
+    expect(t.events).toEqual([])
+    t.setNow(at(5, '11:00'))
+    t.engine.tick()
+    expect(t.engine.state.prs.map((p) => p.id)).toEqual(['a', 'b'])
+    expect(t.events).toEqual([{ kind: 'snooze_returned', prs: [pr('a')] }])
+  })
+
+  it('snoozes "tomorrow" to the next working morning and restores without notifying', async () => {
+    const t = setup([result(['a'])], { auth: fresh(), now: at(9, '17:00') })
+    await t.engine.poll()
+    t.engine.snooze('a', 'tomorrow')
+    expect(t.stored).toMatchObject({ snoozed: { a: at(12, '09:00') } })
+    expect(t.engine.state.snoozeTomorrowAt).toBe(at(12, '09:00'))
+    t.events.length = 0
+    t.engine.restoreHidden()
+    expect(t.engine.state.prs.map((p) => p.id)).toEqual(['a'])
+    expect(t.engine.state.snoozedCount).toBe(0)
+    expect(t.events).toEqual([])
+  })
+})
+
+describe('Engine quiet hours', () => {
+  const quiet = { quietHours: true, digest: false }
+
+  it('holds alerts back and sends one catch-up when working hours start', async () => {
+    const mine = (status: MyPullRequest['status']) => myPr('m1', { status })
+    const t = setup([result(['a'], 'me', [], [mine('waiting')]), result(['a', 'b', 'c'], 'me', [], [mine('approved')])], {
+      auth: fresh(),
+      settings: quiet,
+      now: at(5, '07:00')
+    })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+    expect(t.stored).toMatchObject({ queued: { reviews: ['b', 'c'], approved: ['m1'] } })
+    expect(t.engine.state.quietUntil).toBe(at(5, '09:00'))
+
+    t.setNow(at(5, '09:00'))
+    t.engine.tick()
+    expect(t.events).toEqual([
+      { kind: 'catch_up', counts: { reviews: 2, reminders: 0, approved: 1, changes: 0, ready: 0, sessionExpired: false } }
+    ])
+    expect(t.stored).toMatchObject({ queued: { reviews: [], approved: [] } })
+    expect(t.engine.state.quietUntil).toBeNull()
+  })
+
+  it('drops held-back alerts that no longer apply', async () => {
+    const t = setup([result(['a']), result(['a', 'b']), result(['a'])], { auth: fresh(), settings: quiet, now: at(5, '07:00') })
+    await t.engine.poll()
+    await t.engine.poll()
+    await t.engine.poll()
+    t.setNow(at(5, '09:00'))
+    t.engine.tick()
+    expect(t.events).toEqual([])
+  })
+
+  it('folds held-back alerts into the digest when it is due soon after', async () => {
+    const t = setup([result(['a']), result(['a', 'b'])], {
+      auth: fresh(),
+      settings: { quietHours: true, digest: true, digestTime: '09:30' },
+      now: at(5, '07:00')
+    })
+    await t.engine.poll()
+    await t.engine.poll()
+    t.setNow(at(5, '09:00'))
+    t.engine.tick()
+    expect(t.events).toMatchObject([{ kind: 'digest', reviews: 2, caughtUp: { reviews: 1 } }])
+    expect(t.stored).toMatchObject({ lastDigestDay: '2026-10-05' })
+  })
+})
+
+describe('Engine daily digest', () => {
+  it('sends one digest a day with what is pending', async () => {
+    const created = (id: string, iso: string) => ({ ...pr(id), createdAt: iso })
+    const res: FetchResult = { ...result([]), prs: [created('a', '2026-10-01T10:00:00Z'), created('b', '2026-10-04T10:00:00Z')] }
+    const t = setup([res, res], { auth: fresh(), now: at(5, '09:31') })
+    await t.engine.poll()
+    expect(t.events).toEqual([
+      { kind: 'reviews_summary', count: 2 },
+      { kind: 'digest', reviews: 2, oldestDays: 3, ready: 0, changes: 0, caughtUp: null }
+    ])
+    t.events.length = 0
+    t.setNow(at(5, '09:40'))
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+  })
+
+  it('skips the digest when nothing is pending, and waits for fresh data', async () => {
+    const t = setup([result([])], { auth: fresh(), now: at(5, '09:31') })
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+    expect(t.stored).toMatchObject({ lastDigestDay: '2026-10-05' })
+
+    const u = setup([result(['a'])], { auth: fresh(), now: at(5, '08:00') })
+    await u.engine.poll()
+    u.events.length = 0
+    u.setNow(at(5, '09:31'))
+    u.engine.tick()
+    expect(u.events).toEqual([])
   })
 })

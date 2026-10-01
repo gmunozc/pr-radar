@@ -8,11 +8,12 @@ const REVIEW_REQUESTED_URL = 'https://github.com/pulls/review-requested'
 // Organizations that restrict OAuth Apps silently hide their PRs until access is granted.
 export const openOrgAccess = async () => window.prRadar.openExternal(await window.prRadar.auth.accessUrl())
 
-function RestoreDismissed({ count }: { count: number }) {
+function RestoreHidden({ dismissed, snoozed }: { dismissed: number; snoozed: number }) {
   const t = useT()
+  const parts = [snoozed ? t('list.snoozed', { count: snoozed }) : '', dismissed ? t('list.dismissed', { count: dismissed }) : '']
   return (
     <span className="dismissed">
-      {t('list.dismissed', { count })} ·{' '}
+      {parts.filter(Boolean).join(' · ')} ·{' '}
       <button className="link" onClick={() => void window.prRadar.restoreDismissed()}>
         {t('list.restore')}
       </button>
@@ -37,9 +38,9 @@ export function PrList({ state }: { state: AppState }) {
         <CheckCircleIcon size={36} className="empty-icon" />
         <div className="empty-title">{t('list.emptyTitle')}</div>
         <div className="empty-sub">{t('list.emptySub')}</div>
-        {state.dismissedCount > 0 ? (
+        {state.dismissedCount + state.snoozedCount > 0 ? (
           <div className="empty-hint">
-            <RestoreDismissed count={state.dismissedCount} />
+            <RestoreHidden dismissed={state.dismissedCount} snoozed={state.snoozedCount} />
           </div>
         ) : (
           <div className="empty-hint">
@@ -60,14 +61,16 @@ export function PrList({ state }: { state: AppState }) {
     <>
       <main className="list">
         {state.prs.map((pr) => (
-          <PrItem key={pr.id} pr={pr} />
+          <PrItem key={pr.id} pr={pr} snoozeTomorrowAt={state.snoozeTomorrowAt} />
         ))}
       </main>
       <footer className="footer">
         <button className="link" onClick={() => void window.prRadar.openExternal(REVIEW_REQUESTED_URL)}>
           {t('list.viewAll')}
         </button>
-        {state.dismissedCount > 0 && <RestoreDismissed count={state.dismissedCount} />}
+        {state.dismissedCount + state.snoozedCount > 0 && (
+          <RestoreHidden dismissed={state.dismissedCount} snoozed={state.snoozedCount} />
+        )}
       </footer>
     </>
   )

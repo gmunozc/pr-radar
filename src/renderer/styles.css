@@ -473,10 +473,30 @@ html[data-platform='darwin'] .tab-active {
   color: var(--red);
 }
 
-.pr-dismiss {
+/* Snooze and dismiss take the place of the age while hovering. */
+.pr-actions {
   position: absolute;
   top: 6px;
   right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+}
+
+.pr:hover .pr-actions,
+.pr:focus-visible .pr-actions,
+.pr-actions:focus-within,
+.pr-actions-open {
+  opacity: 1;
+}
+
+.pr:hover .pr-age,
+.pr:focus-visible .pr-age,
+.pr:has(.pr-actions-open) .pr-age {
+  visibility: hidden;
+}
+
+.pr-action {
   display: grid;
   place-items: center;
   width: 22px;
@@ -486,24 +506,35 @@ html[data-platform='darwin'] .tab-active {
   border-radius: 6px;
   background: var(--surface-hover);
   color: var(--text-muted);
-  opacity: 0;
 }
 
-/* The dismiss button takes the place of the age while hovering. */
-.pr:hover .pr-dismiss,
-.pr:focus-visible .pr-dismiss,
-.pr-dismiss:focus-visible {
-  opacity: 1;
+.pr-action:hover,
+.pr-actions-open .pr-action:first-child {
+  background: var(--direct-bg);
+  color: var(--direct-fg);
 }
 
-.pr:hover .pr-age,
-.pr:focus-visible .pr-age {
-  visibility: hidden;
-}
-
-.pr-dismiss:hover {
+.pr-action-dismiss:hover {
   background: var(--error-bg);
   color: var(--error-fg);
+}
+
+.pr-action:focus {
+  outline: none;
+}
+
+.snooze-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  color: var(--text-muted);
+}
+
+.btn-small {
+  padding: 2px 9px;
+  font-size: 11.5px;
+  border-radius: 6px;
 }
 
 /* Status icon in place of the avatar on "Mis PRs" */
@@ -680,6 +711,54 @@ html[data-platform='darwin'] .tab-active {
   width: auto;
   padding: 4px 8px;
   cursor: default;
+}
+
+.input-time {
+  flex: none;
+  width: auto;
+  padding: 3px 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.input-time::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+.setting.setting-column {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.days {
+  display: flex;
+  gap: 4px;
+}
+
+.day {
+  flex: 1;
+  padding: 4px 0;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.day-on {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-text);
+}
+
+.day:disabled {
+  opacity: 0.85;
 }
 
 .input-num {

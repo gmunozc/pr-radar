@@ -31,3 +31,23 @@ export function formatClock(ms: number, locale: Locale): string {
 export function formatDateTime(iso: string, locale: Locale): string {
   return new Date(iso).toLocaleString(locale)
 }
+
+/** "18:42" today, "Tomorrow 9:00"-style handled by callers; otherwise "Mon 9:00". */
+export function formatDayTime(ms: number, now: number, locale: Locale): string {
+  const time = formatClock(ms, locale)
+  const sameDay = new Date(ms).toDateString() === new Date(now).toDateString()
+  if (sameDay) return time
+  const day = new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(ms)
+  return `${day} ${time}`
+}
+
+/** Whether `ms` falls on the calendar day after `now`. */
+export function isTomorrow(ms: number, now: number): boolean {
+  const tomorrow = new Date(now)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return new Date(ms).toDateString() === tomorrow.toDateString()
+}
+
+export function weekdayName(ms: number, locale: Locale): string {
+  return new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(ms)
+}
