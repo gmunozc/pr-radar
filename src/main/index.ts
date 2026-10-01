@@ -1,13 +1,13 @@
 /** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
 import { app, clipboard, net, Notification, powerMonitor, screen, shell } from 'electron'
 import { dirname, join } from 'node:path'
-import { IPC, type AuthStatus, type Settings, type Warning } from '../shared/types'
+import { IPC, type AuthMethod, type AuthStatus, type Settings, type Warning } from '../shared/types'
 import { createAuthStore, DeviceLogin } from './auth'
 import { debugMenu, FaultInjector } from './debug'
 import { refreshAccessToken } from './deviceFlow'
 import { buildDiagnostics } from './diagnostics'
 import { Engine } from './engine'
-import { fetchPullRequests } from './github'
+import { fetchInstallations, fetchPullRequests } from './github'
 import { applyLanguage, currentLocale } from './i18n'
 import { registerIpc } from './ipc'
 import { logger } from './log'
@@ -50,6 +50,12 @@ function main(): void {
   const stateFile = new JsonFile<unknown>(join(userData, 'state.json'), () => null)
   let settings: Settings = normalizeSettings(settingsFile.read())
   const clientId = () => import.meta.env.MAIN_VITE_GITHUB_CLIENT_ID?.trim() || settings.clientId.trim()
+  const appClientId = import.meta.env.MAIN_VITE_GITHUB_APP_CLIENT_ID?.trim() ?? ''
+  const appSlug = import.meta.env.MAIN_VITE_GITHUB_APP_SLUG?.trim() ?? ''
+  const authMethods = () => ({
+    available: { github_app: appClientId !== '', oauth_app: clientId() !== '' },
+    preferred: (appClientId ? 'github_app' : 'oauth_app') as AuthMethod
+  })
   applyLanguage(settings.language, app.getPreferredSystemLanguages())
 
   const authStore = createAuthStore(join(userData, 'auth.bin'), clientId, logger, { plain: !app.isPackaged })
@@ -81,6 +87,7 @@ function main(): void {
       settings: () => settings,
       session,
       fetchPullRequests: faults ? faults.wrap(fetchPullRequests) : fetchPullRequests,
+      fetchInstallations: (token) => fetchInstallations(token),
       stateStore: {
         read: () => stateFile.read(),
         write: (state) => stateFile.write(state),
@@ -163,7 +170,10 @@ function main(): void {
   }
 
   const tray = new AppTray(panel, {
-    refresh: () => void poller.runNow(),
+    refresh: () => {
+      engine.forceInstallationCheck()
+      void poller.runNow()
+    },
     downloadUpdate: () => void openRelease(updates?.available?.downloadUrl ?? updates?.available?.releaseUrl),
     logout: () => engine.logout(),
     isLoggedIn: () => session.current !== null,
@@ -186,26 +196,37 @@ function main(): void {
 
   registerIpc({
     getState: () => engine.state,
-    refresh: () => poller.runNow(),
+    refresh: () => {
+      engine.forceInstallationCheck()
+      return poller.runNow()
+    },
     dismiss: (prId) => engine.dismiss(prId),
     restoreDismissed: () => engine.restoreHidden(),
     snooze: (prId, option) => engine.snooze(prId, option),
     hasClientId: () => clientId() !== '',
-    accessUrl: () =>
-      clientId()
+    authMethods,
+    switchMethod: () => engine.switchMethod(),
+    accessUrl: () => {
+      const method = session.current?.method ?? authMethods().preferred
+      if (method === 'github_app') {
+        return appSlug ? `https://github.com/apps/${appSlug}/installations/new` : 'https://github.com/settings/installations'
+      }
+      return clientId()
         ? `https://github.com/settings/connections/applications/${encodeURIComponent(clientId())}`
-        : 'https://github.com/settings/applications',
-    startLogin: async () => {
-      const id = clientId()
+        : 'https://github.com/settings/applications'
+    },
+    startLogin: async (requested) => {
+      const method = requested ?? authMethods().preferred
+      const id = method === 'github_app' ? appClientId : clientId()
       if (!id) {
         publishAuth({ phase: 'error', code: 'missing_client_id' })
         return
       }
-      const tokens = await deviceLogin.start(id)
+      const tokens = await deviceLogin.start(id, method === 'github_app' ? null : undefined)
       if (!tokens) return
-      session.setFromLogin('oauth_app', id, tokens)
+      session.setFromLogin(method, id, tokens)
       logger.info('login', {
-        method: 'oauth_app',
+        method,
         hasRefresh: tokens.refreshToken !== null,
         expiresInSec: tokens.expiresAt === null ? null : Math.round((tokens.expiresAt - Date.now()) / 1000)
       })

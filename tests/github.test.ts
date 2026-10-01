@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  fetchInstallations,
+  installationWarnings,
   buildMyPrsQuery,
   buildSearchQuery,
   ciFromRollup,
@@ -304,5 +306,44 @@ describe('fetchPullRequests details', () => {
       { code: 'missing_permission', params: { field: 'checks' } },
       { code: 'missing_permission', params: { field: 'merge' } }
     ])
+  })
+})
+
+describe('GitHub App installations', () => {
+  const full = { pull_requests: 'read', checks: 'read', statuses: 'read', metadata: 'read' }
+
+  it('lists the accounts where the app is installed', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({
+        total_count: 2,
+        installations: [
+          { account: { login: 'me', type: 'User' }, permissions: full },
+          { account: { login: 'acme', type: 'Organization' }, permissions: { pull_requests: 'read' } },
+          { account: null }
+        ]
+      })
+    )
+    const installs = await fetchInstallations('ghu_x', fetchFn)
+    expect(installs).toEqual([
+      { login: 'me', type: 'User', permissions: full },
+      { login: 'acme', type: 'Organization', permissions: { pull_requests: 'read' } }
+    ])
+    expect(fetchFn.mock.calls[0][0]).toBe('https://api.github.com/user/installations?per_page=100')
+  })
+
+  it('explains a missing installation and permissions waiting for approval', () => {
+    expect(installationWarnings([])).toEqual([{ code: 'app_not_installed' }])
+    expect(
+      installationWarnings([
+        { login: 'me', type: 'User', permissions: full },
+        { login: 'acme', type: 'Organization', permissions: { pull_requests: 'read' } }
+      ])
+    ).toEqual([{ code: 'app_permissions_pending', params: { accounts: 'acme' } }])
+    expect(installationWarnings([{ login: 'me', type: 'User', permissions: full }])).toEqual([])
+  })
+
+  it('reports an expired token as unauthorized', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ message: 'Bad credentials' }, { status: 401 }))
+    await expect(fetchInstallations('ghu_x', fetchFn)).rejects.toMatchObject({ kind: 'unauthorized' })
   })
 })

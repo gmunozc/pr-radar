@@ -89,13 +89,16 @@ export class DeviceLogin {
     return this.controller !== null
   }
 
-  /** Runs the whole device flow; resolves with the tokens, or null if it failed or was cancelled. */
-  async start(clientId: string): Promise<TokenSet | null> {
+  /**
+   * Runs the whole device flow; resolves with the tokens, or null if it failed or was cancelled.
+   * `scope` is for OAuth Apps; pass null for a GitHub App.
+   */
+  async start(clientId: string, scope?: string | null): Promise<TokenSet | null> {
     this.cancel()
     const controller = new AbortController()
     this.controller = controller
     try {
-      const code = await requestDeviceCode(clientId)
+      const code = await requestDeviceCode(clientId, fetch, { scope })
       void clipboard.writeText(code.userCode).catch(() => {})
       this.onStatus({
         phase: 'waiting',

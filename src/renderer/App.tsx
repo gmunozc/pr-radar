@@ -64,7 +64,7 @@ function Panel() {
         onToggleSettings={() => setView(view === 'settings' ? 'list' : 'settings')}
       />
       {view === 'settings' ? (
-        <SettingsView />
+        <SettingsView state={state} />
       ) : (
         <>
           {state.update && <UpdateBanner update={state.update} />}

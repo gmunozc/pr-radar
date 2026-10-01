@@ -1,5 +1,5 @@
 import { app, ipcMain, shell } from 'electron'
-import { IPC, type AppState, type Settings } from '../shared/types'
+import { IPC, type AppState, type AuthMethod, type Settings } from '../shared/types'
 import { logger } from './log'
 import { testNotification } from './notifier'
 import { sanitizeSettingsPatch, type SettingsPatch } from './settings'
@@ -13,8 +13,10 @@ export interface IpcContext {
   snooze(prId: string, option: 'hour' | 'tomorrow'): void
   restoreDismissed(): void
   hasClientId(): boolean
+  authMethods(): { available: Record<AuthMethod, boolean>; preferred: AuthMethod }
+  switchMethod(): void
   accessUrl(): string
-  startLogin(): Promise<void>
+  startLogin(method?: AuthMethod): Promise<void>
   cancelLogin(): void
   logout(): void
   getSettings(): SettingsView
@@ -51,9 +53,11 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.authHasClientId, () => ctx.hasClientId())
   ipcMain.handle(IPC.authAccessUrl, () => ctx.accessUrl())
   // Login runs in the background; progress is pushed through IPC.authStatus.
-  ipcMain.handle(IPC.authStart, () => {
-    void ctx.startLogin()
+  ipcMain.handle(IPC.authStart, (_e, method: unknown) => {
+    void ctx.startLogin(method === 'github_app' || method === 'oauth_app' ? method : undefined)
   })
+  ipcMain.handle(IPC.authMethods, () => ctx.authMethods())
+  ipcMain.handle(IPC.authSwitch, () => ctx.switchMethod())
   ipcMain.handle(IPC.authCancel, () => ctx.cancelLogin())
   ipcMain.handle(IPC.authLogout, () => ctx.logout())
   ipcMain.handle(IPC.settingsGet, () => ctx.getSettings())

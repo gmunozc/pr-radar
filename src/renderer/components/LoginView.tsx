@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AuthNotice, AuthStatus } from '../../shared/types'
+import type { AuthMethod, AuthNotice, AuthStatus } from '../../shared/types'
 import { PullRequestIcon } from '../icons'
 import { Rich, useT } from '../i18n'
 
@@ -63,20 +63,23 @@ function ClientIdForm({ onSaved }: { onSaved(): void }) {
 export function LoginView({ auth, notice }: { auth: AuthStatus; notice: AuthNotice | null }) {
   const t = useT()
   const [hasClientId, setHasClientId] = useState<boolean | null>(null)
+  const [methods, setMethods] = useState<{ available: Record<AuthMethod, boolean>; preferred: AuthMethod } | null>(null)
   const [starting, setStarting] = useState(false)
 
   useEffect(() => {
     void api.auth.hasClientId().then(setHasClientId)
+    void api.auth.methods().then(setMethods)
   }, [])
 
   useEffect(() => {
     if (auth.phase !== 'idle') setStarting(false)
   }, [auth])
 
-  const start = () => {
+  const start = (method?: AuthMethod) => {
     setStarting(true)
-    void api.auth.start()
+    void api.auth.start(method)
   }
+  const appAvailable = methods?.available.github_app ?? false
 
   return (
     <div className="login">
@@ -85,7 +88,7 @@ export function LoginView({ auth, notice }: { auth: AuthStatus; notice: AuthNoti
       </div>
       <h1 className="login-title">PR Radar</h1>
 
-      {hasClientId === false ? (
+      {hasClientId === false && !appAvailable ? (
         <ClientIdForm onSaved={() => setHasClientId(true)} />
       ) : auth.phase === 'waiting' ? (
         <div className="device">
@@ -115,9 +118,14 @@ export function LoginView({ auth, notice }: { auth: AuthStatus; notice: AuthNoti
           {auth.phase === 'error' && (
             <div className="banner banner-error inline">{t(`authError.${auth.code}`, { detail: auth.detail ?? '' })}</div>
           )}
-          <button className="btn btn-primary btn-lg" onClick={start} disabled={starting || hasClientId === null}>
+          <button className="btn btn-primary btn-lg" onClick={() => start()} disabled={starting || methods === null}>
             {starting ? t('login.connecting') : t('login.connect')}
           </button>
+          {appAvailable && methods?.available.oauth_app && !starting && (
+            <button className="link small use-oauth" title={t('login.useOauthHint')} onClick={() => start('oauth_app')}>
+              {t('login.useOauth')}
+            </button>
+          )}
           {auth.phase === 'error' && (
             <div className="row">
               <button className="link small" onClick={() => setHasClientId(false)}>

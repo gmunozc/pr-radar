@@ -156,6 +156,24 @@ export const en = {
   'settings.checkNow': 'Check now',
   'settings.upToDate': 'Up to date',
 
+  // GitHub App
+  'warning.app_not_installed': 'PR Radar is not installed on any account yet. Install it to see your PRs.',
+  'warning.app_permissions_pending': 'Approve the updated permissions of PR Radar in: {accounts}.',
+  'login.useOauth': 'Use the OAuth App instead',
+  'login.useOauthHint': 'It asks for broad access (repo scope) and your organization has to approve it.',
+  'install.title': 'Install PR Radar on your account or organization',
+  'install.sub': 'The GitHub App only sees repositories where it is installed.',
+  'install.button': 'Install',
+  'install.refresh': 'I installed it',
+  'list.orgHintApp': 'The app may not be installed on your organization.',
+  'list.installOrg': 'Install it on the org',
+  'settings.method': 'Access',
+  'settings.methodApp': 'GitHub App (read-only)',
+  'settings.methodOauth': 'OAuth App (repo scope)',
+  'settings.switchMethod': 'Change',
+  'settings.installedOn': 'Installed on: {accounts}',
+  'settings.installOrg': 'Install on another organization',
+
   // Settings
   'settings.whatToReview': 'What to review',
   'settings.includeTeams': 'Include requests to my teams',

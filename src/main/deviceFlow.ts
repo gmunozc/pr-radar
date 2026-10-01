@@ -73,8 +73,17 @@ async function postForm(fetchFn: FetchFn, url: string, params: Record<string, st
   return body
 }
 
-export async function requestDeviceCode(clientId: string, fetchFn: FetchFn = fetch): Promise<DeviceCode> {
-  const body = await postForm(fetchFn, DEVICE_CODE_URL, { client_id: clientId, scope: SCOPES })
+/**
+ * Starts the device flow. `scope` only applies to OAuth Apps; a GitHub App's access comes
+ * from the permissions it was installed with.
+ */
+export async function requestDeviceCode(
+  clientId: string,
+  fetchFn: FetchFn = fetch,
+  opts: { scope?: string | null } = {}
+): Promise<DeviceCode> {
+  const scope = opts.scope === undefined ? SCOPES : opts.scope
+  const body = await postForm(fetchFn, DEVICE_CODE_URL, { client_id: clientId, ...(scope ? { scope } : {}) })
   if (body.error) {
     if (body.error === 'device_flow_disabled') {
       throw new DeviceFlowError('device_flow_disabled', 'The OAuth App does not have "Enable Device Flow" turned on')

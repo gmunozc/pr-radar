@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { LanguagePref } from '../../shared/i18n'
-import { MIN_POLL_INTERVAL_SEC, type NotifyResult, type Settings } from '../../shared/types'
+import { MIN_POLL_INTERVAL_SEC, type AppState, type NotifyResult, type Settings } from '../../shared/types'
 import { useLocale, useT } from '../i18n'
 import { openOrgAccess } from './PrList'
 
@@ -52,9 +52,13 @@ function TimeInput({ value, onCommit }: { value: string; onCommit(v: string): vo
 // Monday first; 0 = Sunday. 2026-01-04 was a Sunday, so 4 + d is weekday d.
 const WEEK = [1, 2, 3, 4, 5, 6, 0]
 
-export function SettingsView() {
+export function SettingsView({ state }: { state: AppState }) {
   const t = useT()
   const locale = useLocale()
+  const [bothMethods, setBothMethods] = useState(false)
+  useEffect(() => {
+    void api.auth.methods().then((m) => setBothMethods(m.available.github_app && m.available.oauth_app))
+  }, [])
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [interval, setIntervalValue] = useState('')
   const [testResult, setTestResult] = useState<NotifyResult | 'sending' | null>(null)
@@ -102,6 +106,7 @@ export function SettingsView() {
   }
 
   const isLinux = api.platform === 'linux'
+  const isApp = state.authMethod === 'github_app'
 
   return (
     <main className="settings">
@@ -260,8 +265,12 @@ export function SettingsView() {
         )}
         <div className="setting">
           <div className="setting-text">
-            <div className="setting-label">{t('settings.orgAccess')}</div>
-            <div className="setting-hint">{t('settings.orgAccessHint')}</div>
+            <div className="setting-label">{t(isApp ? 'settings.installOrg' : 'settings.orgAccess')}</div>
+            <div className="setting-hint">
+              {isApp && state.installations?.length
+                ? t('settings.installedOn', { accounts: state.installations.map((i) => i.login).join(', ') })
+                : t('settings.orgAccessHint')}
+            </div>
           </div>
           <button className="btn" onClick={() => void openOrgAccess()}>
             {t('settings.open')}
@@ -270,7 +279,17 @@ export function SettingsView() {
         <div className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.account')}</div>
+            {state.authMethod && (
+              <div className="setting-hint">
+                {t('settings.method')}: {t(isApp ? 'settings.methodApp' : 'settings.methodOauth')}
+              </div>
+            )}
           </div>
+          {bothMethods && (
+            <button className="btn" onClick={() => void api.auth.switchMethod()}>
+              {t('settings.switchMethod')}
+            </button>
+          )}
           <button className="btn btn-danger" onClick={() => void api.auth.logout()}>
             {t('settings.logout')}
           </button>

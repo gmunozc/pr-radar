@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DeviceFlowError, type TokenSet } from '../src/main/deviceFlow'
 import { Engine, type EngineDeps } from '../src/main/engine'
-import { GithubError, type FetchResult } from '../src/main/github'
+import { GithubError, type FetchResult, type InstallationInfo } from '../src/main/github'
 import type { Logger } from '../src/main/log'
 import type { NotificationEvent } from '../src/main/notifications'
 import { Session, type StoredAuth } from '../src/main/session'
@@ -74,6 +74,7 @@ interface Options {
   settings?: Partial<Settings>
   online?: () => boolean
   now?: number
+  installations?: Array<InstallationInfo[] | Error>
 }
 
 function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
@@ -100,8 +101,16 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
   const published: AppState[] = []
   const settings: Settings = { ...DEFAULT_SETTINGS, ...opts.settings }
   const onSessionEnded = vi.fn()
+  const installQueue = [...(opts.installations ?? [])]
+  const fetchInstallations = vi.fn(async () => {
+    const next = installQueue.shift()
+    if (!next) throw new Error('unexpected installations fetch')
+    if (next instanceof Error) throw next
+    return next
+  })
   const deps: EngineDeps = {
     now: () => clock,
+    fetchInstallations,
     settings: () => settings,
     session,
     fetchPullRequests,
@@ -117,6 +126,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
   return {
     engine,
     setNow: (t: number) => (clock = t),
+    fetchInstallations,
     events,
     published,
     fetchPullRequests,
@@ -476,5 +486,68 @@ describe('Engine daily digest', () => {
     u.setNow(at(5, '09:31'))
     u.engine.tick()
     expect(u.events).toEqual([])
+  })
+})
+
+describe('Engine with the GitHub App', () => {
+  const appAuth = () => fresh({ method: 'github_app', clientId: 'Iv23-app' })
+  const perms = { pull_requests: 'read', checks: 'read', statuses: 'read' }
+
+  it('checks installations and explains an empty list when the app is not installed', async () => {
+    const t = setup([result([])], { auth: appAuth(), installations: [[]] })
+    await t.engine.poll()
+    expect(t.engine.state).toMatchObject({
+      authMethod: 'github_app',
+      installations: [],
+      warnings: [{ code: 'app_not_installed' }]
+    })
+  })
+
+  it('re-checks every 5 minutes while not installed, then every 30, or when forced', async () => {
+    const installed: InstallationInfo[] = [{ login: 'me', type: 'User', permissions: perms }]
+    const t = setup([result([]), result([]), result([]), result([]), result([])], {
+      auth: appAuth(),
+      installations: [[], installed, installed],
+      now: at(5, '10:00')
+    })
+    await t.engine.poll()
+    t.setNow(at(5, '10:04'))
+    await t.engine.poll()
+    expect(t.fetchInstallations).toHaveBeenCalledTimes(1)
+    t.setNow(at(5, '10:05'))
+    await t.engine.poll()
+    expect(t.engine.state.installations).toEqual([{ login: 'me', type: 'User' }])
+    expect(t.engine.state.warnings).toEqual([])
+    t.setNow(at(5, '10:20'))
+    await t.engine.poll()
+    expect(t.fetchInstallations).toHaveBeenCalledTimes(2)
+    t.engine.forceInstallationCheck()
+    await t.engine.poll()
+    expect(t.fetchInstallations).toHaveBeenCalledTimes(3)
+  })
+
+  it('never checks installations for OAuth App sessions', async () => {
+    const t = setup([result([])], { auth: fresh() })
+    await t.engine.poll()
+    expect(t.fetchInstallations).not.toHaveBeenCalled()
+    expect(t.engine.state).toMatchObject({ authMethod: 'oauth_app', installations: null })
+  })
+
+  it('keeps polling when the installation check fails', async () => {
+    const t = setup([result(['a'])], { auth: appAuth(), installations: [new GithubError('network', 'x')] })
+    await t.engine.poll()
+    expect(t.engine.state.prs.map((p) => p.id)).toEqual(['a'])
+  })
+
+  it('switches method without notifying and keeps seen and dismissed PRs', async () => {
+    const t = setup([result(['a'])], { auth: fresh() })
+    await t.engine.poll()
+    t.engine.dismiss('a')
+    t.events.length = 0
+    t.engine.switchMethod()
+    expect(t.engine.state).toMatchObject({ status: 'logged_out', authNotice: null })
+    expect(t.session.current).toBeNull()
+    expect(t.events).toEqual([])
+    expect(t.stored).toMatchObject({ dismissedIds: ['a'] })
   })
 })

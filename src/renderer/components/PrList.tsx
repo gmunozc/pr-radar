@@ -1,5 +1,5 @@
 import type { AppState } from '../../shared/types'
-import { CheckCircleIcon } from '../icons'
+import { CheckCircleIcon, PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { PrItem } from './PrItem'
 
@@ -32,6 +32,24 @@ export function PrList({ state }: { state: AppState }) {
     )
   }
 
+  if (state.prs.length === 0 && state.warnings.some((w) => w.code === 'app_not_installed')) {
+    return (
+      <main className="list list-empty">
+        <PullRequestIcon size={32} className="empty-icon-muted" />
+        <div className="empty-title">{t('install.title')}</div>
+        <div className="empty-sub">{t('install.sub')}</div>
+        <div className="row install-actions">
+          <button className="btn btn-primary" onClick={() => void openOrgAccess()}>
+            {t('install.button')}
+          </button>
+          <button className="btn" onClick={() => void window.prRadar.refresh()}>
+            {t('install.refresh')}
+          </button>
+        </div>
+      </main>
+    )
+  }
+
   if (state.prs.length === 0) {
     return (
       <main className="list list-empty">
@@ -46,9 +64,9 @@ export function PrList({ state }: { state: AppState }) {
           <div className="empty-hint">
             <div>{t('list.orgHintTitle')}</div>
             <div>
-              {t('list.orgHint')}{' '}
+              {t(state.authMethod === 'github_app' ? 'list.orgHintApp' : 'list.orgHint')}{' '}
               <button className="link small" onClick={() => void openOrgAccess()}>
-                {t('list.orgAccess')}
+                {t(state.authMethod === 'github_app' ? 'list.installOrg' : 'list.orgAccess')}
               </button>
             </div>
           </div>

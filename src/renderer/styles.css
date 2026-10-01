@@ -911,6 +911,15 @@ code {
   line-height: 1.6;
 }
 
+.use-oauth {
+  margin-top: 10px;
+}
+
+.install-actions {
+  margin-top: 14px;
+  gap: 8px;
+}
+
 .quit {
   margin-top: 22px;
   color: var(--text-faint);

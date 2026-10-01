@@ -1,5 +1,6 @@
 import type {
   CiState,
+  Installation,
   GithubErrorKind,
   MergeBlocker,
   MyPullRequest,
@@ -433,4 +434,50 @@ export async function fetchPullRequests(
     throw new GithubError('unknown', 'GitHub answered with something that is not JSON')
   }
   return { ...mapResponse(body), tokenExpiration: res.headers.get('github-authentication-token-expiration') }
+}
+
+/** Repository/organization permissions PR Radar's GitHub App needs (all read-only). */
+export const REQUIRED_APP_PERMISSIONS = ['pull_requests', 'checks', 'statuses'] as const
+
+export interface InstallationInfo extends Installation {
+  /** Granted permissions, e.g. { pull_requests: 'read' }. */
+  permissions: Record<string, string>
+}
+
+/** GitHub App installations the signed-in user can access (user-to-server token). */
+export async function fetchInstallations(token: string, fetchFn: FetchFn = fetch): Promise<InstallationInfo[]> {
+  let res: Response
+  try {
+    res = await fetchFn('https://api.github.com/user/installations?per_page=100', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'pr-radar'
+      },
+      signal: AbortSignal.timeout(20_000)
+    })
+  } catch (err) {
+    throw new GithubError('network', `Could not reach GitHub (${(err as Error).message})`)
+  }
+  if (res.status === 401) throw new GithubError('unauthorized', 'GitHub rejected the token (invalid or revoked)')
+  if (!res.ok) throw new GithubError('unknown', `GitHub answered ${res.status} ${res.statusText}`)
+  const body = (await res.json()) as {
+    installations?: Array<{ account?: { login?: string; type?: string } | null; permissions?: Record<string, string> }>
+  }
+  return (body.installations ?? [])
+    .filter((i) => i.account?.login)
+    .map((i) => ({
+      login: i.account!.login!,
+      type: i.account!.type === 'Organization' ? 'Organization' : 'User',
+      permissions: i.permissions ?? {}
+    }))
+}
+
+/** Warnings about where the GitHub App is installed and what it was allowed to read. */
+export function installationWarnings(installs: InstallationInfo[]): Warning[] {
+  if (installs.length === 0) return [{ code: 'app_not_installed' }]
+  const pending = installs.filter((i) => REQUIRED_APP_PERMISSIONS.some((p) => !i.permissions[p]))
+  return pending.length
+    ? [{ code: 'app_permissions_pending', params: { accounts: pending.map((i) => i.login).join(', ') } }]
+    : []
 }

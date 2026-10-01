@@ -16,10 +16,12 @@ const api: PrRadarApi = {
   snooze: (prId, option) => ipcRenderer.invoke(IPC.snooze, prId, option),
   restoreDismissed: () => ipcRenderer.invoke(IPC.restoreDismissed),
   auth: {
-    start: () => ipcRenderer.invoke(IPC.authStart),
+    start: (method) => ipcRenderer.invoke(IPC.authStart, method),
     cancel: () => ipcRenderer.invoke(IPC.authCancel),
     logout: () => ipcRenderer.invoke(IPC.authLogout),
     hasClientId: () => ipcRenderer.invoke(IPC.authHasClientId),
+    methods: () => ipcRenderer.invoke(IPC.authMethods),
+    switchMethod: () => ipcRenderer.invoke(IPC.authSwitch),
     accessUrl: () => ipcRenderer.invoke(IPC.authAccessUrl)
   },
   onAuthStatus: (cb) => subscribe<AuthStatus>(IPC.authStatus, cb),

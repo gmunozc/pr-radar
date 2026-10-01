@@ -174,3 +174,13 @@ describe('refreshAccessToken', () => {
     await expect(refreshAccessToken('c', 'r', { fetchFn })).rejects.toMatchObject({ code: 'network' })
   })
 })
+
+describe('GitHub App device flow', () => {
+  it('does not send a scope for GitHub Apps', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      json({ device_code: 'd', user_code: 'U', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 })
+    )
+    await requestDeviceCode('Iv23-app', fetchFn, { scope: null })
+    expect(Object.fromEntries(new URLSearchParams(fetchFn.mock.calls[0][1].body))).toEqual({ client_id: 'Iv23-app' })
+  })
+})

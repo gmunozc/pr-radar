@@ -6,7 +6,7 @@
 import type { Locale } from '../shared/i18n'
 import type { AppState, AuthNotice, ConnectionState, PullRequest, Settings, Warning } from '../shared/types'
 import { applyHidden, diffMyPrs, diffPrs, planNotifications, type MyPrEvent, type NotificationPlan } from './diff'
-import { GithubError, type FetchResult } from './github'
+import { GithubError, installationWarnings, type FetchResult, type InstallationInfo } from './github'
 import type { Logger } from './log'
 import { capMyPrEvents, planToEvents, type CatchUp, type NotificationEvent } from './notifications'
 import { SessionExpiredError, type ExpiryReason, type Session } from './session'
@@ -26,6 +26,8 @@ export interface EngineDeps {
   settings(): Settings
   session: SessionLike
   fetchPullRequests(token: string, settings: Settings, login?: string): Promise<FetchResult>
+  /** GitHub App sessions only: where the app is installed. */
+  fetchInstallations?(token: string): Promise<InstallationInfo[]>
   stateStore: StateStore
   notify(events: NotificationEvent[]): void
   publish(state: AppState): void
@@ -41,6 +43,9 @@ export interface EngineDeps {
 export const OFFLINE_AFTER_FAILURES = 2
 /** The digest is only built from data at most this old. */
 export const DIGEST_FRESHNESS_MS = 5 * 60_000
+/** How often a GitHub App session re-checks its installations (more often while there are none). */
+export const INSTALLATION_CHECK_MS = 30 * 60_000
+export const INSTALLATION_RECHECK_EMPTY_MS = 5 * 60_000
 const DAY_MS = 24 * 3_600_000
 
 /** Alerts produced by one poll (or tick), before quiet hours and grouping are applied. */
@@ -69,6 +74,8 @@ export function loggedOutState(authNotice: AuthNotice | null = null, locale: Loc
     quietUntil: null,
     snoozeTomorrowAt: 0,
     update: null,
+    authMethod: null,
+    installations: null,
     authNotice,
     connection: 'ok',
     locale
@@ -90,6 +97,9 @@ export class Engine {
   private lastSuccessAt: number | null = null
   private wasQuiet = false
   private updateInfo: AppState['update'] = null
+  private installs: InstallationInfo[] | null = null
+  private installWarnings: Warning[] = []
+  private lastInstallCheckAt = 0
 
   constructor(
     private readonly deps: EngineDeps,
@@ -115,6 +125,7 @@ export class Engine {
     if (!this.deps.session.current) return
     const settings = this.deps.settings()
     try {
+      await this.checkInstallations()
       const login = this.deps.session.current?.login ?? this.persisted?.login
       const result = await this.withToken((token) => this.deps.fetchPullRequests(token, settings, login))
       this.failures = 0
@@ -152,7 +163,7 @@ export class Engine {
         myPrs: result.myPrs,
         lastUpdated: new Date(now).toISOString(),
         error: null,
-        warnings: this.sessionWarning ? [...result.warnings, this.sessionWarning] : result.warnings,
+        warnings: [...result.warnings, ...this.installWarnings, ...(this.sessionWarning ? [this.sessionWarning] : [])],
         dismissedCount: hidden.dismissedIds.length,
         snoozedCount: Object.keys(hidden.snoozed).length,
         authNotice: null,
@@ -267,7 +278,24 @@ export class Engine {
     this.sessionWarning = warning
     this.failures = 0
     this.connection = 'ok'
+    this.resetInstallations()
     this.publish({ ...loggedOutState(), status: 'loading' })
+  }
+
+  /** Check where the GitHub App is installed on the next poll (e.g. after "Ya la instalé"). */
+  forceInstallationCheck(): void {
+    this.lastInstallCheckAt = 0
+  }
+
+  /** Signs out to sign in with another method, keeping seen/dismissed PRs and without alerts. */
+  switchMethod(): void {
+    this.deps.log.info('switching sign-in method')
+    this.deps.session.clear()
+    this.allPrs = []
+    this.sessionWarning = null
+    this.resetInstallations()
+    this.deps.onSessionEnded()
+    this.publish(loggedOutState())
   }
 
   /** The session can't be renewed: sign out but keep seen/dismissed PRs for the next login. */
@@ -276,6 +304,7 @@ export class Engine {
     this.deps.session.clear()
     this.allPrs = []
     this.sessionWarning = null
+    this.resetInstallations()
     this.deps.onSessionEnded()
     this.publish(loggedOutState(reason === 'refresh_unsupported' ? 'refresh_unsupported' : 'session_expired'))
     this.dispatch({ reviewPlan: { kind: 'none' }, returned: [], mine: [], sessionExpired: true })
@@ -289,8 +318,37 @@ export class Engine {
     this.persisted = null
     this.allPrs = []
     this.sessionWarning = null
+    this.resetInstallations()
     this.deps.onSessionEnded()
     this.publish(loggedOutState())
+  }
+
+  private resetInstallations(): void {
+    this.installs = null
+    this.installWarnings = []
+    this.lastInstallCheckAt = 0
+  }
+
+  /**
+   * GitHub App sessions only see repositories where the app is installed: find out where,
+   * so the panel can explain an empty list. Failures are logged and retried later.
+   */
+  private async checkInstallations(): Promise<void> {
+    const session = this.deps.session.current
+    if (session?.method !== 'github_app' || !this.deps.fetchInstallations) return
+    const now = this.deps.now()
+    const every = this.installs?.length ? INSTALLATION_CHECK_MS : INSTALLATION_RECHECK_EMPTY_MS
+    if (this.lastInstallCheckAt && now - this.lastInstallCheckAt < every) return
+    this.lastInstallCheckAt = now
+    try {
+      const fetchInstallations = this.deps.fetchInstallations
+      this.installs = await this.withToken((token) => fetchInstallations(token))
+      this.installWarnings = installationWarnings(this.installs)
+      this.deps.log.info('app installations', { accounts: this.installs.map((i) => i.login) })
+    } catch (err) {
+      if (err instanceof SessionExpiredError) throw err
+      this.deps.log.warn('installation check failed', err)
+    }
   }
 
   /** Runs `fn` with a valid token; on 401 renews once and retries. */
@@ -417,7 +475,9 @@ export class Engine {
       locale: this.deps.locale(),
       quietUntil: quietEnd ? quietEnd.getTime() : null,
       snoozeTomorrowAt: nextWorkdayStart(now, settings).getTime(),
-      update: this.updateInfo
+      update: this.updateInfo,
+      authMethod: this.deps.session.current?.method ?? null,
+      installations: this.installs ? this.installs.map(({ login, type }) => ({ login, type })) : null
     }
     this.deps.publish(this.current)
   }

@@ -38,10 +38,13 @@ jobs:
         run: npm run build
         env:
           MAIN_VITE_GITHUB_CLIENT_ID: ${{ vars.OAUTH_CLIENT_ID }}
+          MAIN_VITE_GITHUB_APP_CLIENT_ID: ${{ vars.APP_CLIENT_ID }}
+          MAIN_VITE_GITHUB_APP_SLUG: ${{ vars.APP_SLUG }}
 
-      - name: Client ID is embedded in the build
-        if: vars.OAUTH_CLIENT_ID != ''
-        run: grep -q "${{ vars.OAUTH_CLIENT_ID }}" out/main/index.js
+      - name: Client IDs are embedded in the build
+        run: |
+          if [ -n "${{ vars.OAUTH_CLIENT_ID }}" ]; then grep -q "${{ vars.OAUTH_CLIENT_ID }}" out/main/index.js; fi
+          if [ -n "${{ vars.APP_CLIENT_ID }}" ]; then grep -q "${{ vars.APP_CLIENT_ID }}" out/main/index.js; fi
 
       - name: Package (ad-hoc signed, universal)
         env:

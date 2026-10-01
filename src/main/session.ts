@@ -3,9 +3,10 @@
  * Free of Electron APIs so it can be unit tested.
  */
 import { DeviceFlowError, type TokenSet } from './deviceFlow'
+import type { AuthMethod } from '../shared/types'
 import type { Logger } from './log'
 
-export type AuthMethod = 'oauth_app' | 'github_app'
+export type { AuthMethod }
 
 export interface StoredAuth {
   v: 2

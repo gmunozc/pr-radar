@@ -2,6 +2,15 @@ import type { LanguagePref, Locale } from './i18n'
 
 export type ReviewSource = { kind: 'direct' } | { kind: 'team'; slug: string }
 
+/** How the user signed in: the read-only GitHub App, or the OAuth App (broad `repo` scope). */
+export type AuthMethod = 'oauth_app' | 'github_app'
+
+/** An account (user or organization) where the GitHub App is installed. */
+export interface Installation {
+  login: string
+  type: 'User' | 'Organization'
+}
+
 /** Combined status of the checks on a PR's head commit; `unknown` when it can't be read. */
 export type CiState = 'success' | 'failure' | 'pending' | 'none' | 'unknown'
 
@@ -70,6 +79,8 @@ export type WarningCode =
   | 'truncated_mine'
   | 'refresh_unsupported'
   | 'missing_permission'
+  | 'app_not_installed'
+  | 'app_permissions_pending'
 export interface Warning {
   code: WarningCode
   params?: Record<string, string | number>
@@ -102,6 +113,10 @@ export interface AppState {
   snoozeTomorrowAt: number
   /** A newer PR Radar release, unless the user skipped it. */
   update: { version: string; releaseUrl: string; downloadUrl: string | null } | null
+  /** How the current session signed in (null when signed out). */
+  authMethod: AuthMethod | null
+  /** GitHub App only: where it's installed (null until checked, or with the OAuth App). */
+  installations: Installation[] | null
   /** Why the user is signed out (shown on the login screen), or null. */
   authNotice: AuthNotice | null
 }
@@ -177,10 +192,13 @@ export interface PrRadarApi {
   snooze(prId: string, option: 'hour' | 'tomorrow'): Promise<void>
   restoreDismissed(): Promise<void>
   auth: {
-    start(): Promise<void>
+    start(method?: AuthMethod): Promise<void>
     cancel(): Promise<void>
     logout(): Promise<void>
+    /** Signs out keeping seen/dismissed PRs, to sign in with another method. */
+    switchMethod(): Promise<void>
     hasClientId(): Promise<boolean>
+    methods(): Promise<{ available: Record<AuthMethod, boolean>; preferred: AuthMethod }>
     /** GitHub page where the user grants this OAuth App access to their organizations. */
     accessUrl(): Promise<string>
   }
@@ -217,6 +235,8 @@ export const IPC = {
   authCancel: 'auth:cancel',
   authLogout: 'auth:logout',
   authHasClientId: 'auth:has-client-id',
+  authMethods: 'auth:methods',
+  authSwitch: 'auth:switch',
   authAccessUrl: 'auth:access-url',
   authStatus: 'auth:status',
   settingsGet: 'settings:get',

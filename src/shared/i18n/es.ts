@@ -154,6 +154,24 @@ export const es: Record<MessageKey, string> = {
   'settings.checkNow': 'Buscar ahora',
   'settings.upToDate': 'Al día',
 
+  // GitHub App
+  'warning.app_not_installed': 'PR Radar todavía no está instalada en ninguna cuenta. Instálala para ver tus PRs.',
+  'warning.app_permissions_pending': 'Aprueba los nuevos permisos de PR Radar en: {accounts}.',
+  'login.useOauth': 'Usar la OAuth App',
+  'login.useOauthHint': 'Pide acceso amplio (permiso repo) y tu organización tiene que aprobarla.',
+  'install.title': 'Instala PR Radar en tu cuenta u organización',
+  'install.sub': 'La GitHub App solo ve los repositorios donde está instalada.',
+  'install.button': 'Instalar',
+  'install.refresh': 'Ya la instalé',
+  'list.orgHintApp': 'Puede que la app no esté instalada en tu organización.',
+  'list.installOrg': 'Instalarla en la org',
+  'settings.method': 'Acceso',
+  'settings.methodApp': 'GitHub App (solo lectura)',
+  'settings.methodOauth': 'OAuth App (permiso repo)',
+  'settings.switchMethod': 'Cambiar',
+  'settings.installedOn': 'Instalada en: {accounts}',
+  'settings.installOrg': 'Instalar en otra organización',
+
   // Settings
   'settings.whatToReview': 'Qué revisar',
   'settings.includeTeams': 'Incluir solicitudes a mis equipos',
