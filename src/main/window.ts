@@ -34,8 +34,15 @@ export class Panel {
       fullscreenable: false,
       skipTaskbar: true,
       alwaysOnTop: true,
+      // A plain window can't open over another app's full-screen Space (macOS switches to a
+      // desktop instead); a non-activating panel can, like Spotlight.
       ...(isMac
-        ? { vibrancy: 'popover' as const, visualEffectState: 'active' as const, backgroundColor: '#00000000' }
+        ? {
+            type: 'panel',
+            vibrancy: 'popover' as const,
+            visualEffectState: 'active' as const,
+            backgroundColor: '#00000000'
+          }
         : { backgroundColor: '#1f2328' }),
       roundedCorners: true,
       webPreferences: {
