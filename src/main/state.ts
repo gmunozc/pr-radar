@@ -11,6 +11,8 @@ export interface PersistedState {
   myPrs?: Record<string, MyPrSnapshot>
   /** PR id → epoch ms when a snoozed review request comes back. */
   snoozed: Record<string, number>
+  /** PR id → head commit when it was snoozed "until new commits"; it comes back when the head changes. */
+  snoozedUntilPush: Record<string, string>
   /** Notifications held back by quiet hours, delivered together when they end. */
   queued: QueuedAlerts
   /** Local day ("YYYY-MM-DD") the last daily digest was handled. */
@@ -55,6 +57,13 @@ function snoozes(v: unknown): Record<string, number> {
   )
 }
 
+function oids(v: unknown): Record<string, string> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  return Object.fromEntries(
+    Object.entries(v as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== '')
+  )
+}
+
 function snapshot(v: unknown): Record<string, MyPrSnapshot> | undefined {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
   const out: Record<string, MyPrSnapshot> = {}
@@ -84,6 +93,7 @@ export function migrateState(raw: unknown): PersistedState | null {
     dismissedIds: stringArray(r.dismissedIds),
     ...(myPrs ? { myPrs } : {}),
     snoozed: snoozes(r.snoozed),
+    snoozedUntilPush: oids(r.snoozedUntilPush),
     queued: queue(r.queued),
     lastDigestDay: typeof r.lastDigestDay === 'string' ? r.lastDigestDay : null
   }

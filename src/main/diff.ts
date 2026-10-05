@@ -42,31 +42,42 @@ export interface HiddenPrs {
   dismissedIds: readonly string[]
   /** PR id → epoch ms when it comes back. */
   snoozed: Readonly<Record<string, number>>
+  /** PR id → head commit it was snoozed at; it comes back once the author pushes. */
+  snoozedUntilPush?: Readonly<Record<string, string>>
+}
+
+export interface HiddenResult {
+  visible: PullRequest[]
+  dismissedIds: string[]
+  snoozed: Record<string, number>
+  snoozedUntilPush: Record<string, string>
+  /** Snoozed PRs that just came back (time over, or new commits). */
+  returned: PullRequest[]
 }
 
 /**
- * Hides dismissed and snoozed PRs. Snoozes that are over come back (`returned`); like
- * dismissals, snoozes of PRs that left the list are forgotten.
+ * Hides dismissed and snoozed PRs. Snoozes that are over, or whose PR got new commits, come
+ * back (`returned`); like dismissals, snoozes of PRs that left the list are forgotten.
  */
-export function applyHidden(
-  prs: PullRequest[],
-  hidden: HiddenPrs,
-  now: number
-): { visible: PullRequest[]; dismissedIds: string[]; snoozed: Record<string, number>; returned: PullRequest[] } {
+export function applyHidden(prs: PullRequest[], hidden: HiddenPrs, now: number): HiddenResult {
   const { visible: notDismissed, dismissedIds } = applyDismissals(prs, hidden.dismissedIds)
   const snoozed: Record<string, number> = {}
+  const snoozedUntilPush: Record<string, string> = {}
   const visible: PullRequest[] = []
   const returned: PullRequest[] = []
   for (const pr of notDismissed) {
     const until = hidden.snoozed[pr.id]
-    if (until === undefined) visible.push(pr)
-    else if (until > now) snoozed[pr.id] = until
-    else {
+    const headAtSnooze = hidden.snoozedUntilPush?.[pr.id]
+    if (until !== undefined && until > now) {
+      snoozed[pr.id] = until
+    } else if (headAtSnooze !== undefined && headAtSnooze === pr.headOid) {
+      snoozedUntilPush[pr.id] = headAtSnooze
+    } else {
       visible.push(pr)
-      returned.push(pr)
+      if (until !== undefined || headAtSnooze !== undefined) returned.push(pr)
     }
   }
-  return { visible, dismissedIds, snoozed, returned }
+  return { visible, dismissedIds, snoozed, snoozedUntilPush, returned }
 }
 
 export const MAX_INDIVIDUAL_NOTIFICATIONS = 3

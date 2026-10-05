@@ -38,6 +38,41 @@ function Panel() {
     }
   }, [state?.status])
 
+  const refresh = () => {
+    setRefreshing(true)
+    void api.refresh()
+  }
+
+  // Keyboard: Escape closes (menus and confirmations stop it first), ⌘/Ctrl+R refreshes,
+  // ⌘/Ctrl+1/2 switch tabs, ⌘/Ctrl+, opens Settings, arrows enter the list.
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const typing = !!target?.closest('input, select, textarea')
+      if (e.key === 'Escape') {
+        if (typing) return
+        if (view === 'settings') setView('list')
+        else void api.hidePanel()
+        return
+      }
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && document.activeElement === document.body) {
+        e.preventDefault()
+        document.querySelector<HTMLElement>('.pr')?.focus()
+        return
+      }
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+      if (e.key === 'r') refresh()
+      else if (e.key === '1' || e.key === '2') {
+        setView('list')
+        setTab(e.key === '1' ? 'review' : 'mine')
+      } else if (e.key === ',') setView((v) => (v === 'settings' ? 'list' : 'settings'))
+      else return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [view])
+
   if (!state) return <div className="app" />
 
   if (state.status === 'logged_out') {
@@ -46,11 +81,6 @@ function Panel() {
         <LoginView auth={auth} notice={state.authNotice} />
       </div>
     )
-  }
-
-  const refresh = () => {
-    setRefreshing(true)
-    void api.refresh()
   }
 
   return (

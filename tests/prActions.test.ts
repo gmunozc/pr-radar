@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { myPrMenuActions } from '../src/shared/prActions'
-import { myPr } from './fixtures'
+import { myPrMenuActions, reviewMenuActions } from '../src/shared/prActions'
+import { myPr, pr } from './fixtures'
+
+describe('reviewMenuActions', () => {
+  it('offers approval only to sessions that can write, never on your own PR', () => {
+    expect(reviewMenuActions(pr('a'), true)).toEqual([
+      'approve',
+      'snooze_hour',
+      'snooze_tomorrow',
+      'snooze_push',
+      'dismiss',
+      'copy_branch',
+      'copy_link',
+      'open'
+    ])
+    expect(reviewMenuActions(pr('a', { viewerDidAuthor: true }), true)).not.toContain('approve')
+    expect(reviewMenuActions(pr('a', { branch: '' }), false)).toEqual([
+      'snooze_hour',
+      'snooze_tomorrow',
+      'snooze_push',
+      'dismiss',
+      'copy_link',
+      'open'
+    ])
+  })
+})
 
 describe('myPrMenuActions', () => {
   it('only copies and opens without a session that can write', () => {
@@ -28,6 +52,17 @@ describe('myPrMenuActions', () => {
       can: { ...myPr('a').can, disableAutoMerge: true, enableAutoMerge: false }
     })
     expect(myPrMenuActions(enabled, true)).toEqual(['disable_auto_merge', 'copy_branch', 'copy_link', 'open'])
+  })
+
+  it('asks reviewers again only after changes were requested by someone it can name', () => {
+    const changes = myPr('a', {
+      status: 'changes_requested',
+      reviews: [{ login: 'ana', avatarUrl: '', state: 'CHANGES_REQUESTED', id: 'U_1' }]
+    })
+    expect(myPrMenuActions(changes, true)).toEqual(['rerequest_review', 'no_auto_merge', 'copy_branch', 'copy_link', 'open'])
+    const anonymous = myPr('a', { status: 'changes_requested', reviews: [{ login: 'ana', avatarUrl: '', state: 'CHANGES_REQUESTED' }] })
+    expect(myPrMenuActions(anonymous, true)).not.toContain('rerequest_review')
+    expect(myPrMenuActions(myPr('a', { status: 'approved', reviews: changes.reviews }), true)).not.toContain('rerequest_review')
   })
 
   it('explains a repository without auto-merge, with a settings link for admins', () => {

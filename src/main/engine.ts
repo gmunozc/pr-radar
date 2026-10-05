@@ -16,12 +16,21 @@ import type {
   Warning
 } from '../shared/types'
 import type { ActionTarget } from './actions'
-import { applyHidden, diffMyPrs, diffPrs, planNotifications, type MyPrEvent, type NotificationPlan } from './diff'
+import {
+  applyHidden,
+  diffMyPrs,
+  diffPrs,
+  planNotifications,
+  type HiddenResult,
+  type MyPrEvent,
+  type NotificationPlan
+} from './diff'
 import { GithubError, installationWarnings, type FetchResult, type InstallationInfo } from './github'
 import type { Logger } from './log'
 import { capMyPrEvents, planToEvents, type CatchUp, type NotificationEvent } from './notifications'
 import { SessionExpiredError, type ExpiryReason, type Session } from './session'
-import { dayKey, digestDue, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil, type SnoozeOption } from './schedule'
+import { dayKey, digestDue, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil } from './schedule'
+import type { SnoozeOption } from '../shared/types'
 import { emptyQueue, migrateState, type PersistedState, type QueuedAlerts } from './state'
 
 export type SessionLike = Pick<Session, 'current' | 'getAccessToken' | 'handleUnauthorized' | 'setLogin' | 'clear'>
@@ -72,6 +81,8 @@ interface Alerts {
 }
 
 const hasAny = (c: CatchUp) => c.reviews + c.reminders + c.approved + c.changes + c.ready > 0 || c.sessionExpired
+const snoozedCount = (h: Pick<HiddenResult, 'snoozed' | 'snoozedUntilPush'>) =>
+  Object.keys(h.snoozed).length + Object.keys(h.snoozedUntilPush).length
 const queueHasItems = (q: QueuedAlerts) =>
   q.reviews.length + q.reminders.length + q.approved.length + q.changes.length + q.ready.length > 0 || q.sessionExpired
 
@@ -158,7 +169,11 @@ export class Engine {
       const diff = diffPrs(this.resetBaseline ? result.prs.map((p) => p.id) : (stored?.seenIds ?? null), result.prs)
       this.resetBaseline = false
       this.allPrs = result.prs
-      const hidden = applyHidden(result.prs, { dismissedIds: stored?.dismissedIds ?? [], snoozed: stored?.snoozed ?? {} }, now)
+      const hidden = applyHidden(
+        result.prs,
+        { dismissedIds: stored?.dismissedIds ?? [], snoozed: stored?.snoozed ?? {}, snoozedUntilPush: stored?.snoozedUntilPush ?? {} },
+        now
+      )
       const mine = diffMyPrs(stored?.myPrs, result.myPrs)
       this.save({
         v: 2,
@@ -166,6 +181,7 @@ export class Engine {
         seenIds: diff.seenIds,
         dismissedIds: hidden.dismissedIds,
         snoozed: hidden.snoozed,
+        snoozedUntilPush: hidden.snoozedUntilPush,
         myPrs: mine.snapshot,
         queued: stored?.queued ?? emptyQueue(),
         lastDigestDay: stored?.lastDigestDay ?? null
@@ -182,7 +198,7 @@ export class Engine {
         error: null,
         warnings: [...result.warnings, ...this.installWarnings, ...(this.sessionWarning ? [this.sessionWarning] : [])],
         dismissedCount: hidden.dismissedIds.length,
-        snoozedCount: Object.keys(hidden.snoozed).length,
+        snoozedCount: snoozedCount(hidden),
         authNotice: null,
         connection: this.connection
       })
@@ -222,9 +238,19 @@ export class Engine {
     this.setHidden({ ...this.persisted, dismissedIds: [...this.persisted.dismissedIds, prId] })
   }
 
-  /** Hides a review request until later ("in 1 hour" / next working day). */
+  /** Hides a review request until later: an hour, the next working morning, or the author's next push. */
   snooze(prId: string, option: SnoozeOption): void {
     if (!this.persisted) return
+    if (option === 'push') {
+      const head = this.allPrs.find((p) => p.id === prId)?.headOid
+      if (head) {
+        this.setHidden({ ...this.persisted, snoozedUntilPush: { ...this.persisted.snoozedUntilPush, [prId]: head } })
+        return
+      }
+      // Without a known head commit there is nothing to compare against; fall back to an hour.
+      this.deps.log.warn('snooze until push without a head commit; snoozing for an hour instead', { prId })
+      option = 'hour'
+    }
     const until = snoozeUntil(new Date(this.deps.now()), option, this.deps.settings()).getTime()
     this.setHidden({ ...this.persisted, snoozed: { ...this.persisted.snoozed, [prId]: until } })
   }
@@ -299,7 +325,7 @@ export class Engine {
   /** Brings back every dismissed and snoozed PR, without notifying. */
   restoreHidden(): void {
     if (!this.persisted) return
-    this.setHidden({ ...this.persisted, dismissedIds: [], snoozed: {} })
+    this.setHidden({ ...this.persisted, dismissedIds: [], snoozed: {}, snoozedUntilPush: {} })
   }
 
   /**
@@ -313,8 +339,8 @@ export class Engine {
     const persisted = this.persisted
     if (persisted && this.deps.session.current && Object.values(persisted.snoozed).some((until) => until <= nowMs)) {
       const hidden = applyHidden(this.allPrs, persisted, nowMs)
-      this.save({ ...persisted, dismissedIds: hidden.dismissedIds, snoozed: hidden.snoozed })
-      this.publish({ ...this.current, prs: hidden.visible, snoozedCount: Object.keys(hidden.snoozed).length })
+      this.save({ ...persisted, dismissedIds: hidden.dismissedIds, snoozed: hidden.snoozed, snoozedUntilPush: hidden.snoozedUntilPush })
+      this.publish({ ...this.current, prs: hidden.visible, snoozedCount: snoozedCount(hidden) })
       if (hidden.returned.length) this.dispatch({ reviewPlan: { kind: 'none' }, returned: hidden.returned, mine: [] })
     }
 
@@ -455,12 +481,12 @@ export class Engine {
 
   private setHidden(next: PersistedState): void {
     const hidden = applyHidden(this.allPrs, next, this.deps.now())
-    this.save({ ...next, dismissedIds: hidden.dismissedIds, snoozed: hidden.snoozed })
+    this.save({ ...next, dismissedIds: hidden.dismissedIds, snoozed: hidden.snoozed, snoozedUntilPush: hidden.snoozedUntilPush })
     this.publish({
       ...this.current,
       prs: hidden.visible,
       dismissedCount: hidden.dismissedIds.length,
-      snoozedCount: Object.keys(hidden.snoozed).length
+      snoozedCount: snoozedCount(hidden)
     })
   }
 

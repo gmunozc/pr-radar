@@ -1,9 +1,16 @@
-import type { AppState } from '../../shared/types'
+import { useMemo, useState } from 'react'
+import type { AppState, ReviewFilter, ReviewSort } from '../../shared/types'
+import { arrangePrs } from '../arrange'
 import { CheckCircleIcon, PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
+import { onListKeyDown } from '../keyboard'
+import { useSettings } from '../useSettings'
 import { PrItem } from './PrItem'
+import { Segmented } from './Segmented'
 
 const REVIEW_REQUESTED_URL = 'https://github.com/pulls/review-requested'
+const FILTERS: ReviewFilter[] = ['all', 'direct', 'team']
+const SORTS: ReviewSort[] = ['newest', 'oldest', 'updated']
 
 // Organizations that restrict OAuth Apps silently hide their PRs until access is granted.
 export const openOrgAccess = async () => window.prRadar.openExternal(await window.prRadar.auth.accessUrl())
@@ -23,6 +30,13 @@ function RestoreHidden({ dismissed, snoozed }: { dismissed: number; snoozed: num
 
 export function PrList({ state }: { state: AppState }) {
   const t = useT()
+  const settings = useSettings()
+  const [org, setOrg] = useState<string | null>(null)
+  const filter = settings?.reviewFilter ?? 'all'
+  const sort = settings?.reviewSort ?? 'newest'
+  const staleDays = settings?.staleAfterDays ?? 0
+  const orgs = useMemo(() => [...new Set(state.prs.map((pr) => pr.repo.split('/')[0]))].sort(), [state.prs])
+  const shown = useMemo(() => arrangePrs(state.prs, filter, org, sort), [state.prs, filter, org, sort])
 
   if (state.status === 'loading' && state.prs.length === 0) {
     return (
@@ -75,11 +89,61 @@ export function PrList({ state }: { state: AppState }) {
     )
   }
 
+  const hasTeams = state.prs.some((pr) => pr.source.kind === 'team')
+  const showFilters = state.prs.length > 1 && (hasTeams || orgs.length > 1)
+
   return (
     <>
-      <main className="list">
-        {state.prs.map((pr) => (
-          <PrItem key={pr.id} pr={pr} snoozeTomorrowAt={state.snoozeTomorrowAt} />
+      {showFilters && (
+        <div className="filters">
+          {hasTeams && (
+            <Segmented
+              options={FILTERS.map((value) => ({ value, label: t(`filter.${value}`) }))}
+              value={filter}
+              onChange={(reviewFilter) => void window.prRadar.settings.set({ reviewFilter })}
+              label={t('filter.label')}
+            />
+          )}
+          {orgs.length > 1 && (
+            <select
+              className="input select filter-select"
+              value={org ?? ''}
+              onChange={(e) => setOrg(e.target.value || null)}
+              aria-label={t('filter.label')}
+            >
+              <option value="">{t('filter.allOrgs')}</option>
+              {orgs.map((o) => (
+                <option key={o} value={o}>
+                  {o}
+                </option>
+              ))}
+            </select>
+          )}
+          <select
+            className="input select filter-select"
+            value={sort}
+            onChange={(e) => void window.prRadar.settings.set({ reviewSort: e.target.value as ReviewSort })}
+            aria-label={t('sort.label')}
+          >
+            {SORTS.map((value) => (
+              <option key={value} value={value}>
+                {t(`sort.${value}`)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <main className="list" onKeyDown={onListKeyDown}>
+        {shown.length === 0 && <div className="list-note">{t('filter.empty')}</div>}
+        {shown.map((pr) => (
+          <PrItem
+            key={pr.id}
+            pr={pr}
+            snoozeTomorrowAt={state.snoozeTomorrowAt}
+            canWrite={state.canWrite}
+            pending={state.pendingActions[pr.id]}
+            staleDays={staleDays}
+          />
         ))}
       </main>
       <footer className="footer">

@@ -9,7 +9,10 @@ import { useLocale, useT } from '../i18n'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { CiIcon } from './CiIcon'
 import { ConfirmRow } from './ConfirmRow'
+import { Labels } from './Labels'
 import { Segmented } from './Segmented'
+
+const DAY_MS = 86_400_000
 
 const STATUS: Record<MyReviewStatus, { label: MessageKey; className: string }> = {
   waiting: { label: 'status.waiting', className: 'waiting' },
@@ -65,7 +68,15 @@ interface Confirming {
   method: MergeMethod
 }
 
-export function MyPrItem({ pr, canWrite, pending }: { pr: MyPullRequest; canWrite: boolean; pending?: PrAction['kind'] }) {
+interface Props {
+  pr: MyPullRequest
+  canWrite: boolean
+  pending?: PrAction['kind']
+  /** Highlight PRs open for more than this many days; 0 disables it. */
+  staleDays: number
+}
+
+export function MyPrItem({ pr, canWrite, pending, staleDays }: Props) {
   const t = useT()
   const locale = useLocale()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -81,11 +92,19 @@ export function MyPrItem({ pr, canWrite, pending }: { pr: MyPullRequest; canWrit
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       open()
+    } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault()
+      setMenuOpen(true)
     }
   }
   const toggleMenu = (e: MouseEvent) => {
     e.stopPropagation()
     setMenuOpen((o) => !o)
+  }
+  const onContextMenu = (e: MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setMenuOpen(true)
   }
   const run = async (action: PrAction) => {
     setError(null)
@@ -111,6 +130,8 @@ export function MyPrItem({ pr, canWrite, pending }: { pr: MyPullRequest; canWrit
         }
       case 'update_branch':
         return { id, label: t('action.updateBranch'), disabled: busy, onSelect: () => void run({ kind: 'update_branch' }) }
+      case 'rerequest_review':
+        return { id, label: t('action.rerequest'), disabled: busy, onSelect: () => void run({ kind: 'rerequest_review' }) }
       case 'enable_auto_merge':
         return {
           id,
@@ -145,9 +166,20 @@ export function MyPrItem({ pr, canWrite, pending }: { pr: MyPullRequest; canWrit
   const { avatars, teams } = people(pr, t)
   const extra = avatars.length - MAX_AVATARS
   const actionsOpen = menuOpen || confirming !== null || busy
+  const now = Date.now()
+  const ageDays = Math.floor((now - Date.parse(pr.createdAt)) / DAY_MS)
+  const stale = staleDays > 0 && ageDays >= staleDays
 
   return (
-    <div className="pr" role="button" tabIndex={0} onClick={open} onKeyDown={onKeyDown} title={pr.url}>
+    <div
+      className="pr"
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={onKeyDown}
+      onContextMenu={onContextMenu}
+      title={pr.url}
+    >
       <div className={`status-icon status-${status.className}`}>
         {pr.readyToMerge ? <GitMergeIcon size={14} /> : <PullRequestIcon size={14} />}
       </div>
@@ -159,8 +191,11 @@ export function MyPrItem({ pr, canWrite, pending }: { pr: MyPullRequest; canWrit
           </span>
           <span className="pr-number">#{pr.number}</span>
           <CiIcon state={pr.ci} />
-          <span className="pr-age" title={formatDateTime(pr.createdAt, locale)}>
-            {timeAgo(pr.createdAt, Date.now(), locale)}
+          <span
+            className={`pr-age ${stale ? 'pr-age-stale' : ''}`}
+            title={stale ? t('pr.stale', { count: ageDays }) : formatDateTime(pr.createdAt, locale)}
+          >
+            {timeAgo(pr.createdAt, now, locale)}
           </span>
         </div>
         <div className="pr-title">{pr.title}</div>
@@ -182,6 +217,7 @@ export function MyPrItem({ pr, canWrite, pending }: { pr: MyPullRequest; canWrit
             </span>
           )}
           {pr.isDraft && <span className="chip chip-draft">{t('pr.draft')}</span>}
+          <Labels labels={pr.labels} />
           <span className="diff">
             <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>
           </span>

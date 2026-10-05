@@ -49,6 +49,37 @@ function TimeInput({ value, onCommit }: { value: string; onCommit(v: string): vo
   )
 }
 
+/** A comma-separated list that saves on blur/Enter; the main process drops invalid entries. */
+function ListInput({ label, hint, value, onCommit }: { label: string; hint: string; value: string[]; onCommit(v: string[]): void }) {
+  const joined = value.join(', ')
+  const [draft, setDraft] = useState(joined)
+  useEffect(() => setDraft(joined), [joined])
+  const commit = () => {
+    const list = draft
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (list.join(',') !== value.join(',')) onCommit(list)
+    else setDraft(joined)
+  }
+  return (
+    <label className="setting setting-column">
+      <div className="setting-text">
+        <div className="setting-label">{label}</div>
+        <div className="setting-hint">{hint}</div>
+      </div>
+      <input
+        className="input"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && commit()}
+        spellCheck={false}
+      />
+    </label>
+  )
+}
+
 // Monday first; 0 = Sunday. 2026-01-04 was a Sunday, so 4 + d is weekday d.
 const WEEK = [1, 2, 3, 4, 5, 6, 0]
 
@@ -61,6 +92,7 @@ export function SettingsView({ state }: { state: AppState }) {
   }, [])
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [interval, setIntervalValue] = useState('')
+  const [stale, setStale] = useState('')
   const [testResult, setTestResult] = useState<NotifyResult | 'sending' | null>(null)
   const [version, setVersion] = useState('')
   const [copied, setCopied] = useState(false)
@@ -79,6 +111,7 @@ export function SettingsView({ state }: { state: AppState }) {
     void api.settings.get().then((s) => {
       setSettings(s)
       setIntervalValue(String(s.pollIntervalSec))
+      setStale(String(s.staleAfterDays))
     })
   }, [])
 
@@ -88,12 +121,19 @@ export function SettingsView({ state }: { state: AppState }) {
     const next = await api.settings.set(patch)
     setSettings(next)
     setIntervalValue(String(next.pollIntervalSec))
+    setStale(String(next.staleAfterDays))
   }
 
   const commitInterval = () => {
     const n = Number(interval)
     if (Number.isFinite(n) && n !== settings.pollIntervalSec) void update({ pollIntervalSec: n })
     else setIntervalValue(String(settings.pollIntervalSec))
+  }
+
+  const commitStale = () => {
+    const n = Number(stale)
+    if (Number.isFinite(n) && n !== settings.staleAfterDays) void update({ staleAfterDays: n })
+    else setStale(String(settings.staleAfterDays))
   }
 
   const runTest = async () => {
@@ -125,6 +165,43 @@ export function SettingsView({ state }: { state: AppState }) {
           checked={settings.showDrafts}
           onChange={(v) => void update({ showDrafts: v })}
         />
+        <Toggle
+          label={t('settings.hideBots')}
+          hint={t('settings.hideBotsHint')}
+          checked={settings.hideBots}
+          onChange={(v) => void update({ hideBots: v })}
+        />
+        <ListInput
+          label={t('settings.excludeRepos')}
+          hint={t('settings.excludeReposHint')}
+          value={settings.excludeRepos}
+          onCommit={(excludeRepos) => void update({ excludeRepos })}
+        />
+        <ListInput
+          label={t('settings.excludeAuthors')}
+          hint={t('settings.excludeAuthorsHint')}
+          value={settings.excludeAuthors}
+          onCommit={(excludeAuthors) => void update({ excludeAuthors })}
+        />
+        <label className="setting">
+          <div className="setting-text">
+            <div className="setting-label">{t('settings.staleDays')}</div>
+            <div className="setting-hint">{t('settings.staleDaysHint')}</div>
+          </div>
+          <div className="row">
+            <input
+              className="input input-num"
+              type="number"
+              min={0}
+              max={30}
+              value={stale}
+              onChange={(e) => setStale(e.target.value)}
+              onBlur={commitStale}
+              onKeyDown={(e) => e.key === 'Enter' && commitStale()}
+            />
+            <span className="unit">{t('settings.days')}</span>
+          </div>
+        </label>
       </section>
 
       <section className="group">

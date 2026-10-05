@@ -35,6 +35,9 @@ export function buildDiagnostics(d: DiagnosticsInput): string {
     `Panel last shown on display ${d.panelDisplayId ?? 'none'}`,
     `Settings includeTeams=${settings.includeTeams} showDrafts=${settings.showDrafts} notifications=${settings.notifications} ` +
       `pollIntervalSec=${settings.pollIntervalSec} clientId=${d.clientIdConfigured ? 'configured' : 'missing'}`,
+    // Only counts: the bug template asks users not to share private repository names.
+    `Filters hideBots=${settings.hideBots} excludeRepos=${settings.excludeRepos.length} excludeAuthors=${settings.excludeAuthors.length} ` +
+      `staleAfterDays=${settings.staleAfterDays} reviewFilter=${settings.reviewFilter} reviewSort=${settings.reviewSort}`,
     auth
       ? `Session ${auth.method} login=${auth.login ?? '?'} token=${auth.accessToken.slice(0, 4)}… expires=${iso(auth.expiresAt)} ` +
         `refresh=${auth.refreshToken ? `yes (until ${iso(auth.refreshTokenExpiresAt)})` : 'no'} updated=${iso(auth.updatedAt || null)}`

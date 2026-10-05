@@ -1,12 +1,15 @@
 import type { AppState } from '../../shared/types'
 import { PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
+import { onListKeyDown } from '../keyboard'
+import { useSettings } from '../useSettings'
 import { MyPrItem } from './MyPrItem'
 
 const MY_PULLS_URL = 'https://github.com/pulls'
 
 export function MyPrList({ state }: { state: AppState }) {
   const t = useT()
+  const settings = useSettings()
 
   if (state.status === 'loading' && state.myPrs.length === 0) {
     return (
@@ -28,9 +31,15 @@ export function MyPrList({ state }: { state: AppState }) {
 
   return (
     <>
-      <main className="list">
+      <main className="list" onKeyDown={onListKeyDown}>
         {state.myPrs.map((pr) => (
-          <MyPrItem key={pr.id} pr={pr} canWrite={state.canWrite} pending={state.pendingActions[pr.id]} />
+          <MyPrItem
+            key={pr.id}
+            pr={pr}
+            canWrite={state.canWrite}
+            pending={state.pendingActions[pr.id]}
+            staleDays={settings?.staleAfterDays ?? 0}
+          />
         ))}
       </main>
       <footer className="footer">

@@ -1,42 +1,116 @@
-import { useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useCallback, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { formatClock, formatDateTime, isTomorrow, timeAgo, weekdayName } from '../../shared/format'
-import type { PullRequest } from '../../shared/types'
-import { ClockIcon, XIcon } from '../icons'
+import { reviewMenuActions, type ReviewMenuAction } from '../../shared/prActions'
+import type { PrAction, PullRequest, SnoozeOption } from '../../shared/types'
+import { CheckIcon, ClockIcon, XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
+import { ActionMenu, type MenuItem } from './ActionMenu'
 import { CiIcon } from './CiIcon'
+import { ConfirmRow } from './ConfirmRow'
+import { Labels } from './Labels'
 
-export function PrItem({ pr, snoozeTomorrowAt }: { pr: PullRequest; snoozeTomorrowAt: number }) {
+const DAY_MS = 86_400_000
+const COPIED_MS = 2000
+
+interface Props {
+  pr: PullRequest
+  snoozeTomorrowAt: number
+  canWrite: boolean
+  pending?: PrAction['kind']
+  /** Highlight requests older than this many days; 0 disables it. */
+  staleDays: number
+}
+
+export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays }: Props) {
   const t = useT()
   const locale = useLocale()
   const [snoozing, setSnoozing] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [approving, setApproving] = useState(false)
+  const [comment, setComment] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const closeMenu = useCallback(() => setMenuOpen(false), [])
+  const busy = pending !== undefined
+  const canApprove = canWrite && !pr.viewerDidAuthor
+
   const open = () => void window.prRadar.openExternal(pr.url)
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       open()
+    } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault()
+      setMenuOpen(true)
     }
   }
-  const dismiss = (e: MouseEvent) => {
+  const onContextMenu = (e: MouseEvent) => {
+    e.preventDefault()
     e.stopPropagation()
-    void window.prRadar.dismiss(pr.id)
+    setMenuOpen(true)
   }
-  const toggleSnooze = (e: MouseEvent) => {
-    e.stopPropagation()
-    setSnoozing(!snoozing)
+  const stop = (e: MouseEvent) => e.stopPropagation()
+  const dismiss = () => void window.prRadar.dismiss(pr.id)
+  const snooze = (option: SnoozeOption) => void window.prRadar.snooze(pr.id, option)
+  const approve = async () => {
+    setError(null)
+    const result = await window.prRadar.prs.action(pr.id, { kind: 'approve', body: comment.trim() || undefined })
+    if (result.ok) {
+      setApproving(false)
+      setComment('')
+    } else {
+      setError(t(`action.error.${result.code}`, { detail: result.detail ?? '' }))
+    }
   }
-  const snooze = (option: 'hour' | 'tomorrow') => (e: MouseEvent) => {
-    e.stopPropagation()
-    void window.prRadar.snooze(pr.id, option)
+  const copy = async (text: string) => {
+    const { ok } = await window.prRadar.copyText(text)
+    if (!ok) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), COPIED_MS)
   }
+
   const now = Date.now()
   const tomorrowLabel = isTomorrow(snoozeTomorrowAt, now)
     ? t('pr.snoozeTomorrow', { time: formatClock(snoozeTomorrowAt, locale) })
     : t('pr.snoozeDay', { day: weekdayName(snoozeTomorrowAt, locale), time: formatClock(snoozeTomorrowAt, locale) })
+  const ageDays = Math.floor((now - Date.parse(pr.createdAt)) / DAY_MS)
+  const stale = staleDays > 0 && ageDays >= staleDays
   const [owner, name] = pr.repo.split('/')
 
-  // A div rather than a <button>, because it contains the dismiss button.
+  const menuItem = (id: ReviewMenuAction): MenuItem => {
+    switch (id) {
+      case 'approve':
+        return { id, label: t('action.approve'), disabled: busy, onSelect: () => setApproving(true) }
+      case 'snooze_hour':
+        return { id, label: t('action.snoozeHour'), onSelect: () => snooze('hour') }
+      case 'snooze_tomorrow':
+        return { id, label: t('action.snoozeTomorrow', { time: tomorrowLabel }), onSelect: () => snooze('tomorrow') }
+      case 'snooze_push':
+        return { id, label: t('action.snoozePush'), onSelect: () => snooze('push') }
+      case 'dismiss':
+        return { id, label: t('action.dismiss'), onSelect: dismiss }
+      case 'copy_branch':
+        return { id, label: t('action.copyBranch'), onSelect: () => void copy(pr.branch) }
+      case 'copy_link':
+        return { id, label: t('action.copyLink'), onSelect: () => void copy(pr.url) }
+      case 'open':
+        return { id, label: t('action.open'), onSelect: open }
+    }
+  }
+  const items = reviewMenuActions(pr, canWrite).map(menuItem)
+  const actionsOpen = snoozing || menuOpen || approving || busy
+
+  // A div rather than a <button>, because it contains buttons of its own.
   return (
-    <div className="pr" role="button" tabIndex={0} onClick={open} onKeyDown={onKeyDown} title={pr.url}>
+    <div
+      className="pr"
+      role="button"
+      tabIndex={0}
+      onClick={open}
+      onKeyDown={onKeyDown}
+      onContextMenu={onContextMenu}
+      title={pr.url}
+    >
       {pr.author ? (
         <img className="avatar" src={pr.author.avatarUrl} alt="" />
       ) : (
@@ -50,8 +124,11 @@ export function PrItem({ pr, snoozeTomorrowAt }: { pr: PullRequest; snoozeTomorr
           </span>
           <span className="pr-number">#{pr.number}</span>
           <CiIcon state={pr.ci} />
-          <span className="pr-age" title={formatDateTime(pr.createdAt, locale)}>
-            {timeAgo(pr.createdAt, Date.now(), locale)}
+          <span
+            className={`pr-age ${stale ? 'pr-age-stale' : ''}`}
+            title={stale ? t('pr.stale', { count: ageDays }) : formatDateTime(pr.createdAt, locale)}
+          >
+            {timeAgo(pr.createdAt, now, locale)}
           </span>
         </div>
         <div className="pr-title">{pr.title}</div>
@@ -72,27 +149,79 @@ export function PrItem({ pr, snoozeTomorrowAt }: { pr: PullRequest; snoozeTomorr
               {t('pr.newCommits')}
             </span>
           )}
+          <Labels labels={pr.labels} />
           <span className="diff">
             <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>
           </span>
           {pr.author && <span className="pr-author">@{pr.author.login}</span>}
         </div>
         {snoozing && (
-          <div className="snooze-row" onClick={(e) => e.stopPropagation()}>
+          <div className="snooze-row" onClick={stop}>
             <ClockIcon size={12} />
-            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={snooze('hour')}>
+            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={() => snooze('hour')}>
               {t('pr.snoozeHour')}
             </button>
-            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={snooze('tomorrow')}>
+            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={() => snooze('tomorrow')}>
               {tomorrowLabel}
+            </button>
+            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={() => snooze('push')}>
+              {t('pr.snoozePush')}
             </button>
           </div>
         )}
+        {approving && (
+          <ConfirmRow
+            message={t('action.approveConfirm', { number: pr.number, author: pr.author?.login ?? '' })}
+            confirmLabel={t('action.approve')}
+            cancelLabel={t('action.cancel')}
+            busy={busy}
+            error={error}
+            onConfirm={() => void approve()}
+            onCancel={() => {
+              setApproving(false)
+              setError(null)
+            }}
+          >
+            <input
+              className="input"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder={t('action.approveComment')}
+              maxLength={2000}
+              spellCheck
+            />
+          </ConfirmRow>
+        )}
+        {!approving && error && (
+          <div className="confirm-error" role="alert">
+            {error}
+          </div>
+        )}
       </div>
-      <div className={`pr-actions ${snoozing ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
+      <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
+        {copied && <span className="pr-copied">{t('action.copied')}</span>}
+        {canApprove && (
+          <button
+            className="pr-action pr-action-approve"
+            onClick={(e) => {
+              e.stopPropagation()
+              setApproving((a) => !a)
+              setError(null)
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+            title={t('action.approve')}
+            aria-label={t('action.approve')}
+            aria-expanded={approving}
+          >
+            {busy ? <span className="spinner spinner-sm" /> : <CheckIcon size={12} />}
+          </button>
+        )}
         <button
           className="pr-action"
-          onClick={toggleSnooze}
+          onClick={(e) => {
+            e.stopPropagation()
+            setSnoozing(!snoozing)
+          }}
           onMouseDown={(e) => e.preventDefault()}
           title={t('pr.snooze')}
           aria-label={t('pr.snooze')}
@@ -102,7 +231,10 @@ export function PrItem({ pr, snoozeTomorrowAt }: { pr: PullRequest; snoozeTomorr
         </button>
         <button
           className="pr-action pr-action-dismiss"
-          onClick={dismiss}
+          onClick={(e) => {
+            e.stopPropagation()
+            dismiss()
+          }}
           onMouseDown={(e) => e.preventDefault()}
           title={t('pr.dismissHint')}
           aria-label={t('pr.dismiss')}
@@ -110,6 +242,7 @@ export function PrItem({ pr, snoozeTomorrowAt }: { pr: PullRequest; snoozeTomorr
           <XIcon size={12} />
         </button>
       </div>
+      {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} />}
     </div>
   )
 }

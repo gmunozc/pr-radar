@@ -9,6 +9,7 @@ describe('migrateState', () => {
       seenIds: ['a', 'b'],
       dismissedIds: [],
       snoozed: {},
+      snoozedUntilPush: {},
       queued: { reviews: [], reminders: [], approved: [], changes: [], ready: [], sessionExpired: false },
       lastDigestDay: null
     })
@@ -46,6 +47,14 @@ describe('migrateState and your PRs snapshot', () => {
 
   it('leaves the snapshot undefined for older state files', () => {
     expect(migrateState({ login: 'me', seenIds: [] })?.myPrs).toBeUndefined()
+  })
+})
+
+describe('migrateState and snoozes until new commits', () => {
+  it('keeps head commits per PR and drops anything else', () => {
+    const state = migrateState({ login: 'me', seenIds: [], snoozedUntilPush: { a: 'abc', b: 7, c: '' } })
+    expect(state?.snoozedUntilPush).toEqual({ a: 'abc' })
+    expect(migrateState({ login: 'me', seenIds: [], snoozedUntilPush: ['x'] })?.snoozedUntilPush).toEqual({})
   })
 })
 

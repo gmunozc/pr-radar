@@ -377,6 +377,45 @@ describe('Engine snooze', () => {
     expect(t.events).toEqual([{ kind: 'snooze_returned', prs: [pr('a')] }])
   })
 
+  it('snoozes until the author pushes and brings the PR back with a reminder', async () => {
+    const pushed = { ...result(['a', 'b']), prs: [pr('a', { headOid: 'h2' }), pr('b')] }
+    const t = setup([result(['a', 'b']), result(['a', 'b']), pushed], { auth: fresh(), now: at(5, '10:00') })
+    await t.engine.poll()
+    t.events.length = 0
+
+    t.engine.snooze('a', 'push')
+    expect(t.engine.state.prs.map((p) => p.id)).toEqual(['b'])
+    expect(t.engine.state.snoozedCount).toBe(1)
+    expect(t.stored).toMatchObject({ snoozedUntilPush: { a: 'h' } })
+
+    // Time passing changes nothing; a poll with the same head keeps it hidden.
+    t.setNow(at(5, '10:30'))
+    t.engine.tick()
+    await t.engine.poll()
+    expect(t.engine.state.prs.map((p) => p.id)).toEqual(['b'])
+    expect(t.events).toEqual([])
+
+    await t.engine.poll()
+    expect(t.engine.state.prs.map((p) => p.id)).toEqual(['a', 'b'])
+    expect(t.events).toEqual([{ kind: 'snooze_returned', prs: [pr('a', { headOid: 'h2' })] }])
+    expect(t.stored).toMatchObject({ snoozedUntilPush: {} })
+    expect(t.engine.state.snoozedCount).toBe(0)
+  })
+
+  it('snoozes for an hour instead when the head commit is unknown, and restores push snoozes', async () => {
+    const t = setup([{ ...result(['a']), prs: [pr('a', { headOid: '' })] }, result(['b'])], { auth: fresh(), now: at(5, '10:00') })
+    await t.engine.poll()
+    t.engine.snooze('a', 'push')
+    expect(t.stored).toMatchObject({ snoozed: { a: at(5, '11:00') }, snoozedUntilPush: {} })
+
+    await t.engine.poll()
+    t.engine.snooze('b', 'push')
+    expect(t.engine.state.snoozedCount).toBe(1)
+    t.engine.restoreHidden()
+    expect(t.engine.state.prs.map((p) => p.id)).toEqual(['b'])
+    expect(t.engine.state.snoozedCount).toBe(0)
+  })
+
   it('snoozes "tomorrow" to the next working morning and restores without notifying', async () => {
     const t = setup([result(['a'])], { auth: fresh(), now: at(9, '17:00') })
     await t.engine.poll()

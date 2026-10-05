@@ -15,7 +15,11 @@ export interface ScheduleSettings {
   digestTime: string
 }
 
-export type SnoozeOption = 'hour' | 'tomorrow'
+import type { SnoozeOption } from '../shared/types'
+
+export type { SnoozeOption }
+/** Snoozes with a time: "until the author pushes" is decided by the engine, not the calendar. */
+export type TimedSnooze = Exclude<SnoozeOption, 'push'>
 
 const HOUR = 3_600_000
 /** A digest missed (e.g. the Mac was asleep) is still sent within this window. */
@@ -87,7 +91,7 @@ export function nextWorkdayStart(date: Date, s: ScheduleSettings): Date {
   return atTime(addDays(date, 1), s.workStart)
 }
 
-export function snoozeUntil(date: Date, option: SnoozeOption, s: ScheduleSettings): Date {
+export function snoozeUntil(date: Date, option: TimedSnooze, s: ScheduleSettings): Date {
   return option === 'hour' ? new Date(date.getTime() + HOUR) : nextWorkdayStart(date, s)
 }
 

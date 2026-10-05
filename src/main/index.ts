@@ -223,6 +223,7 @@ function main(): void {
     dismiss: (prId) => engine.dismiss(prId),
     restoreDismissed: () => engine.restoreHidden(),
     snooze: (prId, option) => engine.snooze(prId, option),
+    hidePanel: () => panel.hide(),
     prAction: (prId, action) => engine.runAction(prId, action),
     copyText: async (text) => {
       try {
@@ -287,9 +288,11 @@ function main(): void {
     setSettings: (patch) => {
       const { openAtLogin, ...rest } = patch
       if (openAtLogin !== undefined) app.setLoginItemSettings({ openAtLogin })
-      const filtersChanged =
-        (rest.includeTeams !== undefined && rest.includeTeams !== settings.includeTeams) ||
-        (rest.showDrafts !== undefined && rest.showDrafts !== settings.showDrafts)
+      // Settings that change what GitHub is asked for: the next result is a new baseline.
+      const searchKeys = ['includeTeams', 'showDrafts', 'hideBots', 'excludeRepos', 'excludeAuthors'] as const
+      const filtersChanged = searchKeys.some(
+        (key) => rest[key] !== undefined && JSON.stringify(rest[key]) !== JSON.stringify(settings[key])
+      )
       settings = { ...settings, ...rest }
       settingsFile.write(settings)
       if (applyLanguage(settings.language, app.getPreferredSystemLanguages())) {
@@ -301,7 +304,9 @@ function main(): void {
         void poller.runNow()
       }
       engine.settingsChanged()
-      return { ...settings, openAtLogin: app.getLoginItemSettings().openAtLogin }
+      const view = { ...settings, openAtLogin: app.getLoginItemSettings().openAtLogin }
+      if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.settingsChanged, view)
+      return view
     },
     showPanel,
     appInfo: () => ({ version: app.getVersion(), packaged: app.isPackaged }),

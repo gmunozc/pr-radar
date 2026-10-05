@@ -152,6 +152,12 @@ export interface Viewer {
   avatarUrl: string
 }
 
+/** How long to hide a review request: an hour, until the next working morning, or until the author pushes. */
+export type SnoozeOption = 'hour' | 'tomorrow' | 'push'
+
+export type ReviewFilter = 'all' | 'direct' | 'team'
+export type ReviewSort = 'newest' | 'oldest' | 'updated'
+
 export type AppStatus = 'logged_out' | 'loading' | 'ready' | 'error'
 
 export type GithubErrorKind = 'unauthorized' | 'rate_limited' | 'network' | 'unknown'
@@ -166,6 +172,8 @@ export type WarningCode =
   | 'missing_permission'
   | 'app_not_installed'
   | 'app_permissions_pending'
+  /** Some repository/author exclusions didn't fit in GitHub's 256-character search. */
+  | 'filters_truncated'
 export interface Warning {
   code: WarningCode
   params?: Record<string, string | number>
@@ -216,6 +224,15 @@ export interface Settings {
   includeTeams: boolean
   notifications: boolean
   showDrafts: boolean
+  /** Leave out PRs opened by dependency bots (Dependabot, Renovate, GitHub Actions). */
+  hideBots: boolean
+  /** Repositories ("owner/name") and authors never shown. */
+  excludeRepos: string[]
+  excludeAuthors: string[]
+  /** Review requests older than this many days are highlighted; 0 turns it off. */
+  staleAfterDays: number
+  reviewFilter: ReviewFilter
+  reviewSort: ReviewSort
   pollIntervalSec: number
   clientId: string
   language: LanguagePref
@@ -239,6 +256,12 @@ export const DEFAULT_SETTINGS: Settings = {
   includeTeams: true,
   notifications: true,
   showDrafts: true,
+  hideBots: false,
+  excludeRepos: [],
+  excludeAuthors: [],
+  staleAfterDays: 3,
+  reviewFilter: 'all',
+  reviewSort: 'newest',
   pollIntervalSec: 30,
   clientId: '',
   language: 'system',
@@ -278,8 +301,10 @@ export interface PrRadarApi {
   onState(cb: (state: AppState) => void): () => void
   refresh(): Promise<void>
   dismiss(prId: string): Promise<void>
-  snooze(prId: string, option: 'hour' | 'tomorrow'): Promise<void>
+  snooze(prId: string, option: SnoozeOption): Promise<void>
   restoreDismissed(): Promise<void>
+  /** Hides the panel (Escape). */
+  hidePanel(): Promise<void>
   prs: {
     /** Writes to GitHub (merge, update branch, …); the main process decides the exact target. */
     action(prId: string, action: PrAction): Promise<ActionResult>
@@ -303,6 +328,8 @@ export interface PrRadarApi {
     get(): Promise<Settings & { openAtLogin: boolean }>
     set(patch: Partial<Settings> & { openAtLogin?: boolean }): Promise<Settings & { openAtLogin: boolean }>
   }
+  /** Settings changed (from the panel or the tray menu). */
+  onSettings(cb: (settings: Settings & { openAtLogin: boolean }) => void): () => void
   openExternal(url: string): Promise<void>
   testNotification(): Promise<NotifyResult>
   openNotificationSettings(): Promise<void>
@@ -330,6 +357,8 @@ export const IPC = {
   prAction: 'prs:action',
   copyText: 'clipboard:copy',
   relaunch: 'app:relaunch',
+  panelHide: 'panel:hide',
+  settingsChanged: 'settings:update',
   authStart: 'auth:start',
   authCancel: 'auth:cancel',
   authLogout: 'auth:logout',

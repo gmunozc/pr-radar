@@ -112,4 +112,25 @@ describe('applyHidden', () => {
   it('forgets snoozes of PRs that left the list', () => {
     expect(applyHidden([pr('a')], { dismissedIds: [], snoozed: { gone: 999 } }, 0).snoozed).toEqual({})
   })
+
+  it('hides a PR snoozed until new commits while the head is unchanged, then brings it back', () => {
+    const hidden = { dismissedIds: [], snoozed: {}, snoozedUntilPush: { a: 'h' } }
+    const same = applyHidden([pr('a'), pr('b')], hidden, 0)
+    expect(same.visible.map((p) => p.id)).toEqual(['b'])
+    expect(same.snoozedUntilPush).toEqual({ a: 'h' })
+    expect(same.returned).toEqual([])
+
+    const pushed = applyHidden([pr('a', { headOid: 'h2' }), pr('b')], hidden, 0)
+    expect(pushed.visible.map((p) => p.id)).toEqual(['a', 'b'])
+    expect(pushed.returned.map((p) => p.id)).toEqual(['a'])
+    expect(pushed.snoozedUntilPush).toEqual({})
+  })
+
+  it('forgets push snoozes of PRs that left, and lets a dismissal win', () => {
+    expect(applyHidden([pr('a')], { dismissedIds: [], snoozed: {}, snoozedUntilPush: { gone: 'x' } }, 0).snoozedUntilPush).toEqual({})
+    const dismissed = applyHidden([pr('a')], { dismissedIds: ['a'], snoozed: {}, snoozedUntilPush: { a: 'h' } }, 0)
+    expect(dismissed.visible).toEqual([])
+    expect(dismissed.snoozedUntilPush).toEqual({})
+    expect(dismissed.returned).toEqual([])
+  })
 })

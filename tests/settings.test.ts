@@ -31,6 +31,29 @@ describe('normalizeSettings', () => {
   })
 })
 
+describe('exclusions and list settings', () => {
+  it('keeps valid repository and author lists, trimmed and unique', () => {
+    expect(
+      sanitizeSettingsPatch({
+        hideBots: true,
+        excludeRepos: [' acme/app ', 'acme/app', 'bad repo', 7],
+        excludeAuthors: ['octo', 'app/renovate', 'bad user']
+      })
+    ).toEqual({ hideBots: true, excludeRepos: ['acme/app'], excludeAuthors: ['octo', 'app/renovate'] })
+    expect(sanitizeSettingsPatch({ excludeRepos: 'acme/app' })).toEqual({})
+    expect(sanitizeSettingsPatch({ excludeRepos: Array.from({ length: 40 }, (_, i) => `acme/r${i}`) }).excludeRepos).toHaveLength(30)
+  })
+
+  it('clamps stale days and only accepts known filter and sort values', () => {
+    expect(sanitizeSettingsPatch({ staleAfterDays: 99, reviewFilter: 'team', reviewSort: 'oldest' })).toEqual({
+      staleAfterDays: 30,
+      reviewFilter: 'team',
+      reviewSort: 'oldest'
+    })
+    expect(sanitizeSettingsPatch({ staleAfterDays: -2, reviewFilter: 'mine', reviewSort: 'random' })).toEqual({ staleAfterDays: 0 })
+  })
+})
+
 describe('schedule settings', () => {
   it('accepts valid times and day lists', () => {
     expect(sanitizeSettingsPatch({ workStart: '08:30', workEnd: '17:45', digestTime: '09:05', workDays: [5, 1, 1, 3] })).toEqual({

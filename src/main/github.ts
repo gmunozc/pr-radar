@@ -155,7 +155,8 @@ export interface FetchResult {
 }
 
 type FetchFn = typeof fetch
-type SearchSettings = Pick<Settings, 'includeTeams' | 'showDrafts'>
+type Exclusions = Partial<Pick<Settings, 'hideBots' | 'excludeRepos' | 'excludeAuthors'>>
+type SearchSettings = Pick<Settings, 'includeTeams' | 'showDrafts'> & Exclusions
 type ReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null
 
 interface RawReviewer {
@@ -247,17 +248,40 @@ interface RawResponse {
 }
 
 const BASE_QUERY = ['is:pr', 'is:open', 'archived:false']
+/** Dependency bots, as GitHub's search names GitHub Apps. */
+export const BOT_AUTHORS = ['app/dependabot', 'app/renovate', 'app/github-actions']
+/** GitHub rejects longer search queries. */
+export const MAX_SEARCH_LENGTH = 256
 
-export function buildSearchQuery(settings: SearchSettings): string {
-  const parts = [...BASE_QUERY, settings.includeTeams ? 'review-requested:@me' : 'user-review-requested:@me']
-  if (!settings.showDrafts) parts.push('draft:false')
-  return parts.join(' ')
+/** Appends `-repo:`/`-author:` terms while the query stays within GitHub's length limit. */
+function withExclusions(parts: string[], terms: string[]): { query: string; truncated: boolean } {
+  let query = parts.join(' ')
+  for (const [i, term] of terms.entries()) {
+    if (query.length + 1 + term.length > MAX_SEARCH_LENGTH) return { query, truncated: i < terms.length }
+    query += ` ${term}`
+  }
+  return { query, truncated: false }
 }
 
-export function buildMyPrsQuery(settings: Pick<Settings, 'showDrafts'>): string {
-  const parts = [...BASE_QUERY, 'author:@me']
-  if (!settings.showDrafts) parts.push('draft:false')
-  return parts.join(' ')
+/** Both searches of the poll. Authors are only excluded from review requests (your own PRs are yours). */
+export function searchQueries(settings: SearchSettings): { requested: string; mine: string; truncated: boolean } {
+  const drafts = settings.showDrafts ? [] : ['draft:false']
+  const repos = (settings.excludeRepos ?? []).map((r) => `-repo:${r}`)
+  const authors = [...(settings.hideBots ? BOT_AUTHORS : []), ...(settings.excludeAuthors ?? [])].map((a) => `-author:${a}`)
+  const requested = withExclusions(
+    [...BASE_QUERY, settings.includeTeams ? 'review-requested:@me' : 'user-review-requested:@me', ...drafts],
+    [...authors, ...repos]
+  )
+  const mine = withExclusions([...BASE_QUERY, 'author:@me', ...drafts], repos)
+  return { requested: requested.query, mine: mine.query, truncated: requested.truncated || mine.truncated }
+}
+
+export function buildSearchQuery(settings: SearchSettings): string {
+  return searchQueries(settings).requested
+}
+
+export function buildMyPrsQuery(settings: Pick<Settings, 'showDrafts'> & Exclusions): string {
+  return searchQueries({ includeTeams: true, ...settings }).mine
 }
 
 export function reviewSource(pr: RawPr, viewerLogin: string): ReviewSource {
@@ -636,19 +660,22 @@ export async function fetchPullRequests(
   login?: string,
   fetchFn: FetchFn = fetch
 ): Promise<FetchResult> {
+  const queries = searchQueries(settings)
   const { body, response } = await graphqlRequest<RawResponse>(
     token,
     PULL_REQUESTS_QUERY,
     {
-      requested: buildSearchQuery(settings),
-      mine: buildMyPrsQuery(settings),
+      requested: queries.requested,
+      mine: queries.mine,
       first: PAGE_SIZE,
       login: login ?? '',
       withMyReview: Boolean(login)
     },
     fetchFn
   )
-  return { ...mapResponse(body), tokenExpiration: response.headers.get('github-authentication-token-expiration') }
+  const result = mapResponse(body)
+  if (queries.truncated) result.warnings.push({ code: 'filters_truncated' })
+  return { ...result, tokenExpiration: response.headers.get('github-authentication-token-expiration') }
 }
 
 /** Repository/organization permissions PR Radar's GitHub App needs (all read-only). */

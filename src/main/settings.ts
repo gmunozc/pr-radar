@@ -3,6 +3,22 @@ import { DEFAULT_SETTINGS, MIN_POLL_INTERVAL_SEC, type Settings } from '../share
 export type SettingsPatch = Partial<Settings> & { openAtLogin?: boolean }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
+/** "owner/name", as GitHub allows them. */
+const REPO = /^[\w.-]+\/[\w.-]+$/
+/** A user login, or "app/<slug>" for a GitHub App bot as search queries name them. */
+const AUTHOR = /^(app\/)?[A-Za-z0-9-]+$/
+export const MAX_EXCLUSIONS = 30
+export const MAX_STALE_DAYS = 30
+
+/** Unique, trimmed entries that match `pattern`, at most MAX_EXCLUSIONS of them. */
+function exclusionList(v: unknown, pattern: RegExp): string[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const clean = v
+    .filter((x): x is string => typeof x === 'string')
+    .map((x) => x.trim())
+    .filter((x) => pattern.test(x))
+  return [...new Set(clean)].slice(0, MAX_EXCLUSIONS)
+}
 
 /** Keeps only known settings with the right types; used for IPC input and settings.json. */
 export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
@@ -13,6 +29,7 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
     'includeTeams',
     'notifications',
     'showDrafts',
+    'hideBots',
     'notifyMyPrs',
     'quietHours',
     'digest',
@@ -24,6 +41,15 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (typeof p.pollIntervalSec === 'number' && Number.isFinite(p.pollIntervalSec)) {
     out.pollIntervalSec = Math.min(3600, Math.max(MIN_POLL_INTERVAL_SEC, Math.round(p.pollIntervalSec)))
   }
+  if (typeof p.staleAfterDays === 'number' && Number.isFinite(p.staleAfterDays)) {
+    out.staleAfterDays = Math.min(MAX_STALE_DAYS, Math.max(0, Math.round(p.staleAfterDays)))
+  }
+  const repos = exclusionList(p.excludeRepos, REPO)
+  if (repos) out.excludeRepos = repos
+  const authors = exclusionList(p.excludeAuthors, AUTHOR)
+  if (authors) out.excludeAuthors = authors
+  if (p.reviewFilter === 'all' || p.reviewFilter === 'direct' || p.reviewFilter === 'team') out.reviewFilter = p.reviewFilter
+  if (p.reviewSort === 'newest' || p.reviewSort === 'oldest' || p.reviewSort === 'updated') out.reviewSort = p.reviewSort
   if (typeof p.clientId === 'string') out.clientId = p.clientId.trim()
   if (p.language === 'system' || p.language === 'en' || p.language === 'es') out.language = p.language
   for (const key of ['workStart', 'workEnd', 'digestTime'] as const) {

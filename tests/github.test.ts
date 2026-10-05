@@ -14,7 +14,8 @@ import {
   mergeBlocker,
   mergeOptions,
   myReviewStatus,
-  reviewFreshness
+  reviewFreshness,
+  searchQueries
 } from '../src/main/github'
 
 const settings = { includeTeams: true, showDrafts: true }
@@ -74,6 +75,32 @@ describe('buildMyPrsQuery', () => {
   it('searches your own open PRs, optionally without drafts', () => {
     expect(buildMyPrsQuery({ showDrafts: true })).toBe('is:pr is:open archived:false author:@me')
     expect(buildMyPrsQuery({ showDrafts: false })).toBe('is:pr is:open archived:false author:@me draft:false')
+  })
+})
+
+describe('search exclusions', () => {
+  it('excludes bots, authors and repositories from review requests, repositories from your PRs', () => {
+    const s = { includeTeams: true, showDrafts: true, hideBots: true, excludeAuthors: ['octo'], excludeRepos: ['acme/legacy'] }
+    expect(buildSearchQuery(s)).toBe(
+      'is:pr is:open archived:false review-requested:@me -author:app/dependabot -author:app/renovate -author:app/github-actions -author:octo -repo:acme/legacy'
+    )
+    expect(buildMyPrsQuery(s)).toBe('is:pr is:open archived:false author:@me -repo:acme/legacy')
+  })
+
+  it("stops adding exclusions at GitHub's 256-character limit and says so", () => {
+    const excludeRepos = Array.from({ length: 30 }, (_, i) => `acme/repository-number-${i}`)
+    const q = searchQueries({ includeTeams: true, showDrafts: false, excludeRepos })
+    expect(q.requested.length).toBeLessThanOrEqual(256)
+    expect(q.mine.length).toBeLessThanOrEqual(256)
+    expect(q.requested).toContain('-repo:acme/repository-number-0')
+    expect(q.truncated).toBe(true)
+    expect(searchQueries({ includeTeams: true, showDrafts: true }).truncated).toBe(false)
+  })
+
+  it('warns when exclusions were truncated', async () => {
+    const excludeRepos = Array.from({ length: 30 }, (_, i) => `acme/repository-number-${i}`)
+    const result = await fetchPullRequests('tok', { ...settings, excludeRepos }, 'me', vi.fn().mockResolvedValue(ok([])))
+    expect(result.warnings).toEqual([{ code: 'filters_truncated' }])
   })
 })
 

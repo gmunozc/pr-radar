@@ -6,7 +6,8 @@ import {
   type AuthMethod,
   type MergeMethod,
   type PrAction,
-  type Settings
+  type Settings,
+  type SnoozeOption
 } from '../shared/types'
 import { logger } from './log'
 import { testNotification } from './notifier'
@@ -18,13 +19,15 @@ type SettingsView = Settings & { openAtLogin: boolean }
 export const MAX_COPY_LENGTH = 500
 const MAX_REVIEW_BODY = 2000
 const MERGE_METHODS: readonly string[] = ['MERGE', 'SQUASH', 'REBASE']
+const SNOOZE_OPTIONS: readonly string[] = ['hour', 'tomorrow', 'push']
 
 export interface IpcContext {
   getState(): AppState
   refresh(): Promise<void>
   dismiss(prId: string): void
-  snooze(prId: string, option: 'hour' | 'tomorrow'): void
+  snooze(prId: string, option: SnoozeOption): void
   restoreDismissed(): void
+  hidePanel(): void
   prAction(prId: string, action: PrAction): Promise<ActionResult>
   copyText(text: string): Promise<{ ok: boolean }>
   relaunch(): void
@@ -94,8 +97,11 @@ export function registerIpc(ctx: IpcContext): void {
   )
   ipcMain.handle(IPC.relaunch, () => ctx.relaunch())
   ipcMain.handle(IPC.snooze, (_e, prId: unknown, option: unknown) => {
-    if (typeof prId === 'string' && (option === 'hour' || option === 'tomorrow')) ctx.snooze(prId, option)
+    if (typeof prId === 'string' && typeof option === 'string' && SNOOZE_OPTIONS.includes(option)) {
+      ctx.snooze(prId, option as SnoozeOption)
+    }
   })
+  ipcMain.handle(IPC.panelHide, () => ctx.hidePanel())
   ipcMain.handle(IPC.restoreDismissed, () => ctx.restoreDismissed())
   ipcMain.handle(IPC.authHasClientId, () => ctx.hasClientId())
   ipcMain.handle(IPC.authAccessUrl, () => ctx.accessUrl())

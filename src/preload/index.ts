@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IPC, type AppState, type AuthStatus, type PrRadarApi } from '../shared/types'
+import { IPC, type AppState, type AuthStatus, type PrRadarApi, type Settings } from '../shared/types'
 
 function subscribe<T>(channel: string, cb: (value: T) => void): () => void {
   const listener = (_e: IpcRendererEvent, value: T) => cb(value)
@@ -15,6 +15,7 @@ const api: PrRadarApi = {
   dismiss: (prId) => ipcRenderer.invoke(IPC.dismiss, prId),
   snooze: (prId, option) => ipcRenderer.invoke(IPC.snooze, prId, option),
   restoreDismissed: () => ipcRenderer.invoke(IPC.restoreDismissed),
+  hidePanel: () => ipcRenderer.invoke(IPC.panelHide),
   prs: {
     action: (prId, action) => ipcRenderer.invoke(IPC.prAction, prId, action)
   },
@@ -34,6 +35,7 @@ const api: PrRadarApi = {
     get: () => ipcRenderer.invoke(IPC.settingsGet),
     set: (patch) => ipcRenderer.invoke(IPC.settingsSet, patch)
   },
+  onSettings: (cb) => subscribe<Settings & { openAtLogin: boolean }>(IPC.settingsChanged, cb),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
   testNotification: () => ipcRenderer.invoke(IPC.testNotification),
   openNotificationSettings: () => ipcRenderer.invoke(IPC.openNotificationSettings),
