@@ -34,7 +34,7 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 
 ## Instalación
 
-1. Descarga `PR-Radar-<versión>-universal.dmg` de la [última Release](https://github.com/gmunozc/pr-radar/releases/latest). Funciona en Macs con Apple Silicon y con Intel.
+1. Descarga de la [última Release](https://github.com/gmunozc/pr-radar/releases/latest) el dmg para tu Mac: `PR-Radar-<versión>-arm64.dmg` si es Apple Silicon (M1 o posterior), o `PR-Radar-<versión>-x64.dmg` si es Intel. ¿No sabes cuál tienes? Menú Apple → Acerca de este Mac: si pone "Chip", es Apple Silicon; si pone "Procesador", es Intel.
 2. Ábrelo y arrastra **PR Radar** a Aplicaciones.
 3. **La primera vez:** la app no está firmada con un Developer ID de Apple, así que macOS la bloquea. Haz clic derecho → **Abrir**, o ve a Ajustes del Sistema → Privacidad y seguridad → **Abrir igualmente**.
 4. macOS pedirá permiso para que PR Radar use **"PR Radar Safe Storage"** en el Llavero: elige **Permitir siempre**. Como la app no está firmada, el aviso vuelve a salir con cada actualización.
@@ -42,9 +42,9 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 Para verificar la descarga, deja el `SHA256SUMS.txt` de la Release en la misma carpeta y ejecuta:
 
 ```sh
-shasum -a 256 -c SHA256SUMS.txt
+shasum -a 256 -c SHA256SUMS.txt --ignore-missing
 # o comprueba que lo generó el workflow de Release de este repositorio:
-gh attestation verify PR-Radar-<versión>-universal.dmg --repo gmunozc/pr-radar
+gh attestation verify PR-Radar-<versión>-arm64.dmg --repo gmunozc/pr-radar
 ```
 
 ## Conectar tu cuenta
@@ -117,7 +117,7 @@ cp .env.example .env   # pon tus propios Client ID (ver abajo)
 npm run dev            # con recarga en caliente (usa una carpeta aparte, "PR Radar Dev")
 npm test               # tests unitarios
 npm run typecheck
-npm run dist:mac       # dist/PR-Radar-<versión>-universal.dmg
+npm run dist:mac       # dist/PR-Radar-<versión>-arm64.dmg y -x64.dmg
 ```
 
 Necesitas tu propia GitHub App, tu propia OAuth App o ambas:

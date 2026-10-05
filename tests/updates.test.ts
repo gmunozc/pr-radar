@@ -13,6 +13,10 @@ import {
 
 const silent: Logger = { debug() {}, info() {}, warn() {}, error() {} }
 
+const dmgUrl = (tag: string, arch: string) =>
+  `https://github.com/gmunozc/pr-radar/releases/download/${tag}/PR-Radar-${tag.slice(1)}-${arch}.dmg`
+const dmg = (tag: string, arch: string) => ({ name: `PR-Radar-${tag.slice(1)}-${arch}.dmg`, browser_download_url: dmgUrl(tag, arch) })
+
 const release = (tag: string, over: Record<string, unknown> = {}) => ({
   tag_name: tag,
   html_url: `https://github.com/gmunozc/pr-radar/releases/tag/${tag}`,
@@ -20,10 +24,8 @@ const release = (tag: string, over: Record<string, unknown> = {}) => ({
   prerelease: false,
   assets: [
     { name: 'SHA256SUMS.txt', browser_download_url: 'https://github.com/gmunozc/pr-radar/releases/download/x/SHA256SUMS.txt' },
-    {
-      name: `PR-Radar-${tag.slice(1)}-universal.dmg`,
-      browser_download_url: `https://github.com/gmunozc/pr-radar/releases/download/${tag}/PR-Radar-${tag.slice(1)}-universal.dmg`
-    }
+    dmg(tag, 'arm64'),
+    dmg(tag, 'x64')
   ],
   ...over
 })
@@ -44,20 +46,28 @@ describe('isNewer', () => {
 })
 
 describe('parseRelease', () => {
-  it('picks the universal dmg', () => {
-    expect(parseRelease(release('v0.7.0'))).toEqual({
-      version: '0.7.0',
-      releaseUrl: 'https://github.com/gmunozc/pr-radar/releases/tag/v0.7.0',
-      downloadUrl: 'https://github.com/gmunozc/pr-radar/releases/download/v0.7.0/PR-Radar-0.7.0-universal.dmg'
+  it("picks the dmg for the Mac's architecture", () => {
+    expect(parseRelease(release('v0.8.0'), 'arm64')).toEqual({
+      version: '0.8.0',
+      releaseUrl: 'https://github.com/gmunozc/pr-radar/releases/tag/v0.8.0',
+      downloadUrl: dmgUrl('v0.8.0', 'arm64')
     })
-    expect(parseRelease(release('v0.7.0', { assets: [] }))?.downloadUrl).toBeNull()
+    expect(parseRelease(release('v0.8.0'), 'x64')?.downloadUrl).toBe(dmgUrl('v0.8.0', 'x64'))
+  })
+
+  it('falls back to a universal dmg, then to no direct link', () => {
+    const universal = release('v0.7.0', { assets: [dmg('v0.7.0', 'universal')] })
+    expect(parseRelease(universal, 'arm64')?.downloadUrl).toBe(dmgUrl('v0.7.0', 'universal'))
+    expect(parseRelease(universal, 'x64')?.downloadUrl).toBe(dmgUrl('v0.7.0', 'universal'))
+    expect(parseRelease(release('v0.8.0', { assets: [dmg('v0.8.0', 'x64')] }), 'arm64')?.downloadUrl).toBeNull()
+    expect(parseRelease(release('v0.8.0', { assets: [] }), 'arm64')?.downloadUrl).toBeNull()
   })
 
   it('ignores drafts, prereleases and garbage', () => {
-    expect(parseRelease(release('v0.7.0', { draft: true }))).toBeNull()
-    expect(parseRelease(release('v0.7.0', { prerelease: true }))).toBeNull()
-    expect(parseRelease({ message: 'Not Found' })).toBeNull()
-    expect(parseRelease(null)).toBeNull()
+    expect(parseRelease(release('v0.7.0', { draft: true }), 'arm64')).toBeNull()
+    expect(parseRelease(release('v0.7.0', { prerelease: true }), 'arm64')).toBeNull()
+    expect(parseRelease({ message: 'Not Found' }, 'arm64')).toBeNull()
+    expect(parseRelease(null, 'arm64')).toBeNull()
   })
 })
 
@@ -69,14 +79,14 @@ describe('fetchLatestRelease', () => {
       .mockResolvedValueOnce(json)
       .mockResolvedValueOnce(new Response(null, { status: 304 }))
       .mockResolvedValueOnce(new Response('{}', { status: 404 }))
-    expect(await fetchLatestRelease('gmunozc/pr-radar', null, fetchFn)).toMatchObject({
+    expect(await fetchLatestRelease('gmunozc/pr-radar', null, 'arm64', fetchFn)).toMatchObject({
       release: { version: '0.7.0' },
       etag: 'W/"abc"',
       notModified: false
     })
-    expect(await fetchLatestRelease('gmunozc/pr-radar', 'W/"abc"', fetchFn)).toEqual({ release: null, etag: 'W/"abc"', notModified: true })
+    expect(await fetchLatestRelease('gmunozc/pr-radar', 'W/"abc"', 'arm64', fetchFn)).toEqual({ release: null, etag: 'W/"abc"', notModified: true })
     expect(fetchFn.mock.calls[1][1].headers['If-None-Match']).toBe('W/"abc"')
-    expect(await fetchLatestRelease('gmunozc/pr-radar', null, fetchFn)).toEqual({ release: null, etag: null, notModified: false })
+    expect(await fetchLatestRelease('gmunozc/pr-radar', null, 'arm64', fetchFn)).toEqual({ release: null, etag: null, notModified: false })
   })
 })
 
@@ -103,7 +113,7 @@ describe('UpdateChecker', () => {
       return state
     } }
   }
-  const found = (tag: string): ReleaseCheck => ({ release: parseRelease(release(tag)), etag: `"${tag}"`, notModified: false })
+  const found = (tag: string): ReleaseCheck => ({ release: parseRelease(release(tag), 'arm64'), etag: `"${tag}"`, notModified: false })
 
   it('announces a newer version once and keeps showing it', async () => {
     const t = setup([found('v0.7.0'), { release: null, etag: '"v0.7.0"', notModified: true }])

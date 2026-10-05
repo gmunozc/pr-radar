@@ -8,7 +8,7 @@ import type { Logger } from './log'
 export interface UpdateInfo {
   version: string
   releaseUrl: string
-  /** Direct link to the macOS dmg, when the release has one. */
+  /** Direct link to the dmg for this Mac, when the release has one. */
   downloadUrl: string | null
 }
 
@@ -44,10 +44,15 @@ interface RawRelease {
   assets?: Array<{ name?: string; browser_download_url?: string }>
 }
 
-export function parseRelease(body: unknown): UpdateInfo | null {
+/**
+ * Releases ship one dmg per architecture (`arch` is arm64 or x64). A universal dmg, as in
+ * releases up to 0.7, is the fallback.
+ */
+export function parseRelease(body: unknown, arch: string): UpdateInfo | null {
   const r = body as RawRelease | null
   if (!r || typeof r.tag_name !== 'string' || typeof r.html_url !== 'string' || r.draft || r.prerelease) return null
-  const dmg = r.assets?.find((a) => typeof a.name === 'string' && /-universal\.dmg$/.test(a.name))
+  const dmgFor = (suffix: string) => r.assets?.find((a) => typeof a.name === 'string' && a.name.endsWith(`-${suffix}.dmg`))
+  const dmg = dmgFor(arch) ?? dmgFor('universal')
   return {
     version: r.tag_name.replace(/^v/, ''),
     releaseUrl: r.html_url,
@@ -55,7 +60,12 @@ export function parseRelease(body: unknown): UpdateInfo | null {
   }
 }
 
-export async function fetchLatestRelease(repo: string, etag: string | null, fetchFn: FetchFn = fetch): Promise<ReleaseCheck> {
+export async function fetchLatestRelease(
+  repo: string,
+  etag: string | null,
+  arch: string,
+  fetchFn: FetchFn = fetch
+): Promise<ReleaseCheck> {
   const res = await fetchFn(`https://api.github.com/repos/${repo}/releases/latest`, {
     headers: {
       Accept: 'application/vnd.github+json',
@@ -68,7 +78,7 @@ export async function fetchLatestRelease(repo: string, etag: string | null, fetc
   // 404: no published release yet, or the repository is private.
   if (res.status === 404) return { release: null, etag: null, notModified: false }
   if (!res.ok) throw new Error(`GitHub answered ${res.status}`)
-  return { release: parseRelease(await res.json()), etag: res.headers.get('etag'), notModified: false }
+  return { release: parseRelease(await res.json(), arch), etag: res.headers.get('etag'), notModified: false }
 }
 
 export interface UpdateCheckerState {

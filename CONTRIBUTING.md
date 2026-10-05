@@ -46,5 +46,5 @@ Keep logic in Electron-free modules with injected dependencies, so it can be uni
 ## Releasing
 
 1. `npm version X.Y.Z --no-git-tag-version`, commit, then `git tag -a vX.Y.Z -m "PR Radar X.Y.Z"` and push both.
-2. The **Release** workflow checks the tag matches `package.json`, runs the tests, builds the universal dmg (client IDs come from the repository variables `OAUTH_CLIENT_ID`, `APP_CLIENT_ID`, `APP_SLUG`) and creates a **draft** release with the dmg and `SHA256SUMS.txt`.
+2. The **Release** workflow checks the tag matches `package.json`, runs the tests, builds one dmg for Apple Silicon and one for Intel (client IDs come from the repository variables `OAUTH_CLIENT_ID`, `APP_CLIENT_ID`, `APP_SLUG`; `scripts/compress-dmg.mjs` recompresses them) and creates a **draft** release with the dmgs and `SHA256SUMS.txt`.
 3. Review the draft, write the release notes, publish it. Installed apps see it through the new-version notice.

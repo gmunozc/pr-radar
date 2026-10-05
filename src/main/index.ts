@@ -122,7 +122,8 @@ function main(): void {
           now: Date.now,
           load: () => appFile.read(),
           save: (state) => appFile.write(state),
-          fetchLatest: (repo, etag) => fetchLatestRelease(repo, etag),
+          // An Intel build running under Rosetta is offered the Apple Silicon dmg.
+          fetchLatest: (repo, etag) => fetchLatestRelease(repo, etag, app.runningUnderARM64Translation ? 'arm64' : process.arch),
           log: logger
         })
       : null

@@ -49,7 +49,7 @@ jobs:
           if [ -n "${{ vars.OAUTH_CLIENT_ID }}" ]; then grep -q "${{ vars.OAUTH_CLIENT_ID }}" out/main/index.js; fi
           if [ -n "${{ vars.APP_CLIENT_ID }}" ]; then grep -q "${{ vars.APP_CLIENT_ID }}" out/main/index.js; fi
 
-      - name: Package (ad-hoc signed, universal)
+      - name: Package (ad-hoc signed, Apple Silicon and Intel)
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
@@ -61,11 +61,18 @@ jobs:
           done
           ls dist/*.dmg
 
-      - name: Verify the app
+      - name: Verify the apps
         run: |
-          APP="dist/mac-universal/PR Radar.app"
-          lipo -archs "$APP/Contents/MacOS/PR Radar" | grep -q "x86_64 arm64"
-          codesign -dv "$APP" 2>&1 | grep -q "Signature=adhoc"
+          # Each app carries a single architecture (a universal one would be twice the size).
+          check() {
+            lipo -archs "$1/Contents/MacOS/PR Radar" | grep -qx "$2"
+            lipo -archs "$1/Contents/Frameworks/Electron Framework.framework/Electron Framework" | grep -qx "$2"
+            codesign -dv "$1" 2>&1 | grep -q "Signature=adhoc"
+            codesign --verify --deep --strict "$1"
+          }
+          check "dist/mac-arm64/PR Radar.app" arm64
+          check "dist/mac/PR Radar.app" x86_64
+          du -sh dist/mac*/*.app dist/*.dmg
 
       - name: Checksums
         working-directory: dist

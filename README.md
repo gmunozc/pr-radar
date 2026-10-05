@@ -39,7 +39,7 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 
 ## Install
 
-1. Download `PR-Radar-<version>-universal.dmg` from the [latest release](https://github.com/gmunozc/pr-radar/releases/latest). It runs on both Apple Silicon and Intel Macs.
+1. Download the dmg for your Mac from the [latest release](https://github.com/gmunozc/pr-radar/releases/latest): `PR-Radar-<version>-arm64.dmg` for Apple Silicon (M1 or later) or `PR-Radar-<version>-x64.dmg` for Intel. Not sure which one you have? Apple menu → About This Mac: "Chip" means Apple Silicon, "Processor" means Intel.
 2. Open it and drag **PR Radar** to Applications.
 3. **First launch:** the app is not signed with an Apple Developer ID, so macOS blocks it. Right-click it → **Open**, or go to System Settings → Privacy & Security → **Open Anyway**.
 4. macOS asks to let PR Radar use **"PR Radar Safe Storage"** in your Keychain: choose **Always Allow**. Because the app is unsigned, this prompt comes back after every update.
@@ -47,9 +47,9 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 To check the download, put `SHA256SUMS.txt` from the release in the same folder and run:
 
 ```sh
-shasum -a 256 -c SHA256SUMS.txt
+shasum -a 256 -c SHA256SUMS.txt --ignore-missing
 # or check that it was built by this repository's release workflow:
-gh attestation verify PR-Radar-<version>-universal.dmg --repo gmunozc/pr-radar
+gh attestation verify PR-Radar-<version>-arm64.dmg --repo gmunozc/pr-radar
 ```
 
 ## Signing in
@@ -122,7 +122,7 @@ cp .env.example .env   # add your own client IDs, see below
 npm run dev            # run with hot reload (uses a separate "PR Radar Dev" data folder)
 npm test               # unit tests
 npm run typecheck
-npm run dist:mac       # dist/PR-Radar-<version>-universal.dmg
+npm run dist:mac       # dist/PR-Radar-<version>-arm64.dmg and -x64.dmg
 ```
 
 You need your own GitHub App and/or OAuth App:

@@ -12,13 +12,16 @@ extraResources:
     filter:
       - "*.png"
 asar: true
+# Chromium's own strings (context menus, form messages) only in the app's languages; the
+# other 53 languages add ~47 MB.
+electronLanguages: [en, en_GB, es, es_419]
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.png
   target:
     - target: dmg
-      # One installer for both Apple Silicon and Intel Macs.
-      arch: [universal]
+      # One installer per architecture: a universal app carries both and is twice the size.
+      arch: [arm64, x64]
   identity: "-"
   # Hardened runtime is only needed for notarization; with ad-hoc signing it can block launch.
   hardenedRuntime: false
@@ -27,6 +30,9 @@ mac:
     NSUserNotificationAlertStyle: alert
 dmg:
   artifactName: PR-Radar-${version}-${arch}.${ext}
+  # No blockmap: the app doesn't update itself, and the hook below rewrites the dmg.
+  writeUpdateInfo: false
+afterAllArtifactBuild: ./scripts/compress-dmg.mjs
 win:
   icon: build/icon.png
   target:
