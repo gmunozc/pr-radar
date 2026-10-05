@@ -31,7 +31,10 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **Descartar o posponer** una review ("en 1 hora", "mañana 9:00", "hasta nuevos commits"). Un PR pospuesto vuelve con un recordatorio, y uno descartado vuelve si te piden review de nuevo.
 - **Filtros y orden** en la lista de reviews (directas o de equipo, organización; más nuevas, más antiguas o actualizadas hace poco), **etiquetas** con sus colores, y las reviews que llevan más días de los que quieres, resaltadas.
 - **Menos ruido:** oculta los PRs de Dependabot, Renovate y GitHub Actions, o de los repositorios y autores que elijas.
-- **Teclado:** las flechas recorren los PRs, Enter abre, clic derecho o Shift+F10 muestra el menú, Escape cierra el panel, ⌘R actualiza, ⌘1/⌘2 cambian de pestaña y ⌘, abre Ajustes.
+- **Mergear cuando esté listo:** donde el auto-merge de GitHub no está disponible, PR Radar puede mergear un PR tuyo por su cuenta cuando GitHub lo da por mergeable (dos consultas seguidas, checks en verde, con el último commit que vio). Sigue armado si vuelves a subir cambios; cualquier fallo lo desarma y te avisa.
+- **Qué bloquea un PR:** pulsa el icono de los checks para ver cada uno y abrir su página; tus PRs muestran los hilos sin resolver y las aprobaciones requeridas ("1/2").
+- **Pestaña Participo:** PRs donde te mencionaron, te asignaron o comentaste sin que te pidieran review (se puede desactivar en Ajustes).
+- **Teclado:** las flechas recorren los PRs, Enter abre, clic derecho o Shift+F10 muestra el menú, Escape cierra el panel, ⌘R actualiza, ⌘1/⌘2/⌘3 cambian de pestaña y ⌘, abre Ajustes. Un atajo global (Ajustes → General) abre el panel desde cualquier app.
 - **Horario laboral (opcional):** fuera de él, los avisos esperan y llegan juntos en un solo resumen "Mientras no estabas".
 - **Resumen diario** con lo pendiente, en días laborables y a la hora que elijas.
 - **En inglés y en español**, según el idioma del sistema o lo que elijas en Ajustes.

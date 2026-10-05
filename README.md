@@ -31,7 +31,10 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 - **Dismiss or snooze** a review request ("in 1 hour", "tomorrow 9:00", "until new commits"). A snoozed PR comes back with a reminder, and a dismissed one comes back if your review is requested again.
 - **Filters and sorting** in the review list (direct or team requests, organization; newest, oldest or recently updated), **labels** in their colours, and requests that have waited longer than you like highlighted.
 - **Less noise:** hide PRs from Dependabot, Renovate and GitHub Actions, or from repositories and authors you choose.
-- **Keyboard:** arrows move between PRs, Enter opens, right-click or Shift+F10 shows the menu, Escape closes the panel, ⌘R refreshes, ⌘1/⌘2 switch tabs, ⌘, opens Settings.
+- **Merge when ready:** where GitHub's auto-merge is not available, PR Radar can merge one of your PRs itself once GitHub reports it mergeable (twice in a row, checks green, with the head commit it last saw). It stays armed if you push again; any failure disarms it and you are told.
+- **What is blocking a PR:** click the checks icon to see each check and open its details page; your PRs show unresolved review threads and "1/2" required approvals.
+- **Involved tab:** PRs where you were mentioned, assigned or commented without a review request (can be turned off in Settings).
+- **Keyboard:** arrows move between PRs, Enter opens, right-click or Shift+F10 shows the menu, Escape closes the panel, ⌘R refreshes, ⌘1/⌘2/⌘3 switch tabs, ⌘, opens Settings. A global shortcut (Settings → General) opens the panel from any app.
 - **Working hours (optional):** outside them, notifications wait and arrive together as one "While you were away" summary.
 - **Daily summary** of what's pending, on working days at the time you choose.
 - **English and Spanish**, following the system language or your choice in Settings.
