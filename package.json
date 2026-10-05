@@ -27,7 +27,9 @@
     "dist:mac": "npm run build && electron-builder --mac --publish never",
     "dist:win": "npm run build && electron-builder --win --publish never",
     "dist:linux": "npm run build && electron-builder --linux --publish never",
-    "check:graphql": "node scripts/check-graphql.mjs"
+    "check:graphql": "node scripts/check-graphql.mjs",
+    "panel:dev": "vite --config vite.panel.config.ts",
+    "panel:shot": "electron scripts/panel-shot.cjs"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
