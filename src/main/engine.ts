@@ -13,6 +13,7 @@ import type {
   MergeMethod,
   MyPullRequest,
   PrAction,
+  PrDetail,
   PullRequest,
   Settings,
   Warning
@@ -54,6 +55,8 @@ export interface EngineDeps {
   runPrAction?(token: string, pr: ActionTarget, action: RemoteAction): Promise<ActionResult>
   /** Asks for a poll soon, e.g. after an action changed a PR. */
   requestPoll?(): void
+  /** Description and counts for the detail view. */
+  fetchDetail?(token: string, prId: string): Promise<PrDetail | null>
   stateStore: StateStore
   notify(events: NotificationEvent[]): void
   publish(state: AppState): void
@@ -154,6 +157,8 @@ export class Engine {
   private lastInstallCheckAt = 0
   /** Armed merges: how many polls in a row GitHub reported the PR mergeable with this head. */
   private readyStreak = new Map<string, { headOid: string; count: number }>()
+  /** Detail view cache, keyed by PR id and last update, so reopening a PR costs nothing. */
+  private details = new Map<string, PrDetail>()
 
   constructor(
     private readonly deps: EngineDeps,
@@ -438,6 +443,32 @@ export class Engine {
     if (kind) pendingActions[prId] = kind
     else delete pendingActions[prId]
     this.publish({ ...this.current, pendingActions })
+  }
+
+  /** Description and counts for a PR the panel shows; only PRs in the current state are looked up. */
+  async loadDetail(prId: string): Promise<PrDetail | null> {
+    const pr = [...this.allPrs, ...this.current.myPrs, ...this.current.involved].find((p) => p.id === prId)
+    if (!pr || !this.deps.fetchDetail || !this.deps.session.current) return null
+    const key = `${pr.id}@${pr.updatedAt}`
+    const cached = this.details.get(key)
+    if (cached) return cached
+    const fetchDetail = this.deps.fetchDetail
+    try {
+      const detail = await this.withToken((token) => fetchDetail(token, prId))
+      if (detail) {
+        // Keep the cache small: entries for PRs that are gone are useless.
+        if (this.details.size > 100) this.details.clear()
+        this.details.set(key, detail)
+      }
+      return detail
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        this.expire(err.reason)
+        return null
+      }
+      this.deps.log.warn('could not load PR detail', err)
+      return null
+    }
   }
 
   /** Brings back every dismissed and snoozed PR, without notifying. */

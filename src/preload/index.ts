@@ -17,7 +17,8 @@ const api: PrRadarApi = {
   restoreDismissed: () => ipcRenderer.invoke(IPC.restoreDismissed),
   hidePanel: () => ipcRenderer.invoke(IPC.panelHide),
   prs: {
-    action: (prId, action) => ipcRenderer.invoke(IPC.prAction, prId, action)
+    action: (prId, action) => ipcRenderer.invoke(IPC.prAction, prId, action),
+    detail: (prId) => ipcRenderer.invoke(IPC.prDetail, prId)
   },
   copyText: (text) => ipcRenderer.invoke(IPC.copyText, text),
   relaunch: () => ipcRenderer.invoke(IPC.relaunch),

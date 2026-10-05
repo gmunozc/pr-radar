@@ -13,6 +13,7 @@ export type MyPrMenuAction =
   | 'repo_settings'
   | 'copy_branch'
   | 'copy_link'
+  | 'details'
   | 'open'
 
 /**
@@ -39,7 +40,7 @@ export function myPrMenuActions(pr: MyPullRequest, canWrite: boolean, armed = fa
     }
   }
   if (pr.branch) items.push('copy_branch')
-  items.push('copy_link', 'open')
+  items.push('copy_link', 'details', 'open')
   return items
 }
 
@@ -51,6 +52,7 @@ export type ReviewMenuAction =
   | 'dismiss'
   | 'copy_branch'
   | 'copy_link'
+  | 'details'
   | 'open'
 
 /**
@@ -62,6 +64,6 @@ export function reviewMenuActions(pr: PullRequest, canWrite: boolean): ReviewMen
   if (canWrite && !pr.viewerDidAuthor) items.push('approve')
   if (pr.source.kind !== 'involved') items.push('snooze_hour', 'snooze_tomorrow', 'snooze_push', 'dismiss')
   if (pr.branch) items.push('copy_branch')
-  items.push('copy_link', 'open')
+  items.push('copy_link', 'details', 'open')
   return items
 }

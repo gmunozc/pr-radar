@@ -6,13 +6,18 @@ import { AlertIcon, ArrowLeftIcon, GearIcon, SyncIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
 import type { Tab } from './Tabs'
 
+export type View = 'list' | 'settings' | 'detail'
+
 interface Props {
   state: AppState
   tab: Tab
+  view: View
+  /** Title while a PR's detail is open, e.g. "acme/app #12". */
+  detailTitle?: string
   refreshing: boolean
-  inSettings: boolean
   onRefresh(): void
-  onToggleSettings(): void
+  onBack(): void
+  onSettings(): void
 }
 
 const keepFocus = (e: MouseEvent) => e.preventDefault()
@@ -56,7 +61,7 @@ function errorText(error: NonNullable<AppState['error']>, t: Translate, locale: 
   }
 }
 
-export function Header({ state, tab, refreshing, inSettings, onRefresh, onToggleSettings }: Props) {
+export function Header({ state, tab, view, detailTitle, refreshing, onRefresh, onBack, onSettings }: Props) {
   const t = useT()
   const locale = useLocale()
   const now = useNow(5_000)
@@ -64,12 +69,13 @@ export function Header({ state, tab, refreshing, inSettings, onRefresh, onToggle
   const subtitle = state.lastUpdated
     ? t('header.updated', { time: timeAgo(state.lastUpdated, now, locale) })
     : t('header.loading')
+  const title = view === 'settings' ? t('header.settings') : view === 'detail' ? (detailTitle ?? '') : listTitle(state, tab, t)
 
   return (
     <>
       <header className="header">
-        {inSettings ? (
-          <button className="icon-btn" onMouseDown={keepFocus} onClick={onToggleSettings} title={t('header.back')}>
+        {view !== 'list' ? (
+          <button className="icon-btn" onMouseDown={keepFocus} onClick={onBack} title={t('header.back')}>
             <ArrowLeftIcon />
           </button>
         ) : state.viewer ? (
@@ -78,13 +84,13 @@ export function Header({ state, tab, refreshing, inSettings, onRefresh, onToggle
           <div className="avatar avatar-lg avatar-placeholder" />
         )}
         <div className="header-text">
-          <div className="header-title">{inSettings ? t('header.settings') : listTitle(state, tab, t)}</div>
+          <div className="header-title">{title}</div>
           <div className="header-sub">
             {state.viewer ? `@${state.viewer.login} · ` : ''}
             {state.quietUntil ? t('header.quietUntil', { when: formatDayTime(state.quietUntil, now, locale) }) : subtitle}
           </div>
         </div>
-        {!inSettings && (
+        {view !== 'settings' && (
           <button
             className={`icon-btn ${refreshing ? 'spinning' : ''}`}
             onMouseDown={keepFocus}
@@ -95,8 +101,8 @@ export function Header({ state, tab, refreshing, inSettings, onRefresh, onToggle
             <SyncIcon />
           </button>
         )}
-        {!inSettings && (
-          <button className="icon-btn" onMouseDown={keepFocus} onClick={onToggleSettings} title={t('header.settings')}>
+        {view === 'list' && (
+          <button className="icon-btn" onMouseDown={keepFocus} onClick={onSettings} title={t('header.settings')}>
             <GearIcon />
           </button>
         )}

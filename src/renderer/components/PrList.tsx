@@ -28,7 +28,7 @@ function RestoreHidden({ dismissed, snoozed }: { dismissed: number; snoozed: num
   )
 }
 
-export function PrList({ state }: { state: AppState }) {
+export function PrList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
   const t = useT()
   const settings = useSettings()
   const [org, setOrg] = useState<string | null>(null)
@@ -143,6 +143,7 @@ export function PrList({ state }: { state: AppState }) {
             canWrite={state.canWrite}
             pending={state.pendingActions[pr.id]}
             staleDays={staleDays}
+            onDetail={onDetail}
           />
         ))}
       </main>

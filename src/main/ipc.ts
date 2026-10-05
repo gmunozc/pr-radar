@@ -7,6 +7,7 @@ import {
   type InstallState,
   type MergeMethod,
   type PrAction,
+  type PrDetail,
   type Settings,
   type SnoozeOption
 } from '../shared/types'
@@ -30,6 +31,7 @@ export interface IpcContext {
   restoreDismissed(): void
   hidePanel(): void
   prAction(prId: string, action: PrAction): Promise<ActionResult>
+  prDetail(prId: string): Promise<PrDetail | null>
   copyText(text: string): Promise<{ ok: boolean }>
   openCheck(url: string): Promise<void>
   relaunch(): void
@@ -110,6 +112,7 @@ export function registerIpc(ctx: IpcContext): void {
     if (typeof prId !== 'string' || !parsed) return { ok: false, code: 'unknown', detail: 'Invalid request' }
     return ctx.prAction(prId, parsed)
   })
+  ipcMain.handle(IPC.prDetail, (_e, prId: unknown) => (typeof prId === 'string' ? ctx.prDetail(prId) : null))
   ipcMain.handle(IPC.copyText, (_e, text: unknown) =>
     typeof text === 'string' && text.length <= MAX_COPY_LENGTH ? ctx.copyText(text) : { ok: false }
   )

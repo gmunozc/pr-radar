@@ -8,7 +8,7 @@ import { PrItem } from './PrItem'
 const MENTIONED_URL = 'https://github.com/pulls/mentioned'
 
 /** Open PRs you take part in (mentioned, assigned, commented) without a review request. */
-export function InvolvedList({ state }: { state: AppState }) {
+export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
   const t = useT()
   const settings = useSettings()
 
@@ -41,6 +41,7 @@ export function InvolvedList({ state }: { state: AppState }) {
             canWrite={state.canWrite}
             pending={state.pendingActions[pr.id]}
             staleDays={settings?.staleAfterDays ?? 0}
+            onDetail={onDetail}
           />
         ))}
       </main>

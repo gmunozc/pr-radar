@@ -77,9 +77,11 @@ interface Props {
   armed?: AppState['armedMerges'][string]
   /** Highlight PRs open for more than this many days; 0 disables it. */
   staleDays: number
+  /** Opens the detail view (title click, menu); absent inside the detail view itself. */
+  onDetail?(prId: string): void
 }
 
-export function MyPrItem({ pr, canWrite, pending, armed, staleDays }: Props) {
+export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: Props) {
   const t = useT()
   const locale = useLocale()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -150,11 +152,20 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays }: Props) {
         return { id, label: t('action.copyBranch'), onSelect: () => void copy(pr.branch) }
       case 'copy_link':
         return { id, label: t('action.copyLink'), onSelect: () => void copy(pr.url) }
+      case 'details':
+        return { id, label: t('action.details'), onSelect: () => onDetail?.(pr.id) }
       case 'open':
         return { id, label: t('action.open'), onSelect: open }
     }
   }
-  const items = myPrMenuActions(pr, canWrite, armed !== undefined).map(menuItem)
+  const items = myPrMenuActions(pr, canWrite, armed !== undefined)
+    .filter((id) => id !== 'details' || onDetail)
+    .map(menuItem)
+  const showDetail = (e: MouseEvent) => {
+    if (!onDetail) return
+    e.stopPropagation()
+    onDetail(pr.id)
+  }
   if (!canWrite) items.unshift({ id: 'read_only', label: t('action.readOnly'), disabled: true, onSelect: () => {} })
 
   const [owner, name] = pr.repo.split('/')
@@ -203,7 +214,9 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays }: Props) {
             {timeAgo(pr.createdAt, now, locale)}
           </span>
         </div>
-        <div className="pr-title">{pr.title}</div>
+        <div className={`pr-title ${onDetail ? 'pr-title-link' : ''}`} onClick={showDetail} title={onDetail ? t('detail.titleHint') : undefined}>
+          {pr.title}
+        </div>
         <div className="pr-tags">
           <span className={`chip chip-${status.className}`}>{t(status.label)}</span>
           {pr.autoMerge && (

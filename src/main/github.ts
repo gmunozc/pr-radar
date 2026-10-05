@@ -11,6 +11,7 @@ import type {
   MyPullRequest,
   MyReviewStatus,
   PrCapabilities,
+  PrDetail,
   PullRequest,
   RepoPermission,
   Reviewer,
@@ -723,6 +724,39 @@ export async function fetchPullRequests(
   const result = mapResponse(body)
   if (queries.truncated) result.warnings.push({ code: 'filters_truncated' })
   return { ...result, tokenExpiration: response.headers.get('github-authentication-token-expiration') }
+}
+
+const PR_DETAIL_QUERY = /* GraphQL */ `
+  query PullRequestDetail($id: ID!) {
+    node(id: $id) {
+      ... on PullRequest {
+        bodyText
+        changedFiles
+        totalCommentsCount
+        commits { totalCount }
+      }
+    }
+  }
+`
+
+interface RawDetailResponse {
+  data?: {
+    node?: { bodyText?: string | null; changedFiles?: number; totalCommentsCount?: number | null; commits?: { totalCount: number } } | null
+  } | null
+  errors?: Array<{ message: string }>
+}
+
+/** The description and counts shown in the detail view; costs one rate-limit point. */
+export async function fetchPullRequestDetail(token: string, id: string, fetchFn: FetchFn = fetch): Promise<PrDetail | null> {
+  const { body } = await graphqlRequest<RawDetailResponse>(token, PR_DETAIL_QUERY, { id }, fetchFn)
+  const node = body.data?.node
+  if (!node) return null
+  return {
+    body: (node.bodyText ?? '').trim(),
+    changedFiles: node.changedFiles ?? 0,
+    commits: node.commits?.totalCount ?? 0,
+    comments: node.totalCommentsCount ?? 0
+  }
 }
 
 /** Repository/organization permissions PR Radar's GitHub App needs (all read-only). */

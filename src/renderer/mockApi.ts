@@ -330,7 +330,22 @@ export function createMockApi(): PrRadarApi {
     snooze: async (prId, _option: SnoozeOption) => hide(prId, 'snoozedCount'),
     restoreDismissed: async () => publish({ prs: reviews, dismissedCount: 0, snoozedCount: 0 }),
     hidePanel: async () => console.info('[mock] hide panel'),
-    prs: { action },
+    prs: {
+      action,
+      detail: async (prId) => {
+        await sleep(500)
+        if (prId === 'R4') return { body: '', changedFiles: 2, commits: 1, comments: 0 }
+        return {
+          body:
+            'Adds server-side filtering to /search so the web client stops downloading the whole result set.\n\n' +
+            '- New `filters` query parameter (repo, author, label)\n- Index on (repo_id, created_at)\n- Backfill script for existing rows\n\n' +
+            'Closes #470.',
+          changedFiles: 14,
+          commits: 6,
+          comments: 9
+        }
+      }
+    },
     copyText: async (text) => {
       console.info('[mock] copied', text)
       return { ok: true }

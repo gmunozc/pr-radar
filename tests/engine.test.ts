@@ -88,6 +88,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     opts.actions ? opts.actions(target, action) : { ok: true }
   )
   const requestPoll = vi.fn()
+  const fetchDetail = vi.fn(async (_token: string, prId: string) => ({ body: `about ${prId}`, changedFiles: 1, commits: 2, comments: 3 }))
   const deps: EngineDeps = {
     now: () => clock,
     fetchInstallations,
@@ -96,6 +97,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     fetchPullRequests,
     runPrAction,
     requestPoll,
+    fetchDetail,
     stateStore: { read: () => stored, write: (s) => (stored = s), remove: () => (stored = null) },
     notify: (e) => events.push(...e),
     publish: (s) => published.push(s),
@@ -114,6 +116,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     fetchPullRequests,
     runPrAction,
     requestPoll,
+    fetchDetail,
     refresh,
     onSessionEnded,
     session,
@@ -670,6 +673,21 @@ describe('Engine actions on PRs', () => {
     await t.engine.poll()
     t.engine.dismiss('r1')
     await expect(t.engine.runAction('r1', { kind: 'approve' })).resolves.toEqual({ ok: true })
+  })
+})
+
+describe('Engine PR detail', () => {
+  it('loads details for PRs it shows, caches them per update, and ignores unknown ids', async () => {
+    const t = setup([result(['a']), { ...result([]), prs: [pr('a', { updatedAt: '2026-02-01T00:00:00Z' })] }], { auth: fresh() })
+    await t.engine.poll()
+    await expect(t.engine.loadDetail('nope')).resolves.toBeNull()
+    expect(t.fetchDetail).not.toHaveBeenCalled()
+    await expect(t.engine.loadDetail('a')).resolves.toEqual({ body: 'about a', changedFiles: 1, commits: 2, comments: 3 })
+    await t.engine.loadDetail('a')
+    expect(t.fetchDetail).toHaveBeenCalledTimes(1)
+    await t.engine.poll()
+    await t.engine.loadDetail('a')
+    expect(t.fetchDetail).toHaveBeenCalledTimes(2)
   })
 })
 

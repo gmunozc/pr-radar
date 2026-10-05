@@ -156,6 +156,15 @@ export type ActionResult = { ok: true } | { ok: false; code: ActionErrorCode; de
 
 export type PanelSize = 'compact' | 'default' | 'large'
 
+/** What the detail view loads on demand (one extra query per PR, cached per head commit). */
+export interface PrDetail {
+  /** The description as plain text ('' when empty). */
+  body: string
+  changedFiles: number
+  commits: number
+  comments: number
+}
+
 export type InstallErrorCode = 'network' | 'checksum' | 'io' | 'cancelled' | 'unavailable'
 
 /** Where installing a new version stands (macOS: download the dmg, verify it, open it). */
@@ -340,6 +349,8 @@ export interface PrRadarApi {
   prs: {
     /** Writes to GitHub (merge, update branch, …); the main process decides the exact target. */
     action(prId: string, action: PrAction): Promise<ActionResult>
+    /** Description and counts for the detail view; null when the PR is unknown or GitHub fails. */
+    detail(prId: string): Promise<PrDetail | null>
   }
   copyText(text: string): Promise<{ ok: boolean }>
   /** Restarts the app (needed for Chromium's own UI language to change). */
@@ -396,6 +407,7 @@ export const IPC = {
   snooze: 'prs:snooze',
   restoreDismissed: 'prs:restore',
   prAction: 'prs:action',
+  prDetail: 'prs:detail',
   copyText: 'clipboard:copy',
   relaunch: 'app:relaunch',
   panelHide: 'panel:hide',

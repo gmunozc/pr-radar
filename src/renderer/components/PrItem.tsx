@@ -20,9 +20,11 @@ interface Props {
   pending?: PrAction['kind']
   /** Highlight requests older than this many days; 0 disables it. */
   staleDays: number
+  /** Opens the detail view (title click, menu); absent inside the detail view itself. */
+  onDetail?(prId: string): void
 }
 
-export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays }: Props) {
+export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onDetail }: Props) {
   const t = useT()
   const locale = useLocale()
   const [snoozing, setSnoozing] = useState(false)
@@ -97,11 +99,20 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays }: P
         return { id, label: t('action.copyBranch'), onSelect: () => void copy(pr.branch) }
       case 'copy_link':
         return { id, label: t('action.copyLink'), onSelect: () => void copy(pr.url) }
+      case 'details':
+        return { id, label: t('action.details'), onSelect: () => onDetail?.(pr.id) }
       case 'open':
         return { id, label: t('action.open'), onSelect: open }
     }
   }
-  const items = reviewMenuActions(pr, canWrite).map(menuItem)
+  const items = reviewMenuActions(pr, canWrite)
+    .filter((id) => id !== 'details' || onDetail)
+    .map(menuItem)
+  const showDetail = (e: MouseEvent) => {
+    if (!onDetail) return
+    e.stopPropagation()
+    onDetail(pr.id)
+  }
   const actionsOpen = snoozing || menuOpen || approving || busy
 
   const sourceChip =
@@ -144,7 +155,9 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays }: P
             {timeAgo(pr.createdAt, now, locale)}
           </span>
         </div>
-        <div className="pr-title">{pr.title}</div>
+        <div className={`pr-title ${onDetail ? 'pr-title-link' : ''}`} onClick={showDetail} title={onDetail ? t('detail.titleHint') : undefined}>
+          {pr.title}
+        </div>
         <div className="pr-tags">
           {sourceChip}
           {pr.isDraft && <span className="chip chip-draft">{t('pr.draft')}</span>}

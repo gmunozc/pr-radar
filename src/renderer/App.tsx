@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { AppState, AuthStatus } from '../shared/types'
-import { Header } from './components/Header'
+import { Header, type View } from './components/Header'
 import { InvolvedList } from './components/InvolvedList'
 import { LoginView } from './components/LoginView'
 import { MyPrList } from './components/MyPrList'
+import { PrDetail } from './components/PrDetail'
 import { PrList } from './components/PrList'
 import { SettingsView } from './components/SettingsView'
 import { Tabs, type Tab } from './components/Tabs'
@@ -16,8 +17,17 @@ const api = window.prRadar
 function Panel() {
   const [state, setState] = useState<AppState | null>(null)
   const [auth, setAuth] = useState<AuthStatus>({ phase: 'idle' })
-  const [view, setView] = useState<'list' | 'settings'>('list')
+  const [view, setView] = useState<View>('list')
+  const [detailId, setDetailId] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('review')
+  const openDetail = useCallback((prId: string) => {
+    setDetailId(prId)
+    setView('detail')
+  }, [])
+  const closeDetail = useCallback(() => {
+    setView('list')
+    setDetailId(null)
+  }, [])
   const [refreshing, setRefreshing] = useState(false)
   const settings = useSettings()
   const showInvolved = settings?.showInvolved ?? true
@@ -67,6 +77,7 @@ function Panel() {
       if (e.key === 'Escape') {
         if (typing) return
         if (view === 'settings') setView('list')
+        else if (view === 'detail') closeDetail()
         else void api.hidePanel()
         return
       }
@@ -87,7 +98,7 @@ function Panel() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [view, showInvolved])
+  }, [view, showInvolved, closeDetail])
 
   if (!state) return <div className="app" />
 
@@ -99,18 +110,24 @@ function Panel() {
     )
   }
 
+  const detailPr = detailId ? [...state.prs, ...state.myPrs, ...state.involved].find((p) => p.id === detailId) : undefined
+
   return (
     <div className="app">
       <Header
         state={state}
         tab={tab}
+        view={view}
+        detailTitle={detailPr ? `${detailPr.repo} #${detailPr.number}` : undefined}
         refreshing={refreshing || state.status === 'loading'}
-        inSettings={view === 'settings'}
         onRefresh={refresh}
-        onToggleSettings={() => setView(view === 'settings' ? 'list' : 'settings')}
+        onBack={view === 'detail' ? closeDetail : () => setView('list')}
+        onSettings={() => setView('settings')}
       />
       {view === 'settings' ? (
         <SettingsView state={state} />
+      ) : view === 'detail' && detailId ? (
+        <PrDetail state={state} prId={detailId} onGone={closeDetail} />
       ) : (
         <>
           {state.update && <UpdateBanner update={state.update} />}
@@ -120,7 +137,13 @@ function Panel() {
             tabs={tabs}
             counts={{ review: state.prs.length, mine: state.myPrs.length, involved: state.involved.length }}
           />
-          {tab === 'review' ? <PrList state={state} /> : tab === 'mine' ? <MyPrList state={state} /> : <InvolvedList state={state} />}
+          {tab === 'review' ? (
+            <PrList state={state} onDetail={openDetail} />
+          ) : tab === 'mine' ? (
+            <MyPrList state={state} onDetail={openDetail} />
+          ) : (
+            <InvolvedList state={state} onDetail={openDetail} />
+          )}
         </>
       )}
     </div>

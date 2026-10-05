@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   checkFromContext,
   fetchInstallations,
+  fetchPullRequestDetail,
   installationWarnings,
   buildMyPrsQuery,
   buildSearchQuery,
@@ -535,6 +536,17 @@ describe('graphqlRequest', () => {
   it('turns a server error into an unknown GithubError', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({}, { status: 502, statusText: 'Bad Gateway' }))
     await expect(graphqlRequest('tok', 'query { x }', {}, fetchFn)).rejects.toMatchObject({ kind: 'unknown' })
+  })
+})
+
+describe('fetchPullRequestDetail', () => {
+  it('maps the description and counts, and reports a missing PR as null', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({ data: { node: { bodyText: ' Hello ', changedFiles: 3, totalCommentsCount: 2, commits: { totalCount: 4 } } } })
+    )
+    await expect(fetchPullRequestDetail('tok', 'PR_1', fetchFn)).resolves.toEqual({ body: 'Hello', changedFiles: 3, commits: 4, comments: 2 })
+    expect(JSON.parse(fetchFn.mock.calls[0][1].body).variables).toEqual({ id: 'PR_1' })
+    await expect(fetchPullRequestDetail('tok', 'PR_x', vi.fn().mockResolvedValue(jsonResponse({ data: { node: null } })))).resolves.toBeNull()
   })
 })
 

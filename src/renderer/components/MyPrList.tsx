@@ -7,7 +7,7 @@ import { MyPrItem } from './MyPrItem'
 
 const MY_PULLS_URL = 'https://github.com/pulls'
 
-export function MyPrList({ state }: { state: AppState }) {
+export function MyPrList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
   const t = useT()
   const settings = useSettings()
 
@@ -40,6 +40,7 @@ export function MyPrList({ state }: { state: AppState }) {
             pending={state.pendingActions[pr.id]}
             armed={state.armedMerges[pr.id]}
             staleDays={settings?.staleAfterDays ?? 0}
+            onDetail={onDetail}
           />
         ))}
       </main>
