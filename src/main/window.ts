@@ -57,6 +57,7 @@ export class Panel {
     this.win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
 
     this.win.on('blur', () => {
+      logger.debug('panel blur', { visible: this.win.isVisible() })
       if (this.win.webContents.isDevToolsOpened()) return
       this.hide()
     })
@@ -164,6 +165,7 @@ export class Panel {
     this.win.setPosition(target.x, target.y, false)
     this.win.show()
     this.win.focus()
+    logger.debug('panel shown', { visible: this.win.isVisible(), focused: this.win.isFocused(), target })
     // If the panel is somehow blank, fix it now that the user is looking at it.
     void this.checkHealth('show')
     // macOS can keep a window on the screen it was last shown on; move it again if so.
@@ -172,6 +174,7 @@ export class Panel {
   }
 
   toggle(trayBounds?: Rectangle): void {
+    logger.debug('panel toggle', { visible: this.win.isVisible(), sinceHidden: Date.now() - this.lastHiddenAt, trayBounds })
     if (this.win.isVisible()) {
       this.hide()
       return
