@@ -26,8 +26,12 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
   - who approved, who asked for changes and who is still pending;
   - **Ready to merge**, or what's blocking it (conflicts, out of date, blocked);
   - an **Auto-merge** chip when GitHub will merge it on its own.
-- **Act on your PRs** from the panel (OAuth App sessions): merge now with the repository's merge method, update the branch when it's behind, turn GitHub's auto-merge on or off, copy the branch name or the link.
-- **Dismiss or snooze** a review request ("in 1 hour", "tomorrow 9:00"). A snoozed PR comes back with a reminder, and a dismissed one comes back if your review is requested again.
+- **Act on your PRs** from the panel (OAuth App sessions): merge now with the repository's merge method, update the branch when it's behind, turn GitHub's auto-merge on or off, ask reviewers again after they requested changes, copy the branch name or the link.
+- **Approve** a review request from the panel (OAuth App sessions, never your own PR), with an optional comment.
+- **Dismiss or snooze** a review request ("in 1 hour", "tomorrow 9:00", "until new commits"). A snoozed PR comes back with a reminder, and a dismissed one comes back if your review is requested again.
+- **Filters and sorting** in the review list (direct or team requests, organization; newest, oldest or recently updated), **labels** in their colours, and requests that have waited longer than you like highlighted.
+- **Less noise:** hide PRs from Dependabot, Renovate and GitHub Actions, or from repositories and authors you choose.
+- **Keyboard:** arrows move between PRs, Enter opens, right-click or Shift+F10 shows the menu, Escape closes the panel, ⌘R refreshes, ⌘1/⌘2 switch tabs, ⌘, opens Settings.
 - **Working hours (optional):** outside them, notifications wait and arrive together as one "While you were away" summary.
 - **Daily summary** of what's pending, on working days at the time you choose.
 - **English and Spanish**, following the system language or your choice in Settings.

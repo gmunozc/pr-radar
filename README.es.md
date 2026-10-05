@@ -26,8 +26,12 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
   - quién aprobó, quién pidió cambios y quién falta por revisar;
   - **Listo para merge**, o qué lo bloquea (conflictos, desactualizado, bloqueado);
   - una etiqueta **Auto-merge** cuando GitHub lo va a mergear solo.
-- **Actúa sobre tus PRs** desde el panel (sesiones con la OAuth App): mergear ahora con el método del repositorio, actualizar la rama cuando está desactualizada, activar o desactivar el auto-merge de GitHub, copiar el nombre de la rama o el enlace.
-- **Descartar o posponer** una review ("en 1 hora", "mañana 9:00"). Un PR pospuesto vuelve con un recordatorio, y uno descartado vuelve si te piden review de nuevo.
+- **Actúa sobre tus PRs** desde el panel (sesiones con la OAuth App): mergear ahora con el método del repositorio, actualizar la rama cuando está desactualizada, activar o desactivar el auto-merge de GitHub, volver a pedir revisión a quien pidió cambios, copiar el nombre de la rama o el enlace.
+- **Aprobar** una review desde el panel (sesiones con la OAuth App, nunca un PR tuyo), con un comentario opcional.
+- **Descartar o posponer** una review ("en 1 hora", "mañana 9:00", "hasta nuevos commits"). Un PR pospuesto vuelve con un recordatorio, y uno descartado vuelve si te piden review de nuevo.
+- **Filtros y orden** en la lista de reviews (directas o de equipo, organización; más nuevas, más antiguas o actualizadas hace poco), **etiquetas** con sus colores, y las reviews que llevan más días de los que quieres, resaltadas.
+- **Menos ruido:** oculta los PRs de Dependabot, Renovate y GitHub Actions, o de los repositorios y autores que elijas.
+- **Teclado:** las flechas recorren los PRs, Enter abre, clic derecho o Shift+F10 muestra el menú, Escape cierra el panel, ⌘R actualiza, ⌘1/⌘2 cambian de pestaña y ⌘, abre Ajustes.
 - **Horario laboral (opcional):** fuera de él, los avisos esperan y llegan juntos en un solo resumen "Mientras no estabas".
 - **Resumen diario** con lo pendiente, en días laborables y a la hora que elijas.
 - **En inglés y en español**, según el idioma del sistema o lo que elijas en Ajustes.
