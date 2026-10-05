@@ -40,6 +40,7 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **En inglés y en español**, según el idioma del sistema o lo que elijas en Ajustes.
 - **Aviso de versión nueva.** En macOS, **Instalar** descarga el dmg, lo comprueba contra el `SHA256SUMS.txt` de la Release y lo abre; en otros sistemas enlaza a la Release.
 - **Tamaño del panel** (compacto, normal, grande) en Ajustes → General.
+- **Detalle del PR** dentro del panel: pulsa un título para ver los checks, quién revisó, archivos, commits, comentarios y la descripción.
 - **Copiar diagnóstico:** un informe para adjuntar a un issue, sin tokens.
 
 ## Instalación
