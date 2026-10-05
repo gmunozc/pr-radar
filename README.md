@@ -24,7 +24,9 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 - **My PRs** tab:
   - where each PR stands (waiting, approved, changes requested, no reviewers);
   - who approved, who asked for changes and who is still pending;
-  - **Ready to merge**, or what's blocking it (conflicts, out of date, blocked).
+  - **Ready to merge**, or what's blocking it (conflicts, out of date, blocked);
+  - an **Auto-merge** chip when GitHub will merge it on its own.
+- **Act on your PRs** from the panel (OAuth App sessions): merge now with the repository's merge method, update the branch when it's behind, turn GitHub's auto-merge on or off, copy the branch name or the link.
 - **Dismiss or snooze** a review request ("in 1 hour", "tomorrow 9:00"). A snoozed PR comes back with a reminder, and a dismissed one comes back if your review is requested again.
 - **Working hours (optional):** outside them, notifications wait and arrive together as one "While you were away" summary.
 - **Daily summary** of what's pending, on working days at the time you choose.
@@ -61,6 +63,7 @@ Click **Connect with GitHub**, enter the code shown on github.com, and you're do
 | Access | Read-only: pull requests, checks, commit statuses, organization members | Full `repo` scope (read and write, all your repositories) |
 | Which PRs it sees | Only in repositories where the app is installed | Every repository you can access |
 | Organizations | An owner installs the app on the organization | An owner approves the app if the organization restricts OAuth Apps |
+| Actions on your PRs | No (read-only) | Merge, update branch, auto-merge |
 
 With the GitHub App, install it on your account and on each organization you review in. If the list is empty, the panel has a button to install it.
 
@@ -77,7 +80,7 @@ If an organization uses **SAML SSO**, authorize the app for it; the panel tells 
 - **Working hours:** outside them, notifications are held, and one "While you were away" notification arrives when your day starts. If the daily summary is due within the hour, the two are merged.
 - **Daily summary:** at most once a day, and skipped when nothing is pending.
 
-PR Radar checks GitHub every 30 seconds by default (minimum 15). Each check is one GraphQL query that costs about 3 points of GitHub's 5,000-points-per-hour limit.
+PR Radar checks GitHub every 30 seconds by default (minimum 15). Each check is one GraphQL query that costs about 6 points of GitHub's 5,000-points-per-hour limit.
 
 ## Privacy and security
 

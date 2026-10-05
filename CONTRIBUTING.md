@@ -42,6 +42,13 @@ Keep logic in Electron-free modules with injected dependencies, so it can be uni
 - **Every user-visible string goes through i18n.** Add the key to `src/shared/i18n/en.ts` and `es.ts` (the Spanish dictionary is typed against the English one, and `tests/i18n.test.ts` checks keys and placeholders match).
 - **Errors and warnings cross IPC as codes**, translated where they're shown; raw GitHub messages only go to the log.
 - Match the surrounding code style; comments explain *why*, not *what*.
+- **Confirmations and menus live inside the panel** (`ActionMenu`, `ConfirmRow`): the panel hides when it loses focus, so native dialogs and context menus would close it.
+
+## Running and debugging
+
+- `npm run dev` uses the "PR Radar Dev" data folder and a plain-text session, so it never touches an installed PR Radar.
+- `PR_RADAR_DEBUG=1` logs at debug level (panel show/hide, polling details).
+- `PR_RADAR_SMOKE=1 npx electron .` (after `npm run build`) starts the app with an empty data folder and exits 0 once the panel has rendered, 1 after 60 s without it. CI runs it on the unpacked Windows and Linux builds, and the release workflow on the arm64 app before creating the draft.
 
 ## Releasing
 

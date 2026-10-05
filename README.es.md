@@ -24,7 +24,9 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **Pestaña Mis PRs:**
   - en qué punto está cada PR (esperando, aprobado, cambios solicitados, sin reviewers);
   - quién aprobó, quién pidió cambios y quién falta por revisar;
-  - **Listo para merge**, o qué lo bloquea (conflictos, desactualizado, bloqueado).
+  - **Listo para merge**, o qué lo bloquea (conflictos, desactualizado, bloqueado);
+  - una etiqueta **Auto-merge** cuando GitHub lo va a mergear solo.
+- **Actúa sobre tus PRs** desde el panel (sesiones con la OAuth App): mergear ahora con el método del repositorio, actualizar la rama cuando está desactualizada, activar o desactivar el auto-merge de GitHub, copiar el nombre de la rama o el enlace.
 - **Descartar o posponer** una review ("en 1 hora", "mañana 9:00"). Un PR pospuesto vuelve con un recordatorio, y uno descartado vuelve si te piden review de nuevo.
 - **Horario laboral (opcional):** fuera de él, los avisos esperan y llegan juntos en un solo resumen "Mientras no estabas".
 - **Resumen diario** con lo pendiente, en días laborables y a la hora que elijas.
@@ -56,6 +58,7 @@ Pulsa **Conectar con GitHub**, introduce en github.com el código que aparece y 
 | Acceso | Solo lectura: pull requests, checks, estados de commits y miembros de la organización | Permiso `repo` completo (lectura y escritura en todos tus repos) |
 | Qué PRs ve | Solo en los repos donde la app está instalada | En todos los repos a los que tienes acceso |
 | Organizaciones | Un owner instala la app en la organización | Un owner aprueba la app si la organización restringe las OAuth Apps |
+| Acciones sobre tus PRs | No (solo lectura) | Merge, actualizar rama, auto-merge |
 
 Con la GitHub App, instálala en tu cuenta y en cada organización donde revisas. Si la lista sale vacía, el panel muestra un botón para instalarla.
 
@@ -72,7 +75,7 @@ Si una organización usa **SAML SSO**, autoriza la app para ella; el panel avisa
 - **Horario laboral:** fuera de él, los avisos esperan, y al empezar la jornada llega uno solo, "Mientras no estabas". Si el resumen diario toca dentro de la hora siguiente, se fusionan.
 - **Resumen diario:** como mucho uno al día, y no se envía si no hay nada pendiente.
 
-PR Radar consulta GitHub cada 30 segundos por defecto (mínimo 15). Cada consulta es una query de GraphQL que gasta unos 3 de los 5000 puntos por hora que permite GitHub.
+PR Radar consulta GitHub cada 30 segundos por defecto (mínimo 15). Cada consulta es una query de GraphQL que gasta unos 6 de los 5000 puntos por hora que permite GitHub.
 
 ## Privacidad y seguridad
 
