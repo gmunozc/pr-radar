@@ -38,7 +38,8 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 - **Working hours (optional):** outside them, notifications wait and arrive together as one "While you were away" summary.
 - **Daily summary** of what's pending, on working days at the time you choose.
 - **English and Spanish**, following the system language or your choice in Settings.
-- **New version notice** with a link to the release.
+- **New version notice.** On macOS, **Install** downloads the dmg, checks it against the release's `SHA256SUMS.txt` and opens it; elsewhere it links to the release.
+- **Panel size** (compact, default, large) in Settings → General.
 - **Copy diagnostics:** a report you can attach to an issue, with tokens removed.
 
 <p>

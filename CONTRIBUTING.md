@@ -48,6 +48,8 @@ Keep logic in Electron-free modules with injected dependencies, so it can be uni
 
 - `npm run dev` uses the "PR Radar Dev" data folder and a plain-text session, so it never touches an installed PR Radar.
 - `PR_RADAR_DEBUG=1` logs at debug level (panel show/hide, polling details).
+- `PR_RADAR_DEV_VERSION=0.0.1 npm run dev` pretends to be that version, so the new-version banner and the install flow can be exercised against the real releases.
+- `MAIN_VITE_NOTIFICATION_ACTIONS=1` (build time) adds a Snooze button to review notifications. macOS only shows notification buttons for Developer ID-signed apps, so releases leave it unset.
 - `PR_RADAR_SMOKE=1 npx electron .` (after `npm run build`) starts the app with an empty data folder and exits 0 once the panel has rendered, 1 after 60 s without it. CI runs it on the unpacked Windows and Linux builds, and the release workflow on the arm64 app before creating the draft.
 - `npm run panel:dev` serves the panel alone at http://localhost:5174 with fictional data (`src/renderer/mockApi.ts`), so the UI can be worked on without Electron or a GitHub session. `npm run panel:shot out.png --dark --step "<js>"` renders that page offscreen with Electron and saves a PNG; the screenshots in `docs/` come from it.
 - `npm run check:graphql` validates the query and every mutation against GitHub's live schema through the `gh` CLI (mutations run with an invalid PR id, so nothing is touched). Run it before a release: unit tests can't catch a field GitHub doesn't have.
