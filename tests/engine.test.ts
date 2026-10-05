@@ -5,52 +5,25 @@ import { GithubError, type FetchResult, type InstallationInfo } from '../src/mai
 import type { Logger } from '../src/main/log'
 import type { NotificationEvent } from '../src/main/notifications'
 import { Session, type StoredAuth } from '../src/main/session'
+import type { ActionTarget } from '../src/main/actions'
 import {
   DEFAULT_SETTINGS,
+  type ActionResult,
   type AppState,
   type MyPullRequest,
-  type PullRequest,
+  type PrAction,
   type Settings,
   type Warning
 } from '../src/shared/types'
+import { myPr, pr } from './fixtures'
 
 const HOUR = 3_600_000
 const NOW = 100 * HOUR
 const silent: Logger = { debug() {}, info() {}, warn() {}, error() {} }
 
-const pr = (id: string): PullRequest => ({
-  id,
-  number: 1,
-  title: `PR ${id}`,
-  url: `https://github.com/acme/app/pull/${id}`,
-  repo: 'acme/app',
-  author: { login: 'octo', avatarUrl: '' },
-  isDraft: false,
-  createdAt: '2026-01-01T00:00:00Z',
-  updatedAt: '2026-01-01T00:00:00Z',
-  additions: 1,
-  deletions: 1,
-  headOid: 'h',
-  ci: 'none',
-  source: { kind: 'direct' },
-  lastReviewAt: null,
-  newCommitsSinceReview: false
-})
-
-const myPr = (id: string, over: Partial<MyPullRequest> = {}): MyPullRequest => ({
-  ...pr(id),
-  status: 'waiting',
-  pendingReviewers: [],
-  reviews: [],
-  readyToMerge: false,
-  blocker: null,
-  conflicts: false,
-  ...over
-})
-
 const result = (ids: string[], login = 'me', warnings: Warning[] = [], myPrs: MyPullRequest[] = []): FetchResult => ({
   viewer: { login, avatarUrl: '' },
-  prs: ids.map(pr),
+  prs: ids.map((id) => pr(id)),
   myPrs,
   warnings
 })
@@ -75,6 +48,8 @@ interface Options {
   online?: () => boolean
   now?: number
   installations?: Array<InstallationInfo[] | Error>
+  /** Fake GitHub writes; defaults to success. */
+  actions?: (pr: ActionTarget, action: PrAction) => Promise<ActionResult>
 }
 
 function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
@@ -108,12 +83,18 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     if (next instanceof Error) throw next
     return next
   })
+  const runPrAction = vi.fn(async (_token: string, target: ActionTarget, action: PrAction): Promise<ActionResult> =>
+    opts.actions ? opts.actions(target, action) : { ok: true }
+  )
+  const requestPoll = vi.fn()
   const deps: EngineDeps = {
     now: () => clock,
     fetchInstallations,
     settings: () => settings,
     session,
     fetchPullRequests,
+    runPrAction,
+    requestPoll,
     stateStore: { read: () => stored, write: (s) => (stored = s), remove: () => (stored = null) },
     notify: (e) => events.push(...e),
     publish: (s) => published.push(s),
@@ -130,6 +111,8 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     events,
     published,
     fetchPullRequests,
+    runPrAction,
+    requestPoll,
     refresh,
     onSessionEnded,
     session,
@@ -549,5 +532,100 @@ describe('Engine with the GitHub App', () => {
     expect(t.session.current).toBeNull()
     expect(t.events).toEqual([])
     expect(t.stored).toMatchObject({ dismissedIds: ['a'] })
+  })
+})
+
+describe('Engine actions on PRs', () => {
+  const owned = (over: Partial<MyPullRequest> = {}) => myPr('m1', { headOid: 'h1', repo: 'acme/app', number: 7, ...over })
+  const appAuth = () => fresh({ method: 'github_app', clientId: 'Iv23-app' })
+
+  it('refuses to write with a GitHub App session', async () => {
+    const t = setup([result([], 'me', [], [owned()])], { auth: appAuth(), installations: [[]] })
+    await t.engine.poll()
+    expect(t.engine.state.canWrite).toBe(false)
+    await expect(t.engine.runAction('m1', { kind: 'merge', method: 'MERGE' })).resolves.toEqual({ ok: false, code: 'forbidden' })
+    expect(t.runPrAction).not.toHaveBeenCalled()
+  })
+
+  it('targets the PR as last seen, marks it busy and asks for a poll on success', async () => {
+    const t = setup([result([], 'me', [], [owned()])], { auth: fresh() })
+    await t.engine.poll()
+    expect(t.engine.state.canWrite).toBe(true)
+    const pending = t.engine.runAction('m1', { kind: 'update_branch' })
+    expect(t.engine.state.pendingActions).toEqual({ m1: 'update_branch' })
+    await expect(pending).resolves.toEqual({ ok: true })
+    expect(t.runPrAction).toHaveBeenCalledTimes(1)
+    expect(t.runPrAction.mock.calls[0][1]).toEqual({ id: 'm1', headOid: 'h1', repo: 'acme/app', number: 7 })
+    expect(t.runPrAction.mock.calls[0][2]).toEqual({ kind: 'update_branch' })
+    expect(t.engine.state.pendingActions).toEqual({})
+    expect(t.requestPoll).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports unknown PRs and GraphQL failures without polling', async () => {
+    const t = setup([result([], 'me', [], [owned()])], {
+      auth: fresh(),
+      actions: async () => ({ ok: false, code: 'stale', detail: 'Head branch was modified' })
+    })
+    await t.engine.poll()
+    await expect(t.engine.runAction('nope', { kind: 'update_branch' })).resolves.toEqual({ ok: false, code: 'not_found' })
+    await expect(t.engine.runAction('m1', { kind: 'update_branch' })).resolves.toEqual({
+      ok: false,
+      code: 'stale',
+      detail: 'Head branch was modified'
+    })
+    expect(t.requestPoll).not.toHaveBeenCalled()
+    expect(t.engine.state.pendingActions).toEqual({})
+  })
+
+  it('maps HTTP failures to codes', async () => {
+    const t = setup([result([], 'me', [], [owned()])], {
+      auth: fresh(),
+      actions: async () => {
+        throw new GithubError('rate_limited', 'slow down')
+      }
+    })
+    await t.engine.poll()
+    await expect(t.engine.runAction('m1', { kind: 'merge', method: 'SQUASH' })).resolves.toMatchObject({
+      ok: false,
+      code: 'rate_limited'
+    })
+  })
+
+  it('signs out when GitHub keeps rejecting the token during an action', async () => {
+    const t = setup([result([], 'me', [], [owned()])], {
+      auth: fresh(),
+      actions: async () => {
+        throw new GithubError('unauthorized', 'bad token')
+      }
+    })
+    await t.engine.poll()
+    await expect(t.engine.runAction('m1', { kind: 'merge', method: 'SQUASH' })).resolves.toEqual({ ok: false, code: 'unauthorized' })
+    expect(t.engine.state.status).toBe('logged_out')
+    expect(t.onSessionEnded).toHaveBeenCalled()
+  })
+
+  it('approves review requests but never your own, and asks the right reviewers again', async () => {
+    const own = pr('r1', { viewerDidAuthor: true })
+    const other = pr('r2', { headOid: 'rh' })
+    const mine = owned({
+      reviews: [
+        { login: 'ana', avatarUrl: '', state: 'CHANGES_REQUESTED', id: 'U_ana' },
+        { login: 'bob', avatarUrl: '', state: 'APPROVED', id: 'U_bob' }
+      ]
+    })
+    const t = setup([{ ...result([], 'me', [], [mine]), prs: [own, other] }], { auth: fresh() })
+    await t.engine.poll()
+    await expect(t.engine.runAction('r1', { kind: 'approve' })).resolves.toMatchObject({ ok: false, code: 'forbidden' })
+    await expect(t.engine.runAction('r2', { kind: 'approve', body: 'ok' })).resolves.toEqual({ ok: true })
+    expect(t.runPrAction.mock.calls[0][1]).toMatchObject({ id: 'r2', headOid: 'rh' })
+    await expect(t.engine.runAction('m1', { kind: 'rerequest_review' })).resolves.toEqual({ ok: true })
+    expect(t.runPrAction.mock.calls[1][1].reviewerIds).toEqual(['U_ana'])
+  })
+
+  it('still approves a review request the user dismissed', async () => {
+    const t = setup([result(['r1'], 'me')], { auth: fresh() })
+    await t.engine.poll()
+    t.engine.dismiss('r1')
+    await expect(t.engine.runAction('r1', { kind: 'approve' })).resolves.toEqual({ ok: true })
   })
 })

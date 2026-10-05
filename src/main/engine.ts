@@ -4,7 +4,18 @@
  * unit tested; index.ts wires it to the real app.
  */
 import type { Locale } from '../shared/i18n'
-import type { AppState, AuthNotice, ConnectionState, PullRequest, Settings, Warning } from '../shared/types'
+import type {
+  ActionErrorCode,
+  ActionResult,
+  AppState,
+  AuthNotice,
+  ConnectionState,
+  PrAction,
+  PullRequest,
+  Settings,
+  Warning
+} from '../shared/types'
+import type { ActionTarget } from './actions'
 import { applyHidden, diffMyPrs, diffPrs, planNotifications, type MyPrEvent, type NotificationPlan } from './diff'
 import { GithubError, installationWarnings, type FetchResult, type InstallationInfo } from './github'
 import type { Logger } from './log'
@@ -28,6 +39,10 @@ export interface EngineDeps {
   fetchPullRequests(token: string, settings: Settings, login?: string): Promise<FetchResult>
   /** GitHub App sessions only: where the app is installed. */
   fetchInstallations?(token: string): Promise<InstallationInfo[]>
+  /** Writes to GitHub (merge, update branch, …); absent when the build can't write. */
+  runPrAction?(token: string, pr: ActionTarget, action: PrAction): Promise<ActionResult>
+  /** Asks for a poll soon, e.g. after an action changed a PR. */
+  requestPoll?(): void
   stateStore: StateStore
   notify(events: NotificationEvent[]): void
   publish(state: AppState): void
@@ -78,7 +93,9 @@ export function loggedOutState(authNotice: AuthNotice | null = null, locale: Loc
     installations: null,
     authNotice,
     connection: 'ok',
-    locale
+    locale,
+    canWrite: false,
+    pendingActions: {}
   }
 }
 
@@ -210,6 +227,73 @@ export class Engine {
     if (!this.persisted) return
     const until = snoozeUntil(new Date(this.deps.now()), option, this.deps.settings()).getTime()
     this.setHidden({ ...this.persisted, snoozed: { ...this.persisted.snoozed, [prId]: until } })
+  }
+
+  /**
+   * Runs a write action on one of your PRs, or approves a review request. Only OAuth App
+   * sessions can write (the GitHub App is installed read-only). The panel shows the result;
+   * the state itself is refreshed by the poll requested after a success.
+   */
+  async runAction(prId: string, action: PrAction): Promise<ActionResult> {
+    const session = this.deps.session.current
+    if (!session || session.method !== 'oauth_app' || !this.deps.runPrAction) return { ok: false, code: 'forbidden' }
+    const target = this.actionTarget(prId, action)
+    if (!target.ok) return target
+    if (this.current.pendingActions[prId]) return { ok: false, code: 'unknown', detail: 'Another action is still running' }
+    const runPrAction = this.deps.runPrAction
+    const { repo, number } = target.target
+    this.setPending(prId, action.kind)
+    try {
+      const result = await this.withToken((token) => runPrAction(token, target.target, action))
+      if (result.ok) {
+        this.deps.log.info('pr action ok', { kind: action.kind, repo, number })
+        this.deps.requestPoll?.()
+      } else {
+        this.deps.log.warn('pr action failed', { kind: action.kind, repo, number, code: result.code, detail: result.detail })
+      }
+      return result
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        this.expire(err.reason)
+        return { ok: false, code: 'unauthorized' }
+      }
+      const code: ActionErrorCode = err instanceof GithubError ? err.kind : 'unknown'
+      this.deps.log.warn('pr action failed', { kind: action.kind, repo, number, code, detail: (err as Error).message })
+      return { ok: false, code, detail: (err as Error).message }
+    } finally {
+      this.setPending(prId, null)
+    }
+  }
+
+  /** The PR an action applies to, as last seen; approvals target review requests, the rest your own PRs. */
+  private actionTarget(
+    prId: string,
+    action: PrAction
+  ): { ok: true; target: ActionTarget } | Exclude<ActionResult, { ok: true }> {
+    if (action.kind === 'approve') {
+      const pr = this.allPrs.find((p) => p.id === prId)
+      if (!pr) return { ok: false, code: 'not_found' }
+      if (pr.viewerDidAuthor) return { ok: false, code: 'forbidden', detail: 'You cannot approve your own pull request' }
+      return { ok: true, target: { id: pr.id, headOid: pr.headOid, repo: pr.repo, number: pr.number } }
+    }
+    const pr = this.current.myPrs.find((p) => p.id === prId)
+    if (!pr) return { ok: false, code: 'not_found' }
+    const target: ActionTarget = { id: pr.id, headOid: pr.headOid, repo: pr.repo, number: pr.number }
+    if (action.kind === 'rerequest_review') {
+      // Ask those who requested changes; failing that, everyone who reviewed.
+      const withId = pr.reviews.filter((r) => r.id)
+      const changed = withId.filter((r) => r.state === 'CHANGES_REQUESTED')
+      target.reviewerIds = (changed.length ? changed : withId).map((r) => r.id!)
+      if (!target.reviewerIds.length) return { ok: false, code: 'not_found', detail: 'No reviewer to ask again' }
+    }
+    return { ok: true, target }
+  }
+
+  private setPending(prId: string, kind: PrAction['kind'] | null): void {
+    const pendingActions = { ...this.current.pendingActions }
+    if (kind) pendingActions[prId] = kind
+    else delete pendingActions[prId]
+    this.publish({ ...this.current, pendingActions })
   }
 
   /** Brings back every dismissed and snoozed PR, without notifying. */
@@ -477,7 +561,9 @@ export class Engine {
       snoozeTomorrowAt: nextWorkdayStart(now, settings).getTime(),
       update: this.updateInfo,
       authMethod: this.deps.session.current?.method ?? null,
-      installations: this.installs ? this.installs.map(({ login, type }) => ({ login, type })) : null
+      installations: this.installs ? this.installs.map(({ login, type }) => ({ login, type })) : null,
+      // Only the OAuth App asks for `repo`; the GitHub App is installed read-only.
+      canWrite: this.deps.session.current?.method === 'oauth_app'
     }
     this.deps.publish(this.current)
   }

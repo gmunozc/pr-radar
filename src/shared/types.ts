@@ -14,6 +14,26 @@ export interface Installation {
 /** Combined status of the checks on a PR's head commit; `unknown` when it can't be read. */
 export type CiState = 'success' | 'failure' | 'pending' | 'none' | 'unknown'
 
+export type CheckState = 'success' | 'failure' | 'pending' | 'skipped'
+
+/** One check run or commit status on the head commit. */
+export interface CheckInfo {
+  name: string
+  state: CheckState
+  /** Where the check reports its details (may be outside github.com). */
+  url: string | null
+}
+
+export interface Label {
+  name: string
+  /** Hex without '#', as GitHub stores it. */
+  color: string
+}
+
+export type MergeMethod = 'MERGE' | 'SQUASH' | 'REBASE'
+
+export type RepoPermission = 'ADMIN' | 'MAINTAIN' | 'WRITE' | 'TRIAGE' | 'READ'
+
 interface PullRequestBase {
   id: string
   number: number
@@ -29,11 +49,19 @@ interface PullRequestBase {
   /** Head commit SHA. */
   headOid: string
   ci: CiState
+  /** Head branch name. */
+  branch: string
+  labels: Label[]
+  /** Checks on the head commit, failing ones first; `checksTotal` counts all of them. */
+  checks: CheckInfo[]
+  checksTotal: number
 }
 
 /** A PR someone asked you to review. */
 export interface PullRequest extends PullRequestBase {
   source: ReviewSource
+  /** You opened it (GitHub doesn't let you approve your own PR). */
+  viewerDidAuthor: boolean
   /** When you last submitted a review on it, if ever. */
   lastReviewAt: string | null
   /** The author pushed after your last review. */
@@ -49,18 +77,75 @@ export type ReviewState = 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'DISM
 
 export type MyReviewStatus = 'approved' | 'changes_requested' | 'waiting' | 'no_reviewers'
 
+/** What the signed-in user may do to one of their PRs (repository permission, not readiness). */
+export interface PrCapabilities {
+  updateBranch: boolean
+  enableAutoMerge: boolean
+  disableAutoMerge: boolean
+  merge: boolean
+  requestReviews: boolean
+}
+
+/** Merge settings of the PR's repository. */
+export interface MergeOptions {
+  /** Methods the repository allows; empty when unknown. */
+  methods: MergeMethod[]
+  defaultMethod: MergeMethod
+  deleteBranchOnMerge: boolean
+  /** Whether GitHub's own auto-merge can be enabled in this repository. */
+  autoMergeAllowed: boolean
+}
+
 /** A PR you opened, with where its review stands. */
 export interface MyPullRequest extends PullRequestBase {
   status: MyReviewStatus
   pendingReviewers: Reviewer[]
-  reviews: Array<{ login: string; avatarUrl: string; state: ReviewState }>
+  reviews: Array<{ login: string; avatarUrl: string; state: ReviewState; id?: string }>
   /** Approved, checks green, no conflicts and mergeable per branch protection. */
   readyToMerge: boolean
   /** Set when approved but not ready; null otherwise (or while GitHub is still computing). */
   blocker: MergeBlocker | null
   /** Merge conflicts with the base branch (shown whatever the review status). */
   conflicts: boolean
+  /** GitHub would accept a merge right now (clean or hooks-only), whatever the review status. */
+  mergeable: boolean
+  baseBranch: string
+  /** Your permission on the repository; null when GitHub didn't say. */
+  permission: RepoPermission | null
+  can: PrCapabilities
+  /** GitHub's auto-merge, when enabled on this PR. */
+  autoMerge: { method: MergeMethod; enabledAt: string } | null
+  merge: MergeOptions
+  /** Review threads nobody resolved yet; null when unreadable. */
+  unresolvedThreads: number | null
+  /** Approvals the base branch's protection rule requires; null when unknown or unprotected. */
+  requiredApprovals: number | null
 }
+
+/** An action on a PR, as requested by the panel; the main process adds the head commit it expects. */
+export type PrAction =
+  | { kind: 'update_branch' }
+  | { kind: 'enable_auto_merge'; method: MergeMethod }
+  | { kind: 'disable_auto_merge' }
+  | { kind: 'merge'; method: MergeMethod }
+  | { kind: 'rerequest_review' }
+  | { kind: 'approve'; body?: string }
+
+export type ActionErrorCode =
+  /** The PR changed since the panel showed it; refresh and look again. */
+  | 'stale'
+  | 'not_mergeable'
+  /** Auto-merge can't be enabled because the PR can be merged right now. */
+  | 'already_mergeable'
+  | 'auto_merge_unavailable'
+  | 'forbidden'
+  | 'not_found'
+  | 'unauthorized'
+  | 'rate_limited'
+  | 'network'
+  | 'unknown'
+
+export type ActionResult = { ok: true } | { ok: false; code: ActionErrorCode; detail?: string }
 
 export interface Viewer {
   login: string
@@ -119,6 +204,10 @@ export interface AppState {
   installations: Installation[] | null
   /** Why the user is signed out (shown on the login screen), or null. */
   authNotice: AuthNotice | null
+  /** The session can write to GitHub (OAuth App with `repo` scope); the GitHub App is read-only. */
+  canWrite: boolean
+  /** PR id → action the main process is running on it right now. */
+  pendingActions: Record<string, PrAction['kind']>
 }
 
 export type AuthNotice = 'session_expired' | 'refresh_unsupported' | 'keychain_denied'

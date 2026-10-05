@@ -1,25 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyDismissals, applyHidden, diffMyPrs, diffPrs, planNotifications } from '../src/main/diff'
-import type { MyPullRequest, PullRequest } from '../src/shared/types'
-
-const pr = (id: string): PullRequest => ({
-  id,
-  number: Number(id.replace(/\D/g, '')) || 1,
-  title: `PR ${id}`,
-  url: `https://github.com/acme/app/pull/${id}`,
-  repo: 'acme/app',
-  author: { login: 'octo', avatarUrl: '' },
-  isDraft: false,
-  createdAt: '2026-01-01T00:00:00Z',
-  updatedAt: '2026-01-01T00:00:00Z',
-  additions: 1,
-  deletions: 1,
-  headOid: 'h',
-  ci: 'none',
-  source: { kind: 'direct' },
-  lastReviewAt: null,
-  newCommitsSinceReview: false
-})
+import { myPr as mine, pr } from './fixtures'
 
 describe('diffPrs', () => {
   it('treats a missing snapshot as first run without individual new PRs', () => {
@@ -74,18 +55,6 @@ describe('applyDismissals', () => {
     const reRequested = applyDismissals([pr('a'), pr('b')], afterReview.dismissedIds)
     expect(reRequested.visible.map((p) => p.id)).toEqual(['a', 'b'])
   })
-})
-
-const mine = (id: string, over: Partial<MyPullRequest> = {}): MyPullRequest => ({
-  ...pr(id),
-  author: { login: 'me', avatarUrl: '' },
-  status: 'waiting',
-  pendingReviewers: [],
-  reviews: [],
-  readyToMerge: false,
-  blocker: null,
-  conflicts: false,
-  ...over
 })
 
 describe('diffMyPrs', () => {

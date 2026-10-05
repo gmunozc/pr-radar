@@ -1,11 +1,18 @@
 import type {
+  CheckInfo,
+  CheckState,
   CiState,
   Installation,
   GithubErrorKind,
+  Label,
   MergeBlocker,
+  MergeMethod,
+  MergeOptions,
   MyPullRequest,
   MyReviewStatus,
+  PrCapabilities,
   PullRequest,
+  RepoPermission,
   Reviewer,
   ReviewSource,
   ReviewState,
@@ -30,9 +37,27 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
     additions
     deletions
     headRefOid
+    headRefName
     repository { nameWithOwner }
     author { login avatarUrl }
-    commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+    labels(first: 5) { nodes { name color } }
+    commits(last: 1) {
+      nodes {
+        commit {
+          statusCheckRollup {
+            state
+            contexts(first: 20) {
+              totalCount
+              nodes {
+                __typename
+                ... on CheckRun { name status conclusion detailsUrl }
+                ... on StatusContext { context state targetUrl }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   query PullRequests($requested: String!, $mine: String!, $first: Int!, $login: String!, $withMyReview: Boolean!) {
@@ -42,6 +67,7 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
       nodes {
         ... on PullRequest {
           ...PrFields
+          viewerDidAuthor
           myReview: reviews(author: $login, last: 1, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED])
             @include(if: $withMyReview) {
             nodes { submittedAt commit { oid } }
@@ -66,6 +92,22 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
           reviewDecision
           mergeable
           mergeStateStatus
+          baseRefName
+          autoMergeRequest { enabledAt mergeMethod }
+          viewerCanUpdateBranch
+          viewerCanEnableAutoMerge
+          viewerCanDisableAutoMerge
+          repository {
+            autoMergeAllowed
+            mergeCommitAllowed
+            squashMergeAllowed
+            rebaseMergeAllowed
+            deleteBranchOnMerge
+            viewerDefaultMergeMethod
+            viewerPermission
+          }
+          baseRef { branchProtectionRule { requiredApprovingReviewCount } }
+          reviewThreads(first: 50) { totalCount nodes { isResolved } }
           reviewRequests(first: 20) {
             nodes {
               requestedReviewer {
@@ -78,7 +120,7 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
           latestOpinionatedReviews(first: 20) {
             nodes {
               state
-              author { login avatarUrl }
+              author { id login avatarUrl }
             }
           }
         }
@@ -119,6 +161,23 @@ interface RawReviewer {
   slug?: string
 }
 
+/** One entry of `statusCheckRollup.contexts`: a check run or a legacy commit status. */
+export interface RawCheckContext {
+  __typename: string
+  name?: string
+  status?: string | null
+  conclusion?: string | null
+  detailsUrl?: string | null
+  context?: string
+  state?: string | null
+  targetUrl?: string | null
+}
+
+interface RawRollup {
+  state: string
+  contexts?: { totalCount: number; nodes: Array<RawCheckContext | null> } | null
+}
+
 interface RawPr {
   id?: string
   number: number
@@ -132,19 +191,40 @@ interface RawPr {
   repository: { nameWithOwner: string }
   author: { login: string; avatarUrl: string } | null
   headRefOid?: string
-  commits?: { nodes: Array<{ commit: { statusCheckRollup: { state: string } | null } | null }> }
+  headRefName?: string | null
+  labels?: { nodes: Array<{ name: string; color: string } | null> } | null
+  viewerDidAuthor?: boolean
+  commits?: { nodes: Array<{ commit: { statusCheckRollup: RawRollup | null } | null }> }
   reviewRequests: { nodes: Array<{ requestedReviewer: RawReviewer | null }> }
   myReview?: { nodes: Array<{ submittedAt: string | null; commit: { oid: string } | null }> }
 }
 
 type Mergeable = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
 
+interface RawRepoMerge {
+  autoMergeAllowed?: boolean | null
+  mergeCommitAllowed?: boolean | null
+  squashMergeAllowed?: boolean | null
+  rebaseMergeAllowed?: boolean | null
+  deleteBranchOnMerge?: boolean | null
+  viewerDefaultMergeMethod?: string | null
+  viewerPermission?: string | null
+}
+
 interface RawMyPr extends RawPr {
   reviewDecision: ReviewDecision
   mergeable?: Mergeable | null
   mergeStateStatus?: string | null
+  baseRefName?: string | null
+  autoMergeRequest?: { enabledAt: string | null; mergeMethod: string | null } | null
+  viewerCanUpdateBranch?: boolean | null
+  viewerCanEnableAutoMerge?: boolean | null
+  viewerCanDisableAutoMerge?: boolean | null
+  repository: RawPr['repository'] & RawRepoMerge
+  baseRef?: { branchProtectionRule: { requiredApprovingReviewCount: number | null } | null } | null
+  reviewThreads?: { totalCount: number; nodes: Array<{ isResolved: boolean } | null> } | null
   latestOpinionatedReviews: {
-    nodes: Array<{ state: ReviewState; author: { login: string; avatarUrl: string } | null }>
+    nodes: Array<{ state: ReviewState; author: { id?: string; login: string; avatarUrl: string } | null }>
   }
 }
 
@@ -240,6 +320,64 @@ export function isReadyToMerge(pr: MergeInput): boolean {
 export const hasConflicts = (pr: Pick<MergeInput, 'mergeable' | 'mergeState'>): boolean =>
   pr.mergeable === 'CONFLICTING' || pr.mergeState === 'DIRTY'
 
+/** GitHub would accept a merge now: clean (or hooks only), no conflicts, not a draft. Ignores reviews. */
+export const isMergeableNow = (pr: Pick<MergeInput, 'isDraft' | 'mergeable' | 'mergeState'>): boolean =>
+  !pr.isDraft && pr.mergeable === 'MERGEABLE' && (pr.mergeState === 'CLEAN' || pr.mergeState === 'HAS_HOOKS')
+
+const MERGE_METHODS: readonly MergeMethod[] = ['MERGE', 'SQUASH', 'REBASE']
+const PERMISSIONS: readonly RepoPermission[] = ['ADMIN', 'MAINTAIN', 'WRITE', 'TRIAGE', 'READ']
+const WRITE_PERMISSIONS: readonly RepoPermission[] = ['ADMIN', 'MAINTAIN', 'WRITE']
+
+const toMergeMethod = (s: string | null | undefined): MergeMethod | null =>
+  (MERGE_METHODS as readonly string[]).includes(s ?? '') ? (s as MergeMethod) : null
+
+const toPermission = (s: string | null | undefined): RepoPermission | null =>
+  (PERMISSIONS as readonly string[]).includes(s ?? '') ? (s as RepoPermission) : null
+
+/** Merge settings of the repository; a method list that is empty means GitHub didn't say. */
+export function mergeOptions(repo: RawRepoMerge | null | undefined): MergeOptions {
+  const methods: MergeMethod[] = []
+  if (repo?.mergeCommitAllowed) methods.push('MERGE')
+  if (repo?.squashMergeAllowed) methods.push('SQUASH')
+  if (repo?.rebaseMergeAllowed) methods.push('REBASE')
+  const preferred = toMergeMethod(repo?.viewerDefaultMergeMethod)
+  return {
+    methods,
+    defaultMethod: preferred && methods.includes(preferred) ? preferred : (methods[0] ?? 'MERGE'),
+    deleteBranchOnMerge: repo?.deleteBranchOnMerge === true,
+    autoMergeAllowed: repo?.autoMergeAllowed === true
+  }
+}
+
+/** Maps one check run or commit status; null for unknown node types. */
+export function checkFromContext(c: RawCheckContext | null): CheckInfo | null {
+  if (!c) return null
+  if (c.__typename === 'CheckRun') {
+    let state: CheckState
+    if (c.status !== 'COMPLETED') state = 'pending'
+    else if (c.conclusion === 'SUCCESS') state = 'success'
+    else if (c.conclusion === 'NEUTRAL' || c.conclusion === 'SKIPPED' || c.conclusion === 'STALE') state = 'skipped'
+    else state = 'failure'
+    return { name: c.name ?? '', state, url: c.detailsUrl ?? null }
+  }
+  if (c.__typename === 'StatusContext') {
+    const state: CheckState =
+      c.state === 'SUCCESS' ? 'success' : c.state === 'FAILURE' || c.state === 'ERROR' ? 'failure' : 'pending'
+    return { name: c.context ?? '', state, url: c.targetUrl ?? null }
+  }
+  return null
+}
+
+const CHECK_ORDER: Record<CheckState, number> = { failure: 0, pending: 1, success: 2, skipped: 3 }
+
+/** Checks on the head commit, failing ones first so the panel can show what blocks a PR. */
+export function checksFromRollup(rollup: RawRollup | null | undefined): { checks: CheckInfo[]; total: number } {
+  const nodes = rollup?.contexts?.nodes ?? []
+  const checks = nodes.map(checkFromContext).filter((c): c is CheckInfo => c !== null)
+  checks.sort((a, b) => CHECK_ORDER[a.state] - CHECK_ORDER[b.state])
+  return { checks, total: rollup?.contexts?.totalCount ?? checks.length }
+}
+
 /** Why an approved PR isn't ready; null when ready, not approved, or GitHub is still computing. */
 export function mergeBlocker(pr: MergeInput): MergeBlocker | null {
   if (pr.status !== 'approved' || isReadyToMerge(pr)) return null
@@ -259,12 +397,17 @@ const isPr = <T extends { id?: string }>(n: T | null): n is T & { id: string } =
 const newestFirst = (a: { createdAt: string }, b: { createdAt: string }) => b.createdAt.localeCompare(a.createdAt)
 
 function baseFields(n: RawPr & { id: string }, ciReadable: boolean) {
+  const rollup = n.commits?.nodes[0]?.commit?.statusCheckRollup
+  const { checks, total } = ciReadable ? checksFromRollup(rollup) : { checks: [], total: 0 }
+  const labels: Label[] = (n.labels?.nodes ?? [])
+    .filter((l): l is { name: string; color: string } => !!l && typeof l.name === 'string')
+    .map((l) => ({ name: l.name, color: l.color ?? '' }))
   return {
     id: n.id,
     number: n.number,
     title: n.title,
     url: n.url,
-    repo: n.repository.nameWithOwner,
+    repo: n.repository?.nameWithOwner ?? '',
     author: n.author ? { login: n.author.login, avatarUrl: n.author.avatarUrl } : null,
     isDraft: n.isDraft,
     createdAt: n.createdAt,
@@ -272,7 +415,11 @@ function baseFields(n: RawPr & { id: string }, ciReadable: boolean) {
     additions: n.additions,
     deletions: n.deletions,
     headOid: n.headRefOid ?? '',
-    ci: ciReadable ? ciFromRollup(n.commits?.nodes[0]?.commit?.statusCheckRollup?.state) : ('unknown' as const)
+    ci: ciReadable ? ciFromRollup(rollup?.state) : ('unknown' as const),
+    branch: n.headRefName ?? '',
+    labels,
+    checks,
+    checksTotal: total
   }
 }
 
@@ -299,7 +446,12 @@ function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boo
     .filter((r): r is Reviewer => r !== null)
   const reviews = n.latestOpinionatedReviews.nodes
     .filter((r) => r.author)
-    .map((r) => ({ login: r.author!.login, avatarUrl: r.author!.avatarUrl, state: r.state }))
+    .map((r) => ({
+      login: r.author!.login,
+      avatarUrl: r.author!.avatarUrl,
+      state: r.state,
+      ...(r.author!.id ? { id: r.author!.id } : {})
+    }))
   const base = baseFields(n, readable.ci)
   const status = myReviewStatus(
     n.reviewDecision,
@@ -313,6 +465,17 @@ function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boo
     mergeable: readable.merge ? n.mergeable : 'UNKNOWN',
     mergeState: readable.merge ? n.mergeStateStatus : null
   }
+  const permission = toPermission(n.repository?.viewerPermission)
+  const canWriteRepo = permission !== null && WRITE_PERMISSIONS.includes(permission)
+  const can: PrCapabilities = {
+    updateBranch: n.viewerCanUpdateBranch === true,
+    enableAutoMerge: n.viewerCanEnableAutoMerge === true,
+    disableAutoMerge: n.viewerCanDisableAutoMerge === true,
+    merge: canWriteRepo,
+    requestReviews: canWriteRepo
+  }
+  const autoMethod = toMergeMethod(n.autoMergeRequest?.mergeMethod)
+  const threads = n.reviewThreads?.nodes
   return {
     ...base,
     status,
@@ -320,9 +483,39 @@ function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boo
     reviews,
     readyToMerge: isReadyToMerge(merge),
     blocker: mergeBlocker(merge),
-    conflicts: hasConflicts(merge)
+    conflicts: hasConflicts(merge),
+    mergeable: isMergeableNow(merge),
+    baseBranch: n.baseRefName ?? '',
+    permission,
+    can,
+    autoMerge:
+      n.autoMergeRequest && autoMethod ? { method: autoMethod, enabledAt: n.autoMergeRequest.enabledAt ?? '' } : null,
+    merge: mergeOptions(n.repository),
+    unresolvedThreads: Array.isArray(threads) ? threads.filter((t) => t && !t.isResolved).length : null,
+    requiredApprovals: n.baseRef?.branchProtectionRule?.requiredApprovingReviewCount ?? null
   }
 }
+
+/**
+ * Fields a token may not be allowed to read. Errors on them degrade the field to "unknown"
+ * (CI and merge state get a warning) instead of a "partial results" banner.
+ */
+const TOLERATED_FIELDS = new Set([
+  'statusCheckRollup',
+  'commits',
+  'mergeable',
+  'mergeStateStatus',
+  'baseRef',
+  'branchProtectionRule',
+  'reviewThreads',
+  'repository',
+  'autoMergeRequest',
+  'viewerCanUpdateBranch',
+  'viewerCanEnableAutoMerge',
+  'viewerCanDisableAutoMerge',
+  'viewerDidAuthor',
+  'labels'
+])
 
 /** Fields GitHub refused to return (e.g. a GitHub App without Checks permission). */
 function forbiddenFields(errors: RawResponse['errors']): { ci: boolean; merge: boolean } {
@@ -346,7 +539,12 @@ export function mapResponse(body: RawResponse): FetchResult {
   const readable = { ci: !forbidden.ci, merge: !forbidden.merge }
   const prs: PullRequest[] = data.requested.nodes
     .filter(isPr)
-    .map((n) => ({ ...baseFields(n, readable.ci), source: reviewSource(n, viewer.login), ...reviewFreshness(n) }))
+    .map((n) => ({
+      ...baseFields(n, readable.ci),
+      source: reviewSource(n, viewer.login),
+      viewerDidAuthor: n.viewerDidAuthor === true,
+      ...reviewFreshness(n)
+    }))
     .sort(newestFirst)
   const myPrs: MyPullRequest[] = data.mine.nodes
     .filter(isPr)
@@ -356,10 +554,7 @@ export function mapResponse(body: RawResponse): FetchResult {
   const warnings: Warning[] = []
   if (forbidden.ci) warnings.push({ code: 'missing_permission', params: { field: 'checks' } })
   if (forbidden.merge) warnings.push({ code: 'missing_permission', params: { field: 'merge' } })
-  const otherErrors = (body.errors ?? []).filter((e) => {
-    const path = (e.path ?? []).join('.')
-    return !/statusCheckRollup|commits|mergeable|mergeStateStatus/.test(path)
-  })
+  const otherErrors = (body.errors ?? []).filter((e) => !(e.path ?? []).some((seg) => TOLERATED_FIELDS.has(String(seg))))
   if (otherErrors.length) {
     const saml = otherErrors.some((e) => /SAML/i.test(e.message))
     warnings.push(saml ? { code: 'saml' } : { code: 'partial', params: { detail: otherErrors[0].message } })
@@ -381,13 +576,16 @@ function rateLimitResetAt(res: Response): number | undefined {
   return undefined
 }
 
-export async function fetchPullRequests(
+/**
+ * Posts a GraphQL document. HTTP-level failures (network, 401, rate limit, 5xx) become
+ * GithubErrors; GraphQL errors stay in the body for the caller to interpret.
+ */
+export async function graphqlRequest<T>(
   token: string,
-  settings: SearchSettings,
-  /** Your login, to find your latest review on each PR; unknown right after signing in. */
-  login?: string,
+  query: string,
+  variables: Record<string, unknown>,
   fetchFn: FetchFn = fetch
-): Promise<FetchResult> {
+): Promise<{ body: T; response: Response }> {
   let res: Response
   try {
     res = await fetchFn(GRAPHQL_URL, {
@@ -398,16 +596,7 @@ export async function fetchPullRequests(
         Accept: 'application/json',
         'User-Agent': 'pr-radar'
       },
-      body: JSON.stringify({
-        query: PULL_REQUESTS_QUERY,
-        variables: {
-          requested: buildSearchQuery(settings),
-          mine: buildMyPrsQuery(settings),
-          first: PAGE_SIZE,
-          login: login ?? '',
-          withMyReview: Boolean(login)
-        }
-      }),
+      body: JSON.stringify({ query, variables }),
       signal: AbortSignal.timeout(20_000)
     })
   } catch (err) {
@@ -427,13 +616,35 @@ export async function fetchPullRequests(
     throw new GithubError('unknown', `GitHub answered ${res.status} ${res.statusText}`)
   }
 
-  let body: RawResponse
+  let body: T
   try {
-    body = (await res.json()) as RawResponse
+    body = (await res.json()) as T
   } catch {
     throw new GithubError('unknown', 'GitHub answered with something that is not JSON')
   }
-  return { ...mapResponse(body), tokenExpiration: res.headers.get('github-authentication-token-expiration') }
+  return { body, response: res }
+}
+
+export async function fetchPullRequests(
+  token: string,
+  settings: SearchSettings,
+  /** Your login, to find your latest review on each PR; unknown right after signing in. */
+  login?: string,
+  fetchFn: FetchFn = fetch
+): Promise<FetchResult> {
+  const { body, response } = await graphqlRequest<RawResponse>(
+    token,
+    PULL_REQUESTS_QUERY,
+    {
+      requested: buildSearchQuery(settings),
+      mine: buildMyPrsQuery(settings),
+      first: PAGE_SIZE,
+      login: login ?? '',
+      withMyReview: Boolean(login)
+    },
+    fetchFn
+  )
+  return { ...mapResponse(body), tokenExpiration: response.headers.get('github-authentication-token-expiration') }
 }
 
 /** Repository/organization permissions PR Radar's GitHub App needs (all read-only). */

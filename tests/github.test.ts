@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  checkFromContext,
   fetchInstallations,
   installationWarnings,
   buildMyPrsQuery,
@@ -7,8 +8,11 @@ import {
   ciFromRollup,
   fetchPullRequests,
   GithubError,
+  GRAPHQL_URL,
+  graphqlRequest,
   isReadyToMerge,
   mergeBlocker,
+  mergeOptions,
   myReviewStatus,
   reviewFreshness
 } from '../src/main/github'
@@ -306,6 +310,180 @@ describe('fetchPullRequests details', () => {
       { code: 'missing_permission', params: { field: 'checks' } },
       { code: 'missing_permission', params: { field: 'merge' } }
     ])
+  })
+})
+
+describe('fetchPullRequests merge details', () => {
+  it('maps capabilities, merge options, auto-merge and branch protection on your PRs', async () => {
+    const mine = rawMyPr({
+      headRefName: 'feature/x',
+      baseRefName: 'main',
+      mergeable: 'MERGEABLE',
+      mergeStateStatus: 'CLEAN',
+      autoMergeRequest: { enabledAt: '2026-10-01T00:00:00Z', mergeMethod: 'SQUASH' },
+      viewerCanUpdateBranch: false,
+      viewerCanEnableAutoMerge: false,
+      viewerCanDisableAutoMerge: true,
+      repository: {
+        nameWithOwner: 'acme/app',
+        autoMergeAllowed: true,
+        mergeCommitAllowed: false,
+        squashMergeAllowed: true,
+        rebaseMergeAllowed: true,
+        deleteBranchOnMerge: true,
+        viewerDefaultMergeMethod: 'SQUASH',
+        viewerPermission: 'ADMIN'
+      },
+      baseRef: { branchProtectionRule: { requiredApprovingReviewCount: 2 } },
+      reviewThreads: { totalCount: 3, nodes: [{ isResolved: true }, { isResolved: false }, { isResolved: false }] },
+      latestOpinionatedReviews: { nodes: [{ state: 'APPROVED', author: { id: 'U_1', login: 'ana', avatarUrl: 'a' } }] }
+    })
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], {}, [mine])))
+    expect(result.myPrs[0]).toMatchObject({
+      branch: 'feature/x',
+      baseBranch: 'main',
+      mergeable: true,
+      permission: 'ADMIN',
+      can: { updateBranch: false, enableAutoMerge: false, disableAutoMerge: true, merge: true, requestReviews: true },
+      autoMerge: { method: 'SQUASH', enabledAt: '2026-10-01T00:00:00Z' },
+      merge: { methods: ['SQUASH', 'REBASE'], defaultMethod: 'SQUASH', deleteBranchOnMerge: true, autoMergeAllowed: true },
+      unresolvedThreads: 2,
+      requiredApprovals: 2,
+      reviews: [{ login: 'ana', avatarUrl: 'a', state: 'APPROVED', id: 'U_1' }]
+    })
+  })
+
+  it('is mergeable without approvals when the repo requires none, but never as a draft or when blocked', async () => {
+    const clean = rawMyPr({ mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' })
+    const draft = rawMyPr({ id: 'D', isDraft: true, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' })
+    const blocked = rawMyPr({ id: 'B', mergeable: 'MERGEABLE', mergeStateStatus: 'BLOCKED' })
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], {}, [clean, draft, blocked])))
+    const byId = Object.fromEntries(result.myPrs.map((p) => [p.id, p]))
+    expect(byId.PR_1).toMatchObject({ mergeable: true, readyToMerge: false, status: 'no_reviewers' })
+    expect(byId.D.mergeable).toBe(false)
+    expect(byId.B.mergeable).toBe(false)
+  })
+
+  it('reports nothing when the repository fields are missing', async () => {
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], {}, [rawMyPr()])))
+    expect(result.myPrs[0]).toMatchObject({
+      branch: '',
+      baseBranch: '',
+      permission: null,
+      can: { updateBranch: false, enableAutoMerge: false, disableAutoMerge: false, merge: false, requestReviews: false },
+      autoMerge: null,
+      merge: { methods: [], defaultMethod: 'MERGE', deleteBranchOnMerge: false, autoMergeAllowed: false },
+      unresolvedThreads: null,
+      requiredApprovals: null,
+      labels: [],
+      checks: [],
+      checksTotal: 0
+    })
+  })
+
+  it('maps checks (failing first), labels, the head branch and authorship on review requests', async () => {
+    const pr = rawPr({
+      headRefName: 'fix/login',
+      viewerDidAuthor: true,
+      labels: { nodes: [{ name: 'bug', color: 'd73a4a' }, null] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                state: 'FAILURE',
+                contexts: {
+                  totalCount: 4,
+                  nodes: [
+                    { __typename: 'CheckRun', name: 'lint', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'https://github.com/acme/app/runs/1' },
+                    { __typename: 'CheckRun', name: 'tests', status: 'IN_PROGRESS', conclusion: null, detailsUrl: null },
+                    { __typename: 'StatusContext', context: 'ci/circle', state: 'FAILURE', targetUrl: 'https://circleci.com/x' },
+                    { __typename: 'CheckRun', name: 'docs', status: 'COMPLETED', conclusion: 'SKIPPED', detailsUrl: 'https://github.com/acme/app/runs/2' }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    })
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([pr])))
+    expect(result.prs[0]).toMatchObject({
+      branch: 'fix/login',
+      viewerDidAuthor: true,
+      labels: [{ name: 'bug', color: 'd73a4a' }],
+      checksTotal: 4,
+      ci: 'failure'
+    })
+    expect(result.prs[0].checks.map((c) => [c.name, c.state])).toEqual([
+      ['ci/circle', 'failure'],
+      ['tests', 'pending'],
+      ['lint', 'success'],
+      ['docs', 'skipped']
+    ])
+    expect(result.prs[0].checks[0].url).toBe('https://circleci.com/x')
+  })
+
+  it('tolerates errors on optional fields without a partial-results banner', async () => {
+    const errors = [
+      { type: 'FORBIDDEN', message: 'Resource not accessible', path: ['mine', 'nodes', 0, 'baseRef', 'branchProtectionRule'] },
+      { type: 'FORBIDDEN', message: 'Resource not accessible', path: ['mine', 'nodes', 0, 'reviewThreads'] }
+    ]
+    const mine = rawMyPr({ baseRef: null, reviewThreads: null })
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], { errors }, [mine])))
+    expect(result.warnings).toEqual([])
+    expect(result.myPrs[0]).toMatchObject({ requiredApprovals: null, unresolvedThreads: null })
+  })
+})
+
+describe('checkFromContext', () => {
+  const run = (status: string, conclusion: string | null) =>
+    checkFromContext({ __typename: 'CheckRun', name: 'x', status, conclusion })?.state
+
+  it('maps check run conclusions and commit statuses', () => {
+    expect(run('COMPLETED', 'SUCCESS')).toBe('success')
+    expect(run('COMPLETED', 'FAILURE')).toBe('failure')
+    expect(run('COMPLETED', 'TIMED_OUT')).toBe('failure')
+    expect(run('COMPLETED', 'CANCELLED')).toBe('failure')
+    expect(run('COMPLETED', 'ACTION_REQUIRED')).toBe('failure')
+    expect(run('COMPLETED', 'NEUTRAL')).toBe('skipped')
+    expect(run('QUEUED', null)).toBe('pending')
+    expect(checkFromContext({ __typename: 'StatusContext', context: 's', state: 'ERROR' })?.state).toBe('failure')
+    expect(checkFromContext({ __typename: 'StatusContext', context: 's', state: 'PENDING' })?.state).toBe('pending')
+    expect(checkFromContext({ __typename: 'Other' })).toBeNull()
+    expect(checkFromContext(null)).toBeNull()
+  })
+})
+
+describe('mergeOptions', () => {
+  it('falls back to the first allowed method when the default is not allowed', () => {
+    expect(mergeOptions({ mergeCommitAllowed: true, rebaseMergeAllowed: true, viewerDefaultMergeMethod: 'SQUASH' })).toEqual({
+      methods: ['MERGE', 'REBASE'],
+      defaultMethod: 'MERGE',
+      deleteBranchOnMerge: false,
+      autoMergeAllowed: false
+    })
+    expect(mergeOptions(null)).toEqual({ methods: [], defaultMethod: 'MERGE', deleteBranchOnMerge: false, autoMergeAllowed: false })
+  })
+})
+
+describe('graphqlRequest', () => {
+  it('posts the document and returns the parsed body with the response', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      jsonResponse({ data: { ok: true } }, { headers: { 'content-type': 'application/json', 'x-test': '1' } })
+    )
+    const { body, response } = await graphqlRequest<{ data: { ok: boolean } }>('tok', 'query { x }', { a: 1 }, fetchFn)
+    expect(body.data.ok).toBe(true)
+    expect(response.headers.get('x-test')).toBe('1')
+    const [url, init] = fetchFn.mock.calls[0]
+    expect(url).toBe(GRAPHQL_URL)
+    expect(init.headers.Authorization).toBe('Bearer tok')
+    expect(JSON.parse(init.body)).toEqual({ query: 'query { x }', variables: { a: 1 } })
+  })
+
+  it('turns a server error into an unknown GithubError', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({}, { status: 502, statusText: 'Bad Gateway' }))
+    await expect(graphqlRequest('tok', 'query { x }', {}, fetchFn)).rejects.toMatchObject({ kind: 'unknown' })
   })
 })
 

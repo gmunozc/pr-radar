@@ -1,27 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { planToEvents, renderNotification as render, type NotificationEvent } from '../src/main/notifications'
 import { translator } from '../src/shared/i18n'
-import type { MyPullRequest, PullRequest } from '../src/shared/types'
+import type { PullRequest } from '../src/shared/types'
+import * as fx from './fixtures'
 
-const pr = (over: Partial<PullRequest> = {}): PullRequest => ({
-  id: 'PR_1',
-  number: 12,
-  title: 'Add feature',
-  url: 'https://github.com/acme/app/pull/12',
-  repo: 'acme/app',
-  author: { login: 'octo', avatarUrl: '' },
-  isDraft: false,
-  createdAt: '2026-01-01T00:00:00Z',
-  updatedAt: '2026-01-01T00:00:00Z',
-  additions: 1,
-  deletions: 1,
-  headOid: 'h',
-  ci: 'none',
-  source: { kind: 'direct' },
-  lastReviewAt: null,
-  newCommitsSinceReview: false,
-  ...over
-})
+const sample = { number: 12, title: 'Add feature', url: 'https://github.com/acme/app/pull/12' }
+const pr = (over: Partial<PullRequest> = {}): PullRequest => fx.pr('PR_1', { ...sample, ...over })
 
 describe('planToEvents', () => {
   it('maps every notification plan to events', () => {
@@ -80,7 +64,7 @@ describe('renderNotification in English', () => {
 })
 
 describe('notifications about your PRs', () => {
-  const mine = { ...pr({ id: 'MY_1' }), status: 'approved', pendingReviewers: [], reviews: [], readyToMerge: true, blocker: null, conflicts: false } as MyPullRequest
+  const mine = fx.myPr('MY_1', { ...sample, status: 'approved', readyToMerge: true })
 
   it('reads well in both languages and replaces per PR', () => {
     expect(render({ kind: 'my_pr_approved', pr: mine, by: ['ana', 'bob'] }, es)).toEqual({
