@@ -36,8 +36,6 @@ let settings: Settings = normalizeSettings(settingsFile.read())
 // Chromium's own UI (time fields, context menus, spellcheck) follows its locale, which is
 // fixed before the app is ready; make it follow the language chosen in Settings.
 if (settings.language !== 'system') app.commandLine.appendSwitch('lang', settings.language)
-// Ubuntu CI runners forbid Chromium's user namespace sandbox.
-if (smoke && process.platform === 'linux') app.commandLine.appendSwitch('no-sandbox')
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()

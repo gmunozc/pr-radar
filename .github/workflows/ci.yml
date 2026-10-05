@@ -52,6 +52,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q xvfb
+          # Installers do this for the user; an unpacked build needs it for Chromium's sandbox.
+          sudo chown root:root dist/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 dist/linux-unpacked/chrome-sandbox
           PR_RADAR_SMOKE=1 timeout 120 xvfb-run -a ./dist/linux-unpacked/pr-radar
       - name: Start the app (Windows)
         if: runner.os == 'Windows'
