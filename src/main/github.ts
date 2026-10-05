@@ -120,7 +120,11 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
           latestOpinionatedReviews(first: 20) {
             nodes {
               state
-              author { id login avatarUrl }
+              author {
+                login
+                avatarUrl
+                ... on User { id }
+              }
             }
           }
         }

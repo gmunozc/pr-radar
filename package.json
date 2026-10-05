@@ -26,7 +26,8 @@
     "icons": "node scripts/gen-icons.mjs",
     "dist:mac": "npm run build && electron-builder --mac --publish never",
     "dist:win": "npm run build && electron-builder --win --publish never",
-    "dist:linux": "npm run build && electron-builder --linux --publish never"
+    "dist:linux": "npm run build && electron-builder --linux --publish never",
+    "check:graphql": "node scripts/check-graphql.mjs"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
