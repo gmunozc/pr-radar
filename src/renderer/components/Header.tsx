@@ -31,6 +31,9 @@ function listTitle(state: AppState, tab: Tab, t: Translate): string {
   if (tab === 'review') {
     return state.prs.length === 0 ? t('header.nothingPending') : t('header.pending', { count: state.prs.length })
   }
+  if (tab === 'involved') {
+    return state.involved.length === 0 ? t('header.noInvolved') : t('header.involved', { count: state.involved.length })
+  }
   const ready = state.myPrs.filter((pr) => pr.readyToMerge).length
   if (ready > 0) return t('header.readyToMerge', { count: ready })
   const waiting = state.myPrs.filter((pr) => pr.status === 'waiting').length

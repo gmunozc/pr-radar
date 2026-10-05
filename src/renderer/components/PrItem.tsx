@@ -5,6 +5,7 @@ import type { PrAction, PullRequest, SnoozeOption } from '../../shared/types'
 import { CheckIcon, ClockIcon, XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
 import { ActionMenu, type MenuItem } from './ActionMenu'
+import { ChecksRow } from './ChecksRow'
 import { CiIcon } from './CiIcon'
 import { ConfirmRow } from './ConfirmRow'
 import { Labels } from './Labels'
@@ -27,12 +28,15 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays }: P
   const [snoozing, setSnoozing] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [approving, setApproving] = useState(false)
+  const [checksOpen, setChecksOpen] = useState(false)
   const [comment, setComment] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const busy = pending !== undefined
   const canApprove = canWrite && !pr.viewerDidAuthor
+  // PRs you merely take part in were never asked of you: nothing to snooze or dismiss.
+  const hideable = pr.source.kind !== 'involved'
 
   const open = () => void window.prRadar.openExternal(pr.url)
   const onKeyDown = (e: KeyboardEvent) => {
@@ -100,6 +104,15 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays }: P
   const items = reviewMenuActions(pr, canWrite).map(menuItem)
   const actionsOpen = snoozing || menuOpen || approving || busy
 
+  const sourceChip =
+    pr.source.kind === 'direct' ? (
+      <span className="chip chip-direct">{t('pr.direct')}</span>
+    ) : pr.source.kind === 'team' ? (
+      <span className="chip chip-team">{pr.source.slug ? t('pr.teamNamed', { slug: pr.source.slug }) : t('pr.team')}</span>
+    ) : (
+      <span className="chip chip-draft">{t('pr.involved')}</span>
+    )
+
   // A div rather than a <button>, because it contains buttons of its own.
   return (
     <div
@@ -123,7 +136,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays }: P
             {name}
           </span>
           <span className="pr-number">#{pr.number}</span>
-          <CiIcon state={pr.ci} />
+          <CiIcon state={pr.ci} checks={pr.checks} open={checksOpen} onToggle={() => setChecksOpen((o) => !o)} />
           <span
             className={`pr-age ${stale ? 'pr-age-stale' : ''}`}
             title={stale ? t('pr.stale', { count: ageDays }) : formatDateTime(pr.createdAt, locale)}
@@ -133,13 +146,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays }: P
         </div>
         <div className="pr-title">{pr.title}</div>
         <div className="pr-tags">
-          {pr.source.kind === 'direct' ? (
-            <span className="chip chip-direct">{t('pr.direct')}</span>
-          ) : (
-            <span className="chip chip-team">
-              {pr.source.slug ? t('pr.teamNamed', { slug: pr.source.slug }) : t('pr.team')}
-            </span>
-          )}
+          {sourceChip}
           {pr.isDraft && <span className="chip chip-draft">{t('pr.draft')}</span>}
           {pr.newCommitsSinceReview && (
             <span
@@ -155,6 +162,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays }: P
           </span>
           {pr.author && <span className="pr-author">@{pr.author.login}</span>}
         </div>
+        {checksOpen && <ChecksRow checks={pr.checks} total={pr.checksTotal} />}
         {snoozing && (
           <div className="snooze-row" onClick={stop}>
             <ClockIcon size={12} />
@@ -216,31 +224,35 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays }: P
             {busy ? <span className="spinner spinner-sm" /> : <CheckIcon size={12} />}
           </button>
         )}
-        <button
-          className="pr-action"
-          onClick={(e) => {
-            e.stopPropagation()
-            setSnoozing(!snoozing)
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-          title={t('pr.snooze')}
-          aria-label={t('pr.snooze')}
-          aria-expanded={snoozing}
-        >
-          <ClockIcon size={12} />
-        </button>
-        <button
-          className="pr-action pr-action-dismiss"
-          onClick={(e) => {
-            e.stopPropagation()
-            dismiss()
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-          title={t('pr.dismissHint')}
-          aria-label={t('pr.dismiss')}
-        >
-          <XIcon size={12} />
-        </button>
+        {hideable && (
+          <button
+            className="pr-action"
+            onClick={(e) => {
+              e.stopPropagation()
+              setSnoozing(!snoozing)
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+            title={t('pr.snooze')}
+            aria-label={t('pr.snooze')}
+            aria-expanded={snoozing}
+          >
+            <ClockIcon size={12} />
+          </button>
+        )}
+        {hideable && (
+          <button
+            className="pr-action pr-action-dismiss"
+            onClick={(e) => {
+              e.stopPropagation()
+              dismiss()
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+            title={t('pr.dismissHint')}
+            aria-label={t('pr.dismiss')}
+          >
+            <XIcon size={12} />
+          </button>
+        )}
       </div>
       {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} />}
     </div>

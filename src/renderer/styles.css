@@ -1222,3 +1222,79 @@ code {
   background: rgba(26, 127, 55, 0.14);
   color: var(--green);
 }
+
+/* The CI icon opens the list of checks */
+.ci-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.ci-button:hover,
+.ci-button[aria-expanded='true'] {
+  filter: brightness(1.25);
+}
+
+.checks-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 7px;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.check:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.check:disabled {
+  opacity: 0.7;
+}
+
+.check-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check-failure {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+}
+
+.check-success {
+  color: var(--green);
+}
+
+.check-more {
+  align-self: center;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* PR Radar will merge this PR itself once GitHub accepts it */
+.chip-armed {
+  background: var(--direct-bg);
+  color: var(--direct-fg);
+}
+
+/* "1/2" approvals next to the reviewers' avatars */
+.reviewers-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}

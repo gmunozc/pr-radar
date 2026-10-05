@@ -1,36 +1,37 @@
 import type { MessageKey } from '../../shared/i18n/en'
 import { useT } from '../i18n'
 
-export type Tab = 'review' | 'mine'
+export type Tab = 'review' | 'mine' | 'involved'
 
 interface Props {
   tab: Tab
   onChange(tab: Tab): void
-  reviewCount: number
-  mineCount: number
+  /** Tabs to show, in order (the "involved" one can be turned off in Settings). */
+  tabs: Tab[]
+  counts: Record<Tab, number>
 }
 
-const TABS: Array<{ id: Tab; label: MessageKey }> = [
-  { id: 'review', label: 'tabs.review' },
-  { id: 'mine', label: 'tabs.mine' }
-]
+const LABELS: Record<Tab, MessageKey> = {
+  review: 'tabs.review',
+  mine: 'tabs.mine',
+  involved: 'tabs.involved'
+}
 
-export function Tabs({ tab, onChange, reviewCount, mineCount }: Props) {
+export function Tabs({ tab, onChange, tabs, counts }: Props) {
   const t = useT()
-  const counts: Record<Tab, number> = { review: reviewCount, mine: mineCount }
   return (
     <nav className="tabs" role="tablist">
-      {TABS.map((item) => (
+      {tabs.map((id) => (
         <button
-          key={item.id}
+          key={id}
           role="tab"
-          aria-selected={tab === item.id}
-          className={`tab ${tab === item.id ? 'tab-active' : ''}`}
+          aria-selected={tab === id}
+          className={`tab ${tab === id ? 'tab-active' : ''}`}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onChange(item.id)}
+          onClick={() => onChange(id)}
         >
-          {t(item.label)}
-          <span className="tab-count">{counts[item.id]}</span>
+          {t(LABELS[id])}
+          <span className="tab-count">{counts[id]}</span>
         </button>
       ))}
     </nav>

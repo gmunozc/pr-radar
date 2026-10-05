@@ -1,6 +1,7 @@
 import type { LanguagePref, Locale } from './i18n'
 
-export type ReviewSource = { kind: 'direct' } | { kind: 'team'; slug: string }
+/** Why a PR is in the review list: asked directly, through a team, or you merely take part in it. */
+export type ReviewSource = { kind: 'direct' } | { kind: 'team'; slug: string } | { kind: 'involved' }
 
 /** How the user signed in: the read-only GitHub App, or the OAuth App (broad `repo` scope). */
 export type AuthMethod = 'oauth_app' | 'github_app'
@@ -130,6 +131,12 @@ export type PrAction =
   | { kind: 'merge'; method: MergeMethod }
   | { kind: 'rerequest_review' }
   | { kind: 'approve'; body?: string }
+  /** Local: PR Radar merges the PR itself once GitHub would accept it (repos without auto-merge). */
+  | { kind: 'arm_merge'; method: MergeMethod }
+  | { kind: 'disarm_merge' }
+
+/** Accelerators the panel shortcut may use (a closed list, so nothing invalid is ever registered). */
+export const SHORTCUT_OPTIONS = ['', 'Alt+Shift+P', 'CommandOrControl+Shift+P', 'Control+Alt+P', 'CommandOrControl+Alt+R'] as const
 
 export type ActionErrorCode =
   /** The PR changed since the panel showed it; refresh and look again. */
@@ -174,6 +181,7 @@ export type WarningCode =
   | 'app_permissions_pending'
   /** Some repository/author exclusions didn't fit in GitHub's 256-character search. */
   | 'filters_truncated'
+  | 'truncated_involved'
 export interface Warning {
   code: WarningCode
   params?: Record<string, string | number>
@@ -189,6 +197,8 @@ export interface AppState {
   prs: PullRequest[]
   /** Your own open PRs, newest first. */
   myPrs: MyPullRequest[]
+  /** Open PRs you take part in (mentioned, assigned, commented) without being asked to review. */
+  involved: PullRequest[]
   lastUpdated: string | null
   /** The last poll failed; `detail` is GitHub's raw message (untranslated). */
   error: { code: GithubErrorKind; detail?: string; retryAt?: number } | null
@@ -216,6 +226,8 @@ export interface AppState {
   canWrite: boolean
   /** PR id → action the main process is running on it right now. */
   pendingActions: Record<string, PrAction['kind']>
+  /** Your PRs that PR Radar will merge itself once GitHub accepts a merge. */
+  armedMerges: Record<string, { method: MergeMethod; armedAt: number }>
 }
 
 export type AuthNotice = 'session_expired' | 'refresh_unsupported' | 'keychain_denied'
@@ -233,6 +245,10 @@ export interface Settings {
   staleAfterDays: number
   reviewFilter: ReviewFilter
   reviewSort: ReviewSort
+  /** Third tab with PRs you take part in; costs a little more per poll. */
+  showInvolved: boolean
+  /** Electron accelerator that opens the panel from anywhere; '' for none (see SHORTCUT_OPTIONS). */
+  shortcut: string
   pollIntervalSec: number
   clientId: string
   language: LanguagePref
@@ -262,6 +278,8 @@ export const DEFAULT_SETTINGS: Settings = {
   staleAfterDays: 3,
   reviewFilter: 'all',
   reviewSort: 'newest',
+  showInvolved: true,
+  shortcut: '',
   pollIntervalSec: 30,
   clientId: '',
   language: 'system',
@@ -331,6 +349,8 @@ export interface PrRadarApi {
   /** Settings changed (from the panel or the tray menu). */
   onSettings(cb: (settings: Settings & { openAtLogin: boolean }) => void): () => void
   openExternal(url: string): Promise<void>
+  /** Opens a check's details page; only URLs present in the current state are allowed. */
+  openCheck(url: string): Promise<void>
   testNotification(): Promise<NotifyResult>
   openNotificationSettings(): Promise<void>
   appInfo(): Promise<{ version: string; packaged: boolean }>
@@ -370,6 +390,7 @@ export const IPC = {
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   openExternal: 'shell:open-external',
+  openCheck: 'shell:open-check',
   testNotification: 'notify:test',
   openNotificationSettings: 'notify:open-settings',
   appInfo: 'app:info',

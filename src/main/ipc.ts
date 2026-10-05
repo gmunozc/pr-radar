@@ -30,6 +30,7 @@ export interface IpcContext {
   hidePanel(): void
   prAction(prId: string, action: PrAction): Promise<ActionResult>
   copyText(text: string): Promise<{ ok: boolean }>
+  openCheck(url: string): Promise<void>
   relaunch(): void
   hasClientId(): boolean
   authMethods(): { available: Record<AuthMethod, boolean>; preferred: AuthMethod }
@@ -59,6 +60,16 @@ export function isAllowedExternalUrl(url: string): boolean {
   }
 }
 
+/**
+ * Check details may live outside github.com (CircleCI, Vercel…); only URLs GitHub itself gave
+ * us in the current state may be opened, never arbitrary ones from the renderer.
+ */
+export function isKnownCheckUrl(state: Pick<AppState, 'prs' | 'myPrs' | 'involved'>, url: string): boolean {
+  if (!url.startsWith('https://')) return false
+  const all = [...state.prs, ...state.myPrs, ...state.involved]
+  return all.some((pr) => pr.checks.some((check) => check.url === url))
+}
+
 /** Validates an action sent by the panel; anything unexpected is dropped rather than guessed. */
 export function parsePrAction(value: unknown): PrAction | null {
   if (!value || typeof value !== 'object') return null
@@ -67,9 +78,11 @@ export function parsePrAction(value: unknown): PrAction | null {
     case 'update_branch':
     case 'disable_auto_merge':
     case 'rerequest_review':
+    case 'disarm_merge':
       return { kind: a.kind }
     case 'enable_auto_merge':
     case 'merge':
+    case 'arm_merge':
       return typeof a.method === 'string' && MERGE_METHODS.includes(a.method)
         ? { kind: a.kind, method: a.method as MergeMethod }
         : null
@@ -96,6 +109,9 @@ export function registerIpc(ctx: IpcContext): void {
     typeof text === 'string' && text.length <= MAX_COPY_LENGTH ? ctx.copyText(text) : { ok: false }
   )
   ipcMain.handle(IPC.relaunch, () => ctx.relaunch())
+  ipcMain.handle(IPC.openCheck, async (_e, url: unknown) => {
+    if (typeof url === 'string') await ctx.openCheck(url)
+  })
   ipcMain.handle(IPC.snooze, (_e, prId: unknown, option: unknown) => {
     if (typeof prId === 'string' && typeof option === 'string' && SNOOZE_OPTIONS.includes(option)) {
       ctx.snooze(prId, option as SnoozeOption)

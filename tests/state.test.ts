@@ -10,7 +10,8 @@ describe('migrateState', () => {
       dismissedIds: [],
       snoozed: {},
       snoozedUntilPush: {},
-      queued: { reviews: [], reminders: [], approved: [], changes: [], ready: [], sessionExpired: false },
+      mergeWhenReady: {},
+      queued: { reviews: [], reminders: [], approved: [], changes: [], ready: [], merged: [], mergeFailed: [], sessionExpired: false },
       lastDigestDay: null
     })
     expect(migrateState({ login: 'octo', seenIds: ['a'], dismissedIds: ['a'] })?.dismissedIds).toEqual(['a'])
@@ -55,6 +56,27 @@ describe('migrateState and snoozes until new commits', () => {
     const state = migrateState({ login: 'me', seenIds: [], snoozedUntilPush: { a: 'abc', b: 7, c: '' } })
     expect(state?.snoozedUntilPush).toEqual({ a: 'abc' })
     expect(migrateState({ login: 'me', seenIds: [], snoozedUntilPush: ['x'] })?.snoozedUntilPush).toEqual({})
+  })
+})
+
+describe('migrateState and armed merges', () => {
+  it('keeps well-formed entries and drops the rest', () => {
+    const state = migrateState({
+      login: 'me',
+      seenIds: [],
+      mergeWhenReady: {
+        a: { headOid: 'h1', method: 'SQUASH', armedAt: 5, sawChecks: true },
+        b: { headOid: 'h2', method: 'FAST' },
+        c: { method: 'MERGE' },
+        d: { headOid: 'h4', method: 'REBASE' }
+      },
+      queued: { merged: ['a', 1], mergeFailed: ['b'] }
+    })
+    expect(state?.mergeWhenReady).toEqual({
+      a: { headOid: 'h1', method: 'SQUASH', armedAt: 5, sawChecks: true },
+      d: { headOid: 'h4', method: 'REBASE', armedAt: 0, sawChecks: false }
+    })
+    expect(state?.queued).toMatchObject({ merged: ['a'], mergeFailed: ['b'] })
   })
 })
 

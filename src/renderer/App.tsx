@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AppState, AuthStatus } from '../shared/types'
 import { Header } from './components/Header'
+import { InvolvedList } from './components/InvolvedList'
 import { LoginView } from './components/LoginView'
 import { MyPrList } from './components/MyPrList'
 import { PrList } from './components/PrList'
@@ -8,6 +9,7 @@ import { SettingsView } from './components/SettingsView'
 import { Tabs, type Tab } from './components/Tabs'
 import { UpdateBanner } from './components/UpdateBanner'
 import { I18nProvider } from './i18n'
+import { useSettings } from './useSettings'
 
 const api = window.prRadar
 
@@ -17,6 +19,14 @@ function Panel() {
   const [view, setView] = useState<'list' | 'settings'>('list')
   const [tab, setTab] = useState<Tab>('review')
   const [refreshing, setRefreshing] = useState(false)
+  const settings = useSettings()
+  const showInvolved = settings?.showInvolved ?? true
+  const tabs: Tab[] = showInvolved ? ['review', 'mine', 'involved'] : ['review', 'mine']
+
+  // The involved tab can be turned off while it is selected.
+  useEffect(() => {
+    if (!showInvolved && tab === 'involved') setTab('review')
+  }, [showInvolved, tab])
 
   useEffect(() => {
     void api.getState().then(setState)
@@ -61,17 +71,18 @@ function Panel() {
         return
       }
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+      const tabIndex = ['1', '2', '3'].indexOf(e.key)
       if (e.key === 'r') refresh()
-      else if (e.key === '1' || e.key === '2') {
+      else if (tabIndex !== -1 && tabs[tabIndex]) {
         setView('list')
-        setTab(e.key === '1' ? 'review' : 'mine')
+        setTab(tabs[tabIndex])
       } else if (e.key === ',') setView((v) => (v === 'settings' ? 'list' : 'settings'))
       else return
       e.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [view])
+  }, [view, showInvolved])
 
   if (!state) return <div className="app" />
 
@@ -98,8 +109,13 @@ function Panel() {
       ) : (
         <>
           {state.update && <UpdateBanner update={state.update} />}
-          <Tabs tab={tab} onChange={setTab} reviewCount={state.prs.length} mineCount={state.myPrs.length} />
-          {tab === 'review' ? <PrList state={state} /> : <MyPrList state={state} />}
+          <Tabs
+            tab={tab}
+            onChange={setTab}
+            tabs={tabs}
+            counts={{ review: state.prs.length, mine: state.myPrs.length, involved: state.involved.length }}
+          />
+          {tab === 'review' ? <PrList state={state} /> : tab === 'mine' ? <MyPrList state={state} /> : <InvolvedList state={state} />}
         </>
       )}
     </div>

@@ -44,6 +44,12 @@ describe('exclusions and list settings', () => {
     expect(sanitizeSettingsPatch({ excludeRepos: Array.from({ length: 40 }, (_, i) => `acme/r${i}`) }).excludeRepos).toHaveLength(30)
   })
 
+  it('only accepts shortcuts from the closed list', () => {
+    expect(sanitizeSettingsPatch({ shortcut: 'Alt+Shift+P', showInvolved: false })).toEqual({ shortcut: 'Alt+Shift+P', showInvolved: false })
+    expect(sanitizeSettingsPatch({ shortcut: '' })).toEqual({ shortcut: '' })
+    expect(sanitizeSettingsPatch({ shortcut: 'Control+Q' })).toEqual({})
+  })
+
   it('clamps stale days and only accepts known filter and sort values', () => {
     expect(sanitizeSettingsPatch({ staleAfterDays: 99, reviewFilter: 'team', reviewSort: 'oldest' })).toEqual({
       staleAfterDays: 30,

@@ -3,15 +3,16 @@ import { PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
-import { MyPrItem } from './MyPrItem'
+import { PrItem } from './PrItem'
 
-const MY_PULLS_URL = 'https://github.com/pulls'
+const MENTIONED_URL = 'https://github.com/pulls/mentioned'
 
-export function MyPrList({ state }: { state: AppState }) {
+/** Open PRs you take part in (mentioned, assigned, commented) without a review request. */
+export function InvolvedList({ state }: { state: AppState }) {
   const t = useT()
   const settings = useSettings()
 
-  if (state.status === 'loading' && state.myPrs.length === 0) {
+  if (state.status === 'loading' && state.involved.length === 0) {
     return (
       <main className="list list-empty">
         <div className="spinner" />
@@ -19,12 +20,12 @@ export function MyPrList({ state }: { state: AppState }) {
     )
   }
 
-  if (state.myPrs.length === 0) {
+  if (state.involved.length === 0) {
     return (
       <main className="list list-empty">
         <PullRequestIcon size={32} className="empty-icon-muted" />
-        <div className="empty-title">{t('mine.emptyTitle')}</div>
-        <div className="empty-sub">{t('mine.emptySub')}</div>
+        <div className="empty-title">{t('involved.emptyTitle')}</div>
+        <div className="empty-sub">{t('involved.emptySub')}</div>
       </main>
     )
   }
@@ -32,20 +33,20 @@ export function MyPrList({ state }: { state: AppState }) {
   return (
     <>
       <main className="list" onKeyDown={onListKeyDown}>
-        {state.myPrs.map((pr) => (
-          <MyPrItem
+        {state.involved.map((pr) => (
+          <PrItem
             key={pr.id}
             pr={pr}
+            snoozeTomorrowAt={state.snoozeTomorrowAt}
             canWrite={state.canWrite}
             pending={state.pendingActions[pr.id]}
-            armed={state.armedMerges[pr.id]}
             staleDays={settings?.staleAfterDays ?? 0}
           />
         ))}
       </main>
       <footer className="footer">
-        <button className="link" onClick={() => void window.prRadar.openExternal(MY_PULLS_URL)}>
-          {t('mine.viewAll')}
+        <button className="link" onClick={() => void window.prRadar.openExternal(MENTIONED_URL)}>
+          {t('involved.viewAll')}
         </button>
       </footer>
     </>

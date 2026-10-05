@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import type { LanguagePref } from '../../shared/i18n'
-import { MIN_POLL_INTERVAL_SEC, type AppState, type NotifyResult, type Settings } from '../../shared/types'
+import { MIN_POLL_INTERVAL_SEC, SHORTCUT_OPTIONS, type AppState, type NotifyResult, type Settings } from '../../shared/types'
+
+const MAC_KEYS: Record<string, string> = { CommandOrControl: '⌘', Control: '⌃', Alt: '⌥', Shift: '⇧' }
+const PC_KEYS: Record<string, string> = { CommandOrControl: 'Ctrl', Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift' }
+
+/** An Electron accelerator as the user's keyboard shows it: ⌥⇧P on a Mac, Alt+Shift+P elsewhere. */
+export function shortcutLabel(accelerator: string, platform: string): string {
+  const mac = platform === 'darwin'
+  const keys = accelerator.split('+').map((k) => (mac ? MAC_KEYS : PC_KEYS)[k] ?? k)
+  return keys.join(mac ? '' : '+')
+}
 import { useLocale, useT } from '../i18n'
 import { openOrgAccess } from './PrList'
 
@@ -93,6 +103,7 @@ export function SettingsView({ state }: { state: AppState }) {
   const [settings, setSettings] = useState<SettingsState | null>(null)
   const [interval, setIntervalValue] = useState('')
   const [stale, setStale] = useState('')
+  const [shortcutTaken, setShortcutTaken] = useState(false)
   const [testResult, setTestResult] = useState<NotifyResult | 'sending' | null>(null)
   const [version, setVersion] = useState('')
   const [copied, setCopied] = useState(false)
@@ -122,6 +133,13 @@ export function SettingsView({ state }: { state: AppState }) {
     setSettings(next)
     setIntervalValue(String(next.pollIntervalSec))
     setStale(String(next.staleAfterDays))
+    return next
+  }
+
+  const chooseShortcut = async (shortcut: string) => {
+    const next = await update({ shortcut })
+    // The main process falls back to none when another app owns the shortcut.
+    setShortcutTaken(shortcut !== '' && next.shortcut === '')
   }
 
   const commitInterval = () => {
@@ -170,6 +188,12 @@ export function SettingsView({ state }: { state: AppState }) {
           hint={t('settings.hideBotsHint')}
           checked={settings.hideBots}
           onChange={(v) => void update({ hideBots: v })}
+        />
+        <Toggle
+          label={t('settings.showInvolved')}
+          hint={t('settings.showInvolvedHint')}
+          checked={settings.showInvolved}
+          onChange={(v) => void update({ showInvolved: v })}
         />
         <ListInput
           label={t('settings.excludeRepos')}
@@ -348,6 +372,21 @@ export function SettingsView({ state }: { state: AppState }) {
             </button>
           </div>
         )}
+        <label className="setting">
+          <div className="setting-text">
+            <div className="setting-label">{t('settings.shortcut')}</div>
+            <div className={`setting-hint ${shortcutTaken ? 'setting-error' : ''}`}>
+              {shortcutTaken ? t('settings.shortcutTaken') : t('settings.shortcutHint')}
+            </div>
+          </div>
+          <select className="input select" value={settings.shortcut} onChange={(e) => void chooseShortcut(e.target.value)}>
+            {SHORTCUT_OPTIONS.map((accelerator) => (
+              <option key={accelerator} value={accelerator}>
+                {accelerator ? shortcutLabel(accelerator, api.platform) : t('settings.shortcutNone')}
+              </option>
+            ))}
+          </select>
+        </label>
         {!isLinux && (
           <Toggle
             label={t('settings.openAtLogin')}

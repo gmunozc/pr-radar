@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, MIN_POLL_INTERVAL_SEC, type Settings } from '../shared/types'
+import { DEFAULT_SETTINGS, MIN_POLL_INTERVAL_SEC, SHORTCUT_OPTIONS, type Settings } from '../shared/types'
 
 export type SettingsPatch = Partial<Settings> & { openAtLogin?: boolean }
 
@@ -30,6 +30,7 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
     'notifications',
     'showDrafts',
     'hideBots',
+    'showInvolved',
     'notifyMyPrs',
     'quietHours',
     'digest',
@@ -50,6 +51,7 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (authors) out.excludeAuthors = authors
   if (p.reviewFilter === 'all' || p.reviewFilter === 'direct' || p.reviewFilter === 'team') out.reviewFilter = p.reviewFilter
   if (p.reviewSort === 'newest' || p.reviewSort === 'oldest' || p.reviewSort === 'updated') out.reviewSort = p.reviewSort
+  if (typeof p.shortcut === 'string' && (SHORTCUT_OPTIONS as readonly string[]).includes(p.shortcut)) out.shortcut = p.shortcut
   if (typeof p.clientId === 'string') out.clientId = p.clientId.trim()
   if (p.language === 'system' || p.language === 'en' || p.language === 'es') out.language = p.language
   for (const key of ['workStart', 'workEnd', 'digestTime'] as const) {

@@ -208,6 +208,27 @@ const mine: MyPullRequest[] = [
   }
 ]
 
+/** PRs the user takes part in without a review request (the "Involved" tab). */
+const involved: PullRequest[] = [
+  {
+    ...base,
+    id: 'I1',
+    number: 530,
+    title: 'Design review: new empty states',
+    url: 'https://github.com/acme/web/pull/530',
+    repo: 'acme/web',
+    author: people.cris,
+    createdAt: ago(6 * 3_600_000),
+    updatedAt: ago(1_800_000),
+    headOid: 'i1',
+    source: { kind: 'involved' },
+    viewerDidAuthor: false,
+    lastReviewAt: null,
+    newCommitsSinceReview: false,
+    labels: [{ name: 'design', color: 'c5def5' }]
+  }
+]
+
 export function createMockApi(): PrRadarApi {
   let settings: SettingsView = { ...DEFAULT_SETTINGS, language: 'es', openAtLogin: false }
   const stateListeners = new Set<(s: AppState) => void>()
@@ -217,6 +238,7 @@ export function createMockApi(): PrRadarApi {
     viewer: people.you,
     prs: reviews,
     myPrs: mine,
+    involved,
     lastUpdated: ago(20_000),
     error: null,
     warnings: [],
@@ -231,7 +253,8 @@ export function createMockApi(): PrRadarApi {
     installations: null,
     authNotice: null,
     canWrite: true,
-    pendingActions: {}
+    pendingActions: {},
+    armedMerges: {}
   }
   const publish = (patch: Partial<AppState>) => {
     state = { ...state, ...patch }
@@ -268,6 +291,14 @@ export function createMockApi(): PrRadarApi {
       case 'rerequest_review':
         edit((p) => ({ ...p, status: 'waiting', pendingReviewers: [{ kind: 'user', login: 'bob', avatarUrl: people.bob.avatarUrl }] }))
         break
+      case 'arm_merge':
+        publish({ armedMerges: { ...state.armedMerges, [prId]: { method: a.method, armedAt: Date.now() } } })
+        break
+      case 'disarm_merge': {
+        const { [prId]: _gone, ...rest } = state.armedMerges
+        publish({ armedMerges: rest })
+        break
+      }
     }
     done()
     return { ok: true }
@@ -318,6 +349,7 @@ export function createMockApi(): PrRadarApi {
       return () => settingsListeners.delete(cb)
     },
     openExternal: async (url) => console.info('[mock] open', url),
+    openCheck: async (url) => console.info('[mock] open check', url),
     testNotification: async () => ({ ok: true }),
     openNotificationSettings: async () => {},
     appInfo: async () => ({ version: 'dev', packaged: false }),

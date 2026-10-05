@@ -1,5 +1,5 @@
 /** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
-import { app, clipboard, net, Notification, powerMonitor, screen, shell } from 'electron'
+import { app, clipboard, globalShortcut, net, Notification, powerMonitor, screen, shell } from 'electron'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -12,12 +12,13 @@ import { buildDiagnostics } from './diagnostics'
 import { Engine } from './engine'
 import { fetchInstallations, fetchPullRequests } from './github'
 import { applyLanguage, currentLocale } from './i18n'
-import { registerIpc } from './ipc'
+import { isKnownCheckUrl, registerIpc } from './ipc'
 import { logger } from './log'
 import { deliverEvents } from './notifier'
 import { Poller } from './poller'
 import { Session, SessionExpiredError } from './session'
 import { normalizeSettings } from './settings'
+import { applyShortcut } from './shortcut'
 import { JsonFile } from './store'
 import { AppTray } from './tray'
 import { fetchLatestRelease, isReleaseUrl, UpdateChecker, type UpdateCheckerState } from './updates'
@@ -86,6 +87,7 @@ function main(): void {
   const faults = app.isPackaged ? null : new FaultInjector()
   const panel = new Panel()
   const showPanel = () => panel.show(tray?.getBounds())
+  const togglePanel = () => panel.toggle(tray?.getBounds())
 
   const publishAuth = (status: AuthStatus) => {
     if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.authStatus, status)
@@ -234,6 +236,10 @@ function main(): void {
         return { ok: false }
       }
     },
+    openCheck: async (url) => {
+      if (isKnownCheckUrl(engine.state, url)) await shell.openExternal(url)
+      else logger.warn('refused to open an unknown check URL', { url })
+    },
     relaunch: () => {
       logger.info('relaunching')
       app.relaunch()
@@ -294,6 +300,8 @@ function main(): void {
         (key) => rest[key] !== undefined && JSON.stringify(rest[key]) !== JSON.stringify(settings[key])
       )
       settings = { ...settings, ...rest }
+      // A shortcut another app owns can't be registered: fall back to none so the UI says so.
+      if (rest.shortcut !== undefined && !applyShortcut(settings.shortcut, togglePanel)) settings = { ...settings, shortcut: '' }
       settingsFile.write(settings)
       if (applyLanguage(settings.language, app.getPreferredSystemLanguages())) {
         logger.info('language changed', { locale: currentLocale() })
@@ -335,6 +343,12 @@ function main(): void {
   powerMonitor.on('unlock-screen', wake)
 
   app.on('second-instance', showPanel)
+
+  if (!applyShortcut(settings.shortcut, togglePanel)) {
+    settings = { ...settings, shortcut: '' }
+    settingsFile.write(settings)
+  }
+  app.on('will-quit', () => globalShortcut.unregisterAll())
 
   // Snoozes, quiet hours and the digest are time-based: check them every minute.
   setInterval(() => engine.tick(), 60_000)

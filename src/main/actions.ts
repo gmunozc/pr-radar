@@ -18,12 +18,15 @@ export interface ActionTarget {
 
 type FetchFn = typeof fetch
 
+/** Actions that reach GitHub; arming a merge is decided locally by the engine. */
+export type RemoteAction = Exclude<PrAction, { kind: 'arm_merge' } | { kind: 'disarm_merge' }>
+
 interface GraphqlError {
   type?: string
   message: string
 }
 
-const MUTATIONS: Record<PrAction['kind'], string> = {
+const MUTATIONS: Record<RemoteAction['kind'], string> = {
   update_branch: /* GraphQL */ `
     mutation UpdateBranch($id: ID!, $head: GitObjectID) {
       updatePullRequestBranch(input: { pullRequestId: $id, expectedHeadOid: $head }) { pullRequest { headRefOid } }
@@ -55,7 +58,7 @@ const MUTATIONS: Record<PrAction['kind'], string> = {
 }
 
 /** The mutation and variables for an action; `expectedHeadOid` is omitted when the head is unknown. */
-export function mutationFor(pr: ActionTarget, action: PrAction): { query: string; variables: Record<string, unknown> } {
+export function mutationFor(pr: ActionTarget, action: RemoteAction): { query: string; variables: Record<string, unknown> } {
   const head = pr.headOid || undefined
   switch (action.kind) {
     case 'update_branch':
@@ -96,7 +99,7 @@ export function actionErrorCode(errors: GraphqlError[]): { code: ActionErrorCode
 export async function runPrAction(
   token: string,
   pr: ActionTarget,
-  action: PrAction,
+  action: RemoteAction,
   fetchFn: FetchFn = fetch
 ): Promise<ActionResult> {
   const { query, variables } = mutationFor(pr, action)

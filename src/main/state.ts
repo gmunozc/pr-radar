@@ -1,4 +1,17 @@
+import type { MergeMethod } from '../shared/types'
 import type { MyPrSnapshot } from './diff'
+
+/** One of your PRs that PR Radar merges itself once GitHub would accept it. */
+export interface ArmedMerge {
+  /** Head commit as of the last poll; the merge expects it (stays armed across pushes). */
+  headOid: string
+  method: MergeMethod
+  armedAt: number
+  /** Some poll saw checks on this PR: never merge while they're still being created. */
+  sawChecks: boolean
+}
+
+const MERGE_METHODS: readonly string[] = ['MERGE', 'SQUASH', 'REBASE']
 
 /** What PR Radar remembers between polls and restarts (state.json), per GitHub account. */
 export interface PersistedState {
@@ -13,6 +26,8 @@ export interface PersistedState {
   snoozed: Record<string, number>
   /** PR id → head commit when it was snoozed "until new commits"; it comes back when the head changes. */
   snoozedUntilPush: Record<string, string>
+  /** Your PRs PR Radar will merge once GitHub accepts a merge. */
+  mergeWhenReady: Record<string, ArmedMerge>
   /** Notifications held back by quiet hours, delivered together when they end. */
   queued: QueuedAlerts
   /** Local day ("YYYY-MM-DD") the last daily digest was handled. */
@@ -26,6 +41,8 @@ export interface QueuedAlerts {
   approved: string[]
   changes: string[]
   ready: string[]
+  merged: string[]
+  mergeFailed: string[]
   sessionExpired: boolean
 }
 
@@ -35,6 +52,8 @@ export const emptyQueue = (): QueuedAlerts => ({
   approved: [],
   changes: [],
   ready: [],
+  merged: [],
+  mergeFailed: [],
   sessionExpired: false
 })
 
@@ -46,8 +65,26 @@ function queue(v: unknown): QueuedAlerts {
     approved: stringArray(r.approved),
     changes: stringArray(r.changes),
     ready: stringArray(r.ready),
+    merged: stringArray(r.merged),
+    mergeFailed: stringArray(r.mergeFailed),
     sessionExpired: r.sessionExpired === true
   }
+}
+
+function armed(v: unknown): Record<string, ArmedMerge> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  const out: Record<string, ArmedMerge> = {}
+  for (const [id, raw] of Object.entries(v as Record<string, unknown>)) {
+    const r = raw as Partial<ArmedMerge> | null
+    if (!r || typeof r.headOid !== 'string' || typeof r.method !== 'string' || !MERGE_METHODS.includes(r.method)) continue
+    out[id] = {
+      headOid: r.headOid,
+      method: r.method,
+      armedAt: typeof r.armedAt === 'number' && Number.isFinite(r.armedAt) ? r.armedAt : 0,
+      sawChecks: r.sawChecks === true
+    }
+  }
+  return out
 }
 
 function snoozes(v: unknown): Record<string, number> {
@@ -94,6 +131,7 @@ export function migrateState(raw: unknown): PersistedState | null {
     ...(myPrs ? { myPrs } : {}),
     snoozed: snoozes(r.snoozed),
     snoozedUntilPush: oids(r.snoozedUntilPush),
+    mergeWhenReady: armed(r.mergeWhenReady),
     queued: queue(r.queued),
     lastDigestDay: typeof r.lastDigestDay === 'string' ? r.lastDigestDay : null
   }

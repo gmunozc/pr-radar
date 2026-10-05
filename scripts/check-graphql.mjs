@@ -38,9 +38,11 @@ const base = 'is:pr is:open archived:false'
 const result = run(query, {
   requested: `${base} review-requested:@me`,
   mine: `${base} author:@me`,
+  involved: `${base} involves:@me -author:@me -review-requested:@me`,
   first: 5,
   login,
-  withMyReview: true
+  withMyReview: true,
+  withInvolved: true
 })
 report('PULL_REQUESTS_QUERY', result.errors ?? [])
 for (const [name, doc] of mutations) {

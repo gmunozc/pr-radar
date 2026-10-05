@@ -10,12 +10,14 @@ import type {
   AppState,
   AuthNotice,
   ConnectionState,
+  MergeMethod,
+  MyPullRequest,
   PrAction,
   PullRequest,
   Settings,
   Warning
 } from '../shared/types'
-import type { ActionTarget } from './actions'
+import type { ActionTarget, RemoteAction } from './actions'
 import {
   applyHidden,
   diffMyPrs,
@@ -31,7 +33,7 @@ import { capMyPrEvents, planToEvents, type CatchUp, type NotificationEvent } fro
 import { SessionExpiredError, type ExpiryReason, type Session } from './session'
 import { dayKey, digestDue, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil } from './schedule'
 import type { SnoozeOption } from '../shared/types'
-import { emptyQueue, migrateState, type PersistedState, type QueuedAlerts } from './state'
+import { emptyQueue, migrateState, type ArmedMerge, type PersistedState, type QueuedAlerts } from './state'
 
 export type SessionLike = Pick<Session, 'current' | 'getAccessToken' | 'handleUnauthorized' | 'setLogin' | 'clear'>
 
@@ -49,7 +51,7 @@ export interface EngineDeps {
   /** GitHub App sessions only: where the app is installed. */
   fetchInstallations?(token: string): Promise<InstallationInfo[]>
   /** Writes to GitHub (merge, update branch, …); absent when the build can't write. */
-  runPrAction?(token: string, pr: ActionTarget, action: PrAction): Promise<ActionResult>
+  runPrAction?(token: string, pr: ActionTarget, action: RemoteAction): Promise<ActionResult>
   /** Asks for a poll soon, e.g. after an action changed a PR. */
   requestPoll?(): void
   stateStore: StateStore
@@ -70,21 +72,41 @@ export const DIGEST_FRESHNESS_MS = 5 * 60_000
 /** How often a GitHub App session re-checks its installations (more often while there are none). */
 export const INSTALLATION_CHECK_MS = 30 * 60_000
 export const INSTALLATION_RECHECK_EMPTY_MS = 5 * 60_000
+/**
+ * An armed merge fires once GitHub has reported the PR mergeable this many polls in a row with
+ * the same head: absorbs UNKNOWN→CLEAN flips and pushes still in flight.
+ */
+export const READY_POLLS_BEFORE_MERGE = 2
 const DAY_MS = 24 * 3_600_000
+
+interface MergeDone {
+  pr: MyPullRequest
+  method: MergeMethod
+}
+
+interface MergeFailure {
+  pr: MyPullRequest
+  code: ActionErrorCode
+  detail?: string
+}
 
 /** Alerts produced by one poll (or tick), before quiet hours and grouping are applied. */
 interface Alerts {
   reviewPlan: NotificationPlan
   returned: PullRequest[]
   mine: MyPrEvent[]
+  merged?: MergeDone[]
+  mergeFailed?: MergeFailure[]
   sessionExpired?: boolean
 }
 
-const hasAny = (c: CatchUp) => c.reviews + c.reminders + c.approved + c.changes + c.ready > 0 || c.sessionExpired
+const hasAny = (c: CatchUp) =>
+  c.reviews + c.reminders + c.approved + c.changes + c.ready + c.merged + c.mergeFailed > 0 || c.sessionExpired
 const snoozedCount = (h: Pick<HiddenResult, 'snoozed' | 'snoozedUntilPush'>) =>
   Object.keys(h.snoozed).length + Object.keys(h.snoozedUntilPush).length
 const queueHasItems = (q: QueuedAlerts) =>
-  q.reviews.length + q.reminders.length + q.approved.length + q.changes.length + q.ready.length > 0 || q.sessionExpired
+  q.reviews.length + q.reminders.length + q.approved.length + q.changes.length + q.ready.length + q.merged.length + q.mergeFailed.length >
+    0 || q.sessionExpired
 
 export function loggedOutState(authNotice: AuthNotice | null = null, locale: Locale = 'en'): AppState {
   return {
@@ -92,6 +114,7 @@ export function loggedOutState(authNotice: AuthNotice | null = null, locale: Loc
     viewer: null,
     prs: [],
     myPrs: [],
+    involved: [],
     lastUpdated: null,
     error: null,
     warnings: [],
@@ -106,7 +129,8 @@ export function loggedOutState(authNotice: AuthNotice | null = null, locale: Loc
     connection: 'ok',
     locale,
     canWrite: false,
-    pendingActions: {}
+    pendingActions: {},
+    armedMerges: {}
   }
 }
 
@@ -128,6 +152,8 @@ export class Engine {
   private installs: InstallationInfo[] | null = null
   private installWarnings: Warning[] = []
   private lastInstallCheckAt = 0
+  /** Armed merges: how many polls in a row GitHub reported the PR mergeable with this head. */
+  private readyStreak = new Map<string, { headOid: string; count: number }>()
 
   constructor(
     private readonly deps: EngineDeps,
@@ -175,6 +201,7 @@ export class Engine {
         now
       )
       const mine = diffMyPrs(stored?.myPrs, result.myPrs)
+      const armed = await this.fireArmedMerges(stored?.mergeWhenReady ?? {}, result.myPrs)
       this.save({
         v: 2,
         login: result.viewer.login,
@@ -182,6 +209,7 @@ export class Engine {
         dismissedIds: hidden.dismissedIds,
         snoozed: hidden.snoozed,
         snoozedUntilPush: hidden.snoozedUntilPush,
+        mergeWhenReady: armed.remaining,
         myPrs: mine.snapshot,
         queued: stored?.queued ?? emptyQueue(),
         lastDigestDay: stored?.lastDigestDay ?? null
@@ -194,6 +222,7 @@ export class Engine {
         viewer: result.viewer,
         prs: hidden.visible,
         myPrs: result.myPrs,
+        involved: result.involved,
         lastUpdated: new Date(now).toISOString(),
         error: null,
         warnings: [...result.warnings, ...this.installWarnings, ...(this.sessionWarning ? [this.sessionWarning] : [])],
@@ -205,7 +234,9 @@ export class Engine {
       this.dispatch({
         reviewPlan: planNotifications(diff, hidden.visible.length),
         returned: hidden.returned,
-        mine: mine.events
+        mine: mine.events,
+        merged: armed.merged,
+        mergeFailed: armed.failed
       })
       this.tick()
     } catch (err) {
@@ -263,6 +294,7 @@ export class Engine {
   async runAction(prId: string, action: PrAction): Promise<ActionResult> {
     const session = this.deps.session.current
     if (!session || session.method !== 'oauth_app' || !this.deps.runPrAction) return { ok: false, code: 'forbidden' }
+    if (action.kind === 'arm_merge' || action.kind === 'disarm_merge') return this.setArmed(prId, action)
     const target = this.actionTarget(prId, action)
     if (!target.ok) return target
     if (this.current.pendingActions[prId]) return { ok: false, code: 'unknown', detail: 'Another action is still running' }
@@ -291,10 +323,96 @@ export class Engine {
     }
   }
 
+  /**
+   * "Merge when ready": remembered locally and fired by `poll` once GitHub reports the PR
+   * mergeable (see fireArmedMerges). For repositories without GitHub's own auto-merge.
+   */
+  private setArmed(prId: string, action: Extract<PrAction, { kind: 'arm_merge' | 'disarm_merge' }>): ActionResult {
+    if (!this.persisted) return { ok: false, code: 'unknown', detail: 'No state yet' }
+    const pr = this.current.myPrs.find((p) => p.id === prId)
+    if (!pr) return { ok: false, code: 'not_found' }
+    const mergeWhenReady = { ...this.persisted.mergeWhenReady }
+    if (action.kind === 'arm_merge') {
+      if (!pr.can.merge) return { ok: false, code: 'forbidden' }
+      mergeWhenReady[prId] = { headOid: pr.headOid, method: action.method, armedAt: this.deps.now(), sawChecks: pr.ci !== 'none' }
+      this.deps.log.info('merge armed', { repo: pr.repo, number: pr.number, method: action.method })
+    } else {
+      delete mergeWhenReady[prId]
+      this.readyStreak.delete(prId)
+      this.deps.log.info('merge disarmed', { repo: pr.repo, number: pr.number })
+    }
+    this.save({ ...this.persisted, mergeWhenReady })
+    this.publish(this.current)
+    return { ok: true }
+  }
+
+  /**
+   * Merges armed PRs that GitHub has reported mergeable for READY_POLLS_BEFORE_MERGE polls in a
+   * row. Stays armed across pushes (like GitHub's auto-merge) but never merges before the checks
+   * of a new push exist, and always with the head commit seen in this poll. Anything that fails
+   * disarms the PR and is reported.
+   */
+  private async fireArmedMerges(
+    armed: Record<string, ArmedMerge>,
+    myPrs: MyPullRequest[]
+  ): Promise<{ remaining: Record<string, ArmedMerge>; merged: MergeDone[]; failed: MergeFailure[] }> {
+    const remaining: Record<string, ArmedMerge> = {}
+    const merged: MergeDone[] = []
+    const failed: MergeFailure[] = []
+    const runPrAction = this.deps.runPrAction
+    const canWrite = this.deps.session.current?.method === 'oauth_app'
+    for (const [prId, entry] of Object.entries(armed)) {
+      const pr = myPrs.find((p) => p.id === prId)
+      if (!pr) {
+        // Merged or closed by someone else: nothing left to do.
+        this.deps.log.info('armed merge dropped, PR no longer open', { prId })
+        this.readyStreak.delete(prId)
+        continue
+      }
+      const sawChecks = entry.sawChecks || pr.ci !== 'none'
+      const ready = pr.mergeable && pr.can.merge && !pr.isDraft && (!sawChecks || pr.ci === 'success')
+      const streak = this.readyStreak.get(prId)
+      const count = ready ? (streak && streak.headOid === pr.headOid ? streak.count + 1 : 1) : 0
+      if (ready) this.readyStreak.set(prId, { headOid: pr.headOid, count })
+      else this.readyStreak.delete(prId)
+      if (!ready || count < READY_POLLS_BEFORE_MERGE || !runPrAction || !canWrite) {
+        remaining[prId] = { ...entry, headOid: pr.headOid, sawChecks }
+        continue
+      }
+      const target: ActionTarget = { id: pr.id, headOid: pr.headOid, repo: pr.repo, number: pr.number }
+      try {
+        const result = await this.withToken((token) => runPrAction(token, target, { kind: 'merge', method: entry.method }))
+        if (result.ok) {
+          this.deps.log.info('armed merge done', { repo: pr.repo, number: pr.number, method: entry.method })
+          merged.push({ pr, method: entry.method })
+        } else {
+          this.deps.log.warn('armed merge failed', { repo: pr.repo, number: pr.number, code: result.code, detail: result.detail })
+          failed.push({ pr, code: result.code, detail: result.detail })
+        }
+      } catch (err) {
+        if (err instanceof SessionExpiredError) throw err
+        const code: ActionErrorCode = err instanceof GithubError ? err.kind : 'unknown'
+        this.deps.log.warn('armed merge failed', { repo: pr.repo, number: pr.number, code, detail: (err as Error).message })
+        failed.push({ pr, code, detail: (err as Error).message })
+      }
+      this.readyStreak.delete(prId)
+    }
+    if (merged.length) this.deps.requestPoll?.()
+    return { remaining, merged, failed }
+  }
+
+  private armedView(): AppState['armedMerges'] {
+    const out: AppState['armedMerges'] = {}
+    for (const [id, entry] of Object.entries(this.persisted?.mergeWhenReady ?? {})) {
+      out[id] = { method: entry.method, armedAt: entry.armedAt }
+    }
+    return out
+  }
+
   /** The PR an action applies to, as last seen; approvals target review requests, the rest your own PRs. */
   private actionTarget(
     prId: string,
-    action: PrAction
+    action: RemoteAction
   ): { ok: true; target: ActionTarget } | Exclude<ActionResult, { ok: true }> {
     if (action.kind === 'approve') {
       const pr = this.allPrs.find((p) => p.id === prId)
@@ -495,8 +613,20 @@ export class Engine {
     const settings = this.deps.settings()
     if (!settings.notifications) return
     const mine = settings.notifyMyPrs ? alerts.mine : []
+    // Merges the user armed are always reported, whatever the "updates on my PRs" setting.
+    const merged = alerts.merged ?? []
+    const mergeFailed = alerts.mergeFailed ?? []
     const reviewEvents = planToEvents(alerts.reviewPlan)
-    if (!reviewEvents.length && !alerts.returned.length && !mine.length && !alerts.sessionExpired) return
+    if (
+      !reviewEvents.length &&
+      !alerts.returned.length &&
+      !mine.length &&
+      !merged.length &&
+      !mergeFailed.length &&
+      !alerts.sessionExpired
+    ) {
+      return
+    }
 
     if (isQuiet(new Date(this.deps.now()), settings) && this.persisted) {
       const q = this.persisted.queued
@@ -511,6 +641,8 @@ export class Engine {
           approved: [...new Set([...q.approved, ...ids('my_pr_approved')])],
           changes: [...new Set([...q.changes, ...ids('my_pr_changes_requested')])],
           ready: [...new Set([...q.ready, ...ids('my_pr_ready')])],
+          merged: [...new Set([...q.merged, ...merged.map((m) => m.pr.id)])],
+          mergeFailed: [...new Set([...q.mergeFailed, ...mergeFailed.map((m) => m.pr.id)])],
           sessionExpired: q.sessionExpired || alerts.sessionExpired === true
         }
       })
@@ -520,6 +652,8 @@ export class Engine {
     const events: NotificationEvent[] = [...reviewEvents]
     if (alerts.returned.length) events.push({ kind: 'snooze_returned', prs: alerts.returned })
     events.push(...capMyPrEvents(mine))
+    for (const m of merged) events.push({ kind: 'my_pr_merged', pr: m.pr, method: m.method })
+    for (const f of mergeFailed) events.push({ kind: 'merge_failed', pr: f.pr, code: f.code, detail: f.detail })
     if (alerts.sessionExpired) events.push({ kind: 'session_expired' })
     this.emit(events)
   }
@@ -536,6 +670,8 @@ export class Engine {
       approved: q.approved.filter((id) => mine.get(id)?.status === 'approved').length,
       changes: q.changes.filter((id) => mine.get(id)?.status === 'changes_requested').length,
       ready: q.ready.filter((id) => mine.get(id)?.readyToMerge).length,
+      merged: q.merged.length,
+      mergeFailed: q.mergeFailed.length,
       sessionExpired: q.sessionExpired
     }
     this.save({ ...persisted, queued: emptyQueue() })
@@ -589,7 +725,8 @@ export class Engine {
       authMethod: this.deps.session.current?.method ?? null,
       installations: this.installs ? this.installs.map(({ login, type }) => ({ login, type })) : null,
       // Only the OAuth App asks for `repo`; the GitHub App is installed read-only.
-      canWrite: this.deps.session.current?.method === 'oauth_app'
+      canWrite: this.deps.session.current?.method === 'oauth_app',
+      armedMerges: this.armedView()
     }
     this.deps.publish(this.current)
   }

@@ -3,11 +3,26 @@ import { describe, expect, it, vi } from 'vitest'
 // ipc.ts imports electron for its handlers; only the pure helpers are tested here.
 vi.mock('electron', () => ({ app: {}, ipcMain: {}, shell: {}, Notification: class {} }))
 
-const { isAllowedExternalUrl, parsePrAction } = await import('../src/main/ipc')
+const { isAllowedExternalUrl, isKnownCheckUrl, parsePrAction } = await import('../src/main/ipc')
+const { pr, myPr } = await import('./fixtures')
+
+describe('isKnownCheckUrl', () => {
+  it('only opens https URLs that GitHub reported for a check in the current state', () => {
+    const check = { name: 'ci', state: 'failure' as const, url: 'https://circleci.com/gh/acme/app/1' }
+    const state = { prs: [pr('a', { checks: [check] })], myPrs: [myPr('m')], involved: [] }
+    expect(isKnownCheckUrl(state, 'https://circleci.com/gh/acme/app/1')).toBe(true)
+    expect(isKnownCheckUrl(state, 'https://circleci.com/gh/acme/app/2')).toBe(false)
+    expect(isKnownCheckUrl({ prs: [], myPrs: [], involved: [pr('i', { checks: [check] })] }, check.url)).toBe(true)
+    expect(isKnownCheckUrl({ prs: [pr('a', { checks: [{ ...check, url: 'http://x/1' }] })], myPrs: [], involved: [] }, 'http://x/1')).toBe(false)
+  })
+})
 
 describe('parsePrAction', () => {
   it('accepts well-formed actions and drops anything else', () => {
     expect(parsePrAction({ kind: 'update_branch' })).toEqual({ kind: 'update_branch' })
+    expect(parsePrAction({ kind: 'arm_merge', method: 'MERGE' })).toEqual({ kind: 'arm_merge', method: 'MERGE' })
+    expect(parsePrAction({ kind: 'disarm_merge' })).toEqual({ kind: 'disarm_merge' })
+    expect(parsePrAction({ kind: 'arm_merge' })).toBeNull()
     expect(parsePrAction({ kind: 'merge', method: 'SQUASH' })).toEqual({ kind: 'merge', method: 'SQUASH' })
     expect(parsePrAction({ kind: 'enable_auto_merge', method: 'REBASE', extra: 1 })).toEqual({
       kind: 'enable_auto_merge',

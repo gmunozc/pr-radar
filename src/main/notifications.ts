@@ -1,6 +1,6 @@
 /** What PR Radar can notify about, and how each notification reads. Free of Electron APIs. */
 import type { Translate } from '../shared/i18n'
-import type { MyPullRequest, PullRequest } from '../shared/types'
+import type { ActionErrorCode, MergeMethod, MyPullRequest, PullRequest } from '../shared/types'
 import type { MyPrEvent, NotificationPlan } from './diff'
 
 /** What happened while quiet hours held notifications back. */
@@ -10,11 +10,16 @@ export interface CatchUp {
   approved: number
   changes: number
   ready: number
+  merged: number
+  mergeFailed: number
   sessionExpired: boolean
 }
 
 export type NotificationEvent =
   | MyPrEvent
+  /** PR Radar merged a PR the user had armed. */
+  | { kind: 'my_pr_merged'; pr: MyPullRequest; method: MergeMethod }
+  | { kind: 'merge_failed'; pr: MyPullRequest; code: ActionErrorCode; detail?: string }
   | { kind: 'my_prs_grouped'; count: number }
   | { kind: 'snooze_returned'; prs: PullRequest[] }
   | { kind: 'update_available'; version: string; releaseUrl: string }
@@ -84,6 +89,8 @@ export function catchUpParts(c: CatchUp, t: Translate): string[] {
   if (c.approved) parts.push(t('notif.catchUpApproved', { count: c.approved }))
   if (c.changes) parts.push(t('notif.catchUpChanges', { count: c.changes }))
   if (c.ready) parts.push(t('notif.catchUpReady', { count: c.ready }))
+  if (c.merged) parts.push(t('notif.catchUpMerged', { count: c.merged }))
+  if (c.mergeFailed) parts.push(t('notif.catchUpMergeFailed', { count: c.mergeFailed }))
   if (c.sessionExpired) parts.push(t('notif.catchUpSession'))
   return parts
 }
@@ -120,6 +127,20 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         id: `mine-${event.pr.id}`,
         title: t('notif.readyToMerge'),
         body: describeMine(event.pr) + (event.pr.autoMerge ? ` · ${t('notif.readyAutoMerge')}` : ''),
+        action: { kind: 'open_url', url: event.pr.url }
+      }
+    case 'my_pr_merged':
+      return {
+        id: `mine-${event.pr.id}`,
+        title: t('notif.merged', { method: t(`action.method.${event.method}`) }),
+        body: describeMine(event.pr),
+        action: { kind: 'open_url', url: event.pr.url }
+      }
+    case 'merge_failed':
+      return {
+        id: `mine-${event.pr.id}`,
+        title: t('notif.mergeFailed'),
+        body: `${describeMine(event.pr)} — ${t(`action.error.${event.code}`, { detail: event.detail ?? '' })}`,
         action: { kind: 'open_url', url: event.pr.url }
       }
     case 'my_prs_grouped':

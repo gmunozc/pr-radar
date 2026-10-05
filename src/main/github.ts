@@ -60,8 +60,25 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
     }
   }
 
-  query PullRequests($requested: String!, $mine: String!, $first: Int!, $login: String!, $withMyReview: Boolean!) {
+  query PullRequests(
+    $requested: String!
+    $mine: String!
+    $involved: String!
+    $first: Int!
+    $login: String!
+    $withMyReview: Boolean!
+    $withInvolved: Boolean!
+  ) {
     viewer { login avatarUrl }
+    involved: search(query: $involved, type: ISSUE, first: $first) @include(if: $withInvolved) {
+      issueCount
+      nodes {
+        ... on PullRequest {
+          ...PrFields
+          viewerDidAuthor
+        }
+      }
+    }
     requested: search(query: $requested, type: ISSUE, first: $first) {
       issueCount
       nodes {
@@ -149,13 +166,15 @@ export interface FetchResult {
   viewer: Viewer
   prs: PullRequest[]
   myPrs: MyPullRequest[]
+  /** PRs you take part in without a review request; empty when the tab is off. */
+  involved: PullRequest[]
   warnings: Warning[]
   /** `github-authentication-token-expiration` header: present when the token expires. */
   tokenExpiration?: string | null
 }
 
 type FetchFn = typeof fetch
-type Exclusions = Partial<Pick<Settings, 'hideBots' | 'excludeRepos' | 'excludeAuthors'>>
+type Exclusions = Partial<Pick<Settings, 'hideBots' | 'excludeRepos' | 'excludeAuthors' | 'showInvolved'>>
 type SearchSettings = Pick<Settings, 'includeTeams' | 'showDrafts'> & Exclusions
 type ReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null
 
@@ -200,7 +219,7 @@ interface RawPr {
   labels?: { nodes: Array<{ name: string; color: string } | null> } | null
   viewerDidAuthor?: boolean
   commits?: { nodes: Array<{ commit: { statusCheckRollup: RawRollup | null } | null }> }
-  reviewRequests: { nodes: Array<{ requestedReviewer: RawReviewer | null }> }
+  reviewRequests?: { nodes: Array<{ requestedReviewer: RawReviewer | null }> }
   myReview?: { nodes: Array<{ submittedAt: string | null; commit: { oid: string } | null }> }
 }
 
@@ -243,6 +262,7 @@ interface RawResponse {
     viewer: Viewer
     requested: RawSearch<RawPr>
     mine: RawSearch<RawMyPr>
+    involved?: RawSearch<RawPr>
   } | null
   errors?: Array<{ type?: string; message: string; path?: Array<string | number> }>
 }
@@ -263,8 +283,11 @@ function withExclusions(parts: string[], terms: string[]): { query: string; trun
   return { query, truncated: false }
 }
 
-/** Both searches of the poll. Authors are only excluded from review requests (your own PRs are yours). */
-export function searchQueries(settings: SearchSettings): { requested: string; mine: string; truncated: boolean } {
+/**
+ * The searches of one poll. Authors are only excluded from review requests and PRs you take part
+ * in (your own PRs are yours). "Involved" leaves out what the other two lists already show.
+ */
+export function searchQueries(settings: SearchSettings): { requested: string; mine: string; involved: string; truncated: boolean } {
   const drafts = settings.showDrafts ? [] : ['draft:false']
   const repos = (settings.excludeRepos ?? []).map((r) => `-repo:${r}`)
   const authors = [...(settings.hideBots ? BOT_AUTHORS : []), ...(settings.excludeAuthors ?? [])].map((a) => `-author:${a}`)
@@ -273,7 +296,16 @@ export function searchQueries(settings: SearchSettings): { requested: string; mi
     [...authors, ...repos]
   )
   const mine = withExclusions([...BASE_QUERY, 'author:@me', ...drafts], repos)
-  return { requested: requested.query, mine: mine.query, truncated: requested.truncated || mine.truncated }
+  const involved = withExclusions(
+    [...BASE_QUERY, 'involves:@me', '-author:@me', '-review-requested:@me', ...drafts],
+    [...authors, ...repos]
+  )
+  return {
+    requested: requested.query,
+    mine: mine.query,
+    involved: involved.query,
+    truncated: requested.truncated || mine.truncated || involved.truncated
+  }
 }
 
 export function buildSearchQuery(settings: SearchSettings): string {
@@ -285,7 +317,7 @@ export function buildMyPrsQuery(settings: Pick<Settings, 'showDrafts'> & Exclusi
 }
 
 export function reviewSource(pr: RawPr, viewerLogin: string): ReviewSource {
-  const reviewers = pr.reviewRequests.nodes.map((n) => n.requestedReviewer)
+  const reviewers = (pr.reviewRequests?.nodes ?? []).map((n) => n.requestedReviewer)
   const isDirect = reviewers.some(
     (r) => r?.__typename === 'User' && r.login?.toLowerCase() === viewerLogin.toLowerCase()
   )
@@ -469,7 +501,7 @@ function toReviewer(r: RawReviewer | null): Reviewer | null {
 }
 
 function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boolean }): MyPullRequest {
-  const pendingReviewers = n.reviewRequests.nodes
+  const pendingReviewers = (n.reviewRequests?.nodes ?? [])
     .map((x) => toReviewer(x.requestedReviewer))
     .filter((r): r is Reviewer => r !== null)
   const reviews = n.latestOpinionatedReviews.nodes
@@ -578,6 +610,16 @@ export function mapResponse(body: RawResponse): FetchResult {
     .filter(isPr)
     .map((n) => toMyPr(n, readable))
     .sort(newestFirst)
+  const involved: PullRequest[] = (data.involved?.nodes ?? [])
+    .filter(isPr)
+    .map((n) => ({
+      ...baseFields(n, readable.ci),
+      source: { kind: 'involved' as const },
+      viewerDidAuthor: n.viewerDidAuthor === true,
+      lastReviewAt: null,
+      newCommitsSinceReview: false
+    }))
+    .sort(newestFirst)
 
   const warnings: Warning[] = []
   if (forbidden.ci) warnings.push({ code: 'missing_permission', params: { field: 'checks' } })
@@ -593,7 +635,10 @@ export function mapResponse(body: RawResponse): FetchResult {
   if (data.mine.issueCount > data.mine.nodes.length) {
     warnings.push({ code: 'truncated_mine', params: { shown: myPrs.length, total: data.mine.issueCount } })
   }
-  return { viewer, prs, myPrs, warnings }
+  if (data.involved && data.involved.issueCount > data.involved.nodes.length) {
+    warnings.push({ code: 'truncated_involved', params: { shown: involved.length, total: data.involved.issueCount } })
+  }
+  return { viewer, prs, myPrs, involved, warnings }
 }
 
 function rateLimitResetAt(res: Response): number | undefined {
@@ -667,9 +712,11 @@ export async function fetchPullRequests(
     {
       requested: queries.requested,
       mine: queries.mine,
+      involved: queries.involved,
       first: PAGE_SIZE,
       login: login ?? '',
-      withMyReview: Boolean(login)
+      withMyReview: Boolean(login),
+      withInvolved: settings.showInvolved ?? true
     },
     fetchFn
   )

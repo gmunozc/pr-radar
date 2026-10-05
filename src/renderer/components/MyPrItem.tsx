@@ -3,10 +3,11 @@ import { formatDateTime, timeAgo } from '../../shared/format'
 import type { Translate } from '../../shared/i18n'
 import type { MessageKey } from '../../shared/i18n/en'
 import { myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
-import type { MergeMethod, MyPullRequest, MyReviewStatus, PrAction } from '../../shared/types'
+import type { AppState, MergeMethod, MyPullRequest, MyReviewStatus, PrAction } from '../../shared/types'
 import { GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
 import { ActionMenu, type MenuItem } from './ActionMenu'
+import { ChecksRow } from './ChecksRow'
 import { CiIcon } from './CiIcon'
 import { ConfirmRow } from './ConfirmRow'
 import { Labels } from './Labels'
@@ -64,7 +65,7 @@ function people(pr: MyPullRequest, t: Translate): { avatars: Person[]; teams: st
 
 /** An action that needs a confirmation (and a merge method) before it runs. */
 interface Confirming {
-  kind: 'merge' | 'enable_auto_merge'
+  kind: 'merge' | 'enable_auto_merge' | 'arm_merge'
   method: MergeMethod
 }
 
@@ -72,14 +73,17 @@ interface Props {
   pr: MyPullRequest
   canWrite: boolean
   pending?: PrAction['kind']
+  /** Set when PR Radar will merge this PR itself once it is ready. */
+  armed?: AppState['armedMerges'][string]
   /** Highlight PRs open for more than this many days; 0 disables it. */
   staleDays: number
 }
 
-export function MyPrItem({ pr, canWrite, pending, staleDays }: Props) {
+export function MyPrItem({ pr, canWrite, pending, armed, staleDays }: Props) {
   const t = useT()
   const locale = useLocale()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [checksOpen, setChecksOpen] = useState(false)
   const [confirming, setConfirming] = useState<Confirming | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
@@ -118,31 +122,24 @@ export function MyPrItem({ pr, canWrite, pending, staleDays }: Props) {
     setCopied(true)
     setTimeout(() => setCopied(false), COPIED_MS)
   }
+  const confirmWith = (kind: Confirming['kind']) => setConfirming({ kind, method: pr.merge.defaultMethod })
 
   const menuItem = (id: MyPrMenuAction): MenuItem => {
     switch (id) {
       case 'merge':
-        return {
-          id,
-          label: t('action.mergeNow'),
-          disabled: busy,
-          onSelect: () => setConfirming({ kind: 'merge', method: pr.merge.defaultMethod })
-        }
+        return { id, label: t('action.mergeNow'), disabled: busy, onSelect: () => confirmWith('merge') }
       case 'update_branch':
         return { id, label: t('action.updateBranch'), disabled: busy, onSelect: () => void run({ kind: 'update_branch' }) }
       case 'rerequest_review':
         return { id, label: t('action.rerequest'), disabled: busy, onSelect: () => void run({ kind: 'rerequest_review' }) }
       case 'enable_auto_merge':
-        return {
-          id,
-          label: t('action.enableAutoMerge'),
-          disabled: busy,
-          onSelect: () => setConfirming({ kind: 'enable_auto_merge', method: pr.merge.defaultMethod })
-        }
+        return { id, label: t('action.enableAutoMerge'), disabled: busy, onSelect: () => confirmWith('enable_auto_merge') }
       case 'disable_auto_merge':
         return { id, label: t('action.disableAutoMerge'), disabled: busy, onSelect: () => void run({ kind: 'disable_auto_merge' }) }
-      case 'no_auto_merge':
-        return { id, label: t('action.noAutoMerge'), disabled: true, onSelect: () => {} }
+      case 'arm_merge':
+        return { id, label: t('action.armMerge'), disabled: busy, onSelect: () => confirmWith('arm_merge') }
+      case 'disarm_merge':
+        return { id, label: t('action.disarmMerge'), onSelect: () => void run({ kind: 'disarm_merge' }) }
       case 'repo_settings':
         return {
           id,
@@ -157,7 +154,7 @@ export function MyPrItem({ pr, canWrite, pending, staleDays }: Props) {
         return { id, label: t('action.open'), onSelect: open }
     }
   }
-  const items = myPrMenuActions(pr, canWrite).map(menuItem)
+  const items = myPrMenuActions(pr, canWrite, armed !== undefined).map(menuItem)
   if (!canWrite) items.unshift({ id: 'read_only', label: t('action.readOnly'), disabled: true, onSelect: () => {} })
 
   const [owner, name] = pr.repo.split('/')
@@ -165,10 +162,18 @@ export function MyPrItem({ pr, canWrite, pending, staleDays }: Props) {
   const blockerChip = pr.blocker ? BLOCKER_CHIPS[pr.blocker] : undefined
   const { avatars, teams } = people(pr, t)
   const extra = avatars.length - MAX_AVATARS
+  const approvals = pr.reviews.filter((r) => r.state === 'APPROVED').length
   const actionsOpen = menuOpen || confirming !== null || busy
   const now = Date.now()
   const ageDays = Math.floor((now - Date.parse(pr.createdAt)) / DAY_MS)
   const stale = staleDays > 0 && ageDays >= staleDays
+  const methodLabel = (m: MergeMethod) => t(`action.method.${m}`)
+
+  const confirmText: Record<Confirming['kind'], { message: string; confirm: string }> = {
+    merge: { message: t('action.mergeConfirm', { number: pr.number, base: pr.baseBranch || 'base' }), confirm: t('action.mergeNow') },
+    enable_auto_merge: { message: t('action.autoMergeConfirm'), confirm: t('action.enableAutoMerge') },
+    arm_merge: { message: t('action.armConfirm'), confirm: t('action.armMerge') }
+  }
 
   return (
     <div
@@ -190,7 +195,7 @@ export function MyPrItem({ pr, canWrite, pending, staleDays }: Props) {
             {name}
           </span>
           <span className="pr-number">#{pr.number}</span>
-          <CiIcon state={pr.ci} />
+          <CiIcon state={pr.ci} checks={pr.checks} open={checksOpen} onToggle={() => setChecksOpen((o) => !o)} />
           <span
             className={`pr-age ${stale ? 'pr-age-stale' : ''}`}
             title={stale ? t('pr.stale', { count: ageDays }) : formatDateTime(pr.createdAt, locale)}
@@ -203,7 +208,12 @@ export function MyPrItem({ pr, canWrite, pending, staleDays }: Props) {
           <span className={`chip chip-${status.className}`}>{t(status.label)}</span>
           {pr.autoMerge && (
             <span className="chip chip-automerge" title={t('chip.autoMergeHint')}>
-              {t('chip.autoMerge', { method: t(`action.method.${pr.autoMerge.method}`) })}
+              {t('chip.autoMerge', { method: methodLabel(pr.autoMerge.method) })}
+            </span>
+          )}
+          {armed && (
+            <span className="chip chip-armed" title={t('chip.armedHint')}>
+              {t('chip.armed', { method: methodLabel(armed.method) })}
             </span>
           )}
           {pr.conflicts && (
@@ -216,12 +226,18 @@ export function MyPrItem({ pr, canWrite, pending, staleDays }: Props) {
               {t(blockerChip.label)}
             </span>
           )}
+          {pr.unresolvedThreads ? <span className="chip chip-changes">{t('mine.threads', { count: pr.unresolvedThreads })}</span> : null}
           {pr.isDraft && <span className="chip chip-draft">{t('pr.draft')}</span>}
           <Labels labels={pr.labels} />
           <span className="diff">
             <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>
           </span>
           <span className="reviewers">
+            {pr.requiredApprovals !== null && pr.requiredApprovals > 0 && (
+              <span className="reviewers-count" title={t('mine.approvalsHint', { have: approvals, need: pr.requiredApprovals })}>
+                {approvals}/{pr.requiredApprovals}
+              </span>
+            )}
             {teams.map((team) => (
               <span key={team} className="reviewer-team" title={t('reviewer.pending', { name: team })}>
                 {team}
@@ -233,25 +249,16 @@ export function MyPrItem({ pr, canWrite, pending, staleDays }: Props) {
             {extra > 0 && <span className="reviewer-more">+{extra}</span>}
           </span>
         </div>
+        {checksOpen && <ChecksRow checks={pr.checks} total={pr.checksTotal} />}
         {confirming && (
           <ConfirmRow
-            message={
-              confirming.kind === 'merge'
-                ? t('action.mergeConfirm', { number: pr.number, base: pr.baseBranch || 'base' })
-                : t('action.autoMergeConfirm')
-            }
+            message={confirmText[confirming.kind].message}
             hint={pr.merge.deleteBranchOnMerge ? t('action.deletesBranch') : undefined}
-            confirmLabel={confirming.kind === 'merge' ? t('action.mergeNow') : t('action.enableAutoMerge')}
+            confirmLabel={confirmText[confirming.kind].confirm}
             cancelLabel={t('action.cancel')}
             busy={busy}
             error={error}
-            onConfirm={() =>
-              void run(
-                confirming.kind === 'merge'
-                  ? { kind: 'merge', method: confirming.method }
-                  : { kind: 'enable_auto_merge', method: confirming.method }
-              )
-            }
+            onConfirm={() => void run({ kind: confirming.kind, method: confirming.method })}
             onCancel={() => {
               setConfirming(null)
               setError(null)
@@ -259,7 +266,7 @@ export function MyPrItem({ pr, canWrite, pending, staleDays }: Props) {
           >
             {pr.merge.methods.length > 1 && (
               <Segmented
-                options={pr.merge.methods.map((m) => ({ value: m, label: t(`action.method.${m}`) }))}
+                options={pr.merge.methods.map((m) => ({ value: m, label: methodLabel(m) }))}
                 value={confirming.method}
                 onChange={(method) => setConfirming({ kind: confirming.kind, method })}
                 label={t('action.method')}

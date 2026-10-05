@@ -25,6 +25,7 @@ const result = (ids: string[], login = 'me', warnings: Warning[] = [], myPrs: My
   viewer: { login, avatarUrl: '' },
   prs: ids.map((id) => pr(id)),
   myPrs,
+  involved: [],
   warnings
 })
 
@@ -449,7 +450,10 @@ describe('Engine quiet hours', () => {
     t.setNow(at(5, '09:00'))
     t.engine.tick()
     expect(t.events).toEqual([
-      { kind: 'catch_up', counts: { reviews: 2, reminders: 0, approved: 1, changes: 0, ready: 0, sessionExpired: false } }
+      {
+        kind: 'catch_up',
+        counts: { reviews: 2, reminders: 0, approved: 1, changes: 0, ready: 0, merged: 0, mergeFailed: 0, sessionExpired: false }
+      }
     ])
     expect(t.stored).toMatchObject({ queued: { reviews: [], approved: [] } })
     expect(t.engine.state.quietUntil).toBeNull()
@@ -666,5 +670,92 @@ describe('Engine actions on PRs', () => {
     await t.engine.poll()
     t.engine.dismiss('r1')
     await expect(t.engine.runAction('r1', { kind: 'approve' })).resolves.toEqual({ ok: true })
+  })
+})
+
+describe('Engine merge when ready', () => {
+  const owned = (over: Partial<MyPullRequest> = {}) => myPr('m1', { headOid: 'h1', repo: 'acme/app', number: 7, ...over })
+  const blocked = owned({ mergeable: false, ci: 'pending' })
+  const ready = owned({ mergeable: true, ci: 'success' })
+  const mine = (...prs: MyPullRequest[]) => result([], 'me', [], prs)
+
+  it('arms a PR, publishes it, and merges after two polls in a row where GitHub would accept it', async () => {
+    const t = setup([mine(blocked), mine(ready), mine(ready), mine()], { auth: fresh() })
+    await t.engine.poll()
+    await expect(t.engine.runAction('m1', { kind: 'arm_merge', method: 'SQUASH' })).resolves.toEqual({ ok: true })
+    expect(t.engine.state.armedMerges).toEqual({ m1: { method: 'SQUASH', armedAt: NOW } })
+    expect(t.stored).toMatchObject({ mergeWhenReady: { m1: { headOid: 'h1', method: 'SQUASH', sawChecks: true } } })
+    expect(t.runPrAction).not.toHaveBeenCalled()
+
+    await t.engine.poll()
+    expect(t.runPrAction).not.toHaveBeenCalled()
+    await t.engine.poll()
+    expect(t.runPrAction).toHaveBeenCalledTimes(1)
+    expect(t.runPrAction.mock.calls[0][1]).toMatchObject({ id: 'm1', headOid: 'h1' })
+    expect(t.runPrAction.mock.calls[0][2]).toEqual({ kind: 'merge', method: 'SQUASH' })
+    expect(t.events).toContainEqual({ kind: 'my_pr_merged', pr: ready, method: 'SQUASH' })
+    expect(t.engine.state.armedMerges).toEqual({})
+    expect(t.requestPoll).toHaveBeenCalled()
+  })
+
+  it('waits for the checks of a new push and keeps following the head', async () => {
+    const pushed = owned({ mergeable: true, ci: 'none', headOid: 'h2' })
+    const readyAgain = owned({ mergeable: true, ci: 'success', headOid: 'h2' })
+    const t = setup([mine(blocked), mine(pushed), mine(pushed), mine(readyAgain), mine(readyAgain)], { auth: fresh() })
+    await t.engine.poll()
+    await t.engine.runAction('m1', { kind: 'arm_merge', method: 'MERGE' })
+    await t.engine.poll()
+    await t.engine.poll()
+    // Mergeable, but the checks of the new head don't exist yet: too early.
+    expect(t.runPrAction).not.toHaveBeenCalled()
+    expect(t.stored).toMatchObject({ mergeWhenReady: { m1: { headOid: 'h2', sawChecks: true } } })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.runPrAction).toHaveBeenCalledTimes(1)
+    expect(t.runPrAction.mock.calls[0][1]).toMatchObject({ headOid: 'h2' })
+  })
+
+  it('disarms and reports when the merge fails, and drops armed PRs that disappeared', async () => {
+    const t = setup([mine(ready), mine(ready), mine(ready), mine()], {
+      auth: fresh(),
+      actions: async () => ({ ok: false, code: 'not_mergeable', detail: 'nope' })
+    })
+    await t.engine.poll()
+    await t.engine.runAction('m1', { kind: 'arm_merge', method: 'REBASE' })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.events).toContainEqual({ kind: 'merge_failed', pr: ready, code: 'not_mergeable', detail: 'nope' })
+    expect(t.engine.state.armedMerges).toEqual({})
+
+    await t.engine.runAction('m1', { kind: 'arm_merge', method: 'REBASE' })
+    await t.engine.poll()
+    expect(t.engine.state.armedMerges).toEqual({})
+    expect(t.stored).toMatchObject({ mergeWhenReady: {} })
+  })
+
+  it('disarms on request and refuses to arm without merge permission', async () => {
+    const other = owned({ id: 'm2', can: { ...owned().can, merge: false } })
+    const t = setup([mine(blocked, other)], { auth: fresh() })
+    await t.engine.poll()
+    await t.engine.runAction('m1', { kind: 'arm_merge', method: 'SQUASH' })
+    await expect(t.engine.runAction('m1', { kind: 'disarm_merge' })).resolves.toEqual({ ok: true })
+    expect(t.engine.state.armedMerges).toEqual({})
+    await expect(t.engine.runAction('m2', { kind: 'arm_merge', method: 'SQUASH' })).resolves.toEqual({ ok: false, code: 'forbidden' })
+    await expect(t.engine.runAction('nope', { kind: 'arm_merge', method: 'SQUASH' })).resolves.toEqual({ ok: false, code: 'not_found' })
+  })
+
+  it('merges during quiet hours but holds the report for later', async () => {
+    const t = setup([mine(ready), mine(ready), mine(ready)], {
+      auth: fresh(),
+      settings: { quietHours: true, workStart: '09:00', workEnd: '18:00', workDays: [1, 2, 3, 4, 5] },
+      now: at(5, '22:00')
+    })
+    await t.engine.poll()
+    await t.engine.runAction('m1', { kind: 'arm_merge', method: 'SQUASH' })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.runPrAction).toHaveBeenCalledTimes(1)
+    expect(t.events).toEqual([])
+    expect(t.stored).toMatchObject({ queued: { merged: ['m1'] } })
   })
 })

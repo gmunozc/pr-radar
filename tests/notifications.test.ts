@@ -78,6 +78,19 @@ describe('notifications about your PRs', () => {
     const auto = { ...mine, autoMerge: { method: 'SQUASH' as const, enabledAt: 'T' } }
     expect(render({ kind: 'my_pr_ready', pr: auto }, en).body).toBe('acme/app#12 · Add feature · It will merge on its own.')
     expect(render({ kind: 'my_pr_ready', pr: auto }, es).body).toBe('acme/app#12 · Add feature · Se mergeará solo.')
+  })
+
+  it('reports merges PR Radar did itself, and the ones it could not do', () => {
+    expect(render({ kind: 'my_pr_merged', pr: mine, method: 'SQUASH' }, es)).toEqual({
+      id: 'mine-MY_1',
+      title: 'Mergeado (Squash)',
+      body: 'acme/app#12 · Add feature',
+      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+    })
+    expect(render({ kind: 'merge_failed', pr: mine, code: 'not_mergeable' }, en)).toMatchObject({
+      title: 'Could not merge',
+      body: 'acme/app#12 · Add feature — GitHub does not allow merging it right now.'
+    })
     expect(render({ kind: 'my_prs_grouped', count: 5 }, es).body).toBe('5 novedades en tus PRs')
   })
 
@@ -87,7 +100,7 @@ describe('notifications about your PRs', () => {
 })
 
 describe('reminders, catch-up and digest notifications', () => {
-  const none = { reviews: 0, reminders: 0, approved: 0, changes: 0, ready: 0, sessionExpired: false }
+  const none = { reviews: 0, reminders: 0, approved: 0, changes: 0, ready: 0, merged: 0, mergeFailed: 0, sessionExpired: false }
 
   it('reminds about one snoozed PR by opening it, and summarizes several', () => {
     expect(render({ kind: 'snooze_returned', prs: [pr()] }, es)).toMatchObject({

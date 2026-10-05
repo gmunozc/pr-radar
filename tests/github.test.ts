@@ -97,6 +97,30 @@ describe('search exclusions', () => {
     expect(searchQueries({ includeTeams: true, showDrafts: true }).truncated).toBe(false)
   })
 
+  it('maps PRs you take part in and warns when there are more than it shows', async () => {
+    const body = jsonResponse({
+      data: {
+        viewer: { login: 'me', avatarUrl: 'x' },
+        requested: search([]),
+        mine: search([]),
+        involved: search([rawPr({ id: 'I1', reviewRequests: undefined })], 60)
+      }
+    })
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(body))
+    expect(result.involved[0]).toMatchObject({ id: 'I1', source: { kind: 'involved' }, viewerDidAuthor: false })
+    expect(result.warnings).toContainEqual({ code: 'truncated_involved', params: { shown: 1, total: 60 } })
+  })
+
+  it('asks for the involved search only while the tab is on', async () => {
+    const fetchFn = vi.fn().mockImplementation(async () => ok([]))
+    await fetchPullRequests('tok', { ...settings, showInvolved: false }, 'me', fetchFn)
+    const variables = JSON.parse(fetchFn.mock.calls[0][1].body).variables
+    expect(variables.withInvolved).toBe(false)
+    expect(variables.involved).toBe('is:pr is:open archived:false involves:@me -author:@me -review-requested:@me')
+    await fetchPullRequests('tok', settings, 'me', fetchFn)
+    expect(JSON.parse(fetchFn.mock.calls[1][1].body).variables.withInvolved).toBe(true)
+  })
+
   it('warns when exclusions were truncated', async () => {
     const excludeRepos = Array.from({ length: 30 }, (_, i) => `acme/repository-number-${i}`)
     const result = await fetchPullRequests('tok', { ...settings, excludeRepos }, 'me', vi.fn().mockResolvedValue(ok([])))

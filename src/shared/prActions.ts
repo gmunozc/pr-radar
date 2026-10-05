@@ -7,8 +7,9 @@ export type MyPrMenuAction =
   | 'rerequest_review'
   | 'enable_auto_merge'
   | 'disable_auto_merge'
-  /** Disabled hint: the repository doesn't allow GitHub's auto-merge. */
-  | 'no_auto_merge'
+  /** PR Radar merges it itself once GitHub accepts a merge (repositories without auto-merge). */
+  | 'arm_merge'
+  | 'disarm_merge'
   | 'repo_settings'
   | 'copy_branch'
   | 'copy_link'
@@ -17,9 +18,10 @@ export type MyPrMenuAction =
 /**
  * Menu entries for one of your PRs. Write actions need a session that can write and the
  * matching repository permission; GitHub's own flags decide update-branch and auto-merge.
- * A merge is offered whenever GitHub would accept one, approvals or not.
+ * A merge is offered whenever GitHub would accept one, approvals or not. When GitHub's
+ * auto-merge can't be enabled, PR Radar offers to merge the PR itself once it is ready.
  */
-export function myPrMenuActions(pr: MyPullRequest, canWrite: boolean): MyPrMenuAction[] {
+export function myPrMenuActions(pr: MyPullRequest, canWrite: boolean, armed = false): MyPrMenuAction[] {
   const items: MyPrMenuAction[] = []
   if (canWrite) {
     if (pr.mergeable && pr.can.merge && pr.merge.methods.length > 0) items.push('merge')
@@ -27,14 +29,13 @@ export function myPrMenuActions(pr: MyPullRequest, canWrite: boolean): MyPrMenuA
     if (pr.status === 'changes_requested' && pr.can.requestReviews && pr.reviews.some((r) => r.id)) {
       items.push('rerequest_review')
     }
-    if (pr.autoMerge) {
+    if (armed) items.push('disarm_merge')
+    else if (pr.autoMerge) {
       if (pr.can.disableAutoMerge) items.push('disable_auto_merge')
     } else if (!pr.mergeable && !pr.isDraft) {
       if (pr.can.enableAutoMerge) items.push('enable_auto_merge')
-      else if (!pr.merge.autoMergeAllowed && pr.can.merge) {
-        items.push('no_auto_merge')
-        if (pr.permission === 'ADMIN') items.push('repo_settings')
-      }
+      else if (pr.can.merge && pr.merge.methods.length > 0) items.push('arm_merge')
+      if (!pr.can.enableAutoMerge && !pr.merge.autoMergeAllowed && pr.permission === 'ADMIN') items.push('repo_settings')
     }
   }
   if (pr.branch) items.push('copy_branch')
@@ -52,11 +53,14 @@ export type ReviewMenuAction =
   | 'copy_link'
   | 'open'
 
-/** Context-menu entries for a review request. GitHub doesn't let you approve your own PR. */
+/**
+ * Context-menu entries for a review request. GitHub doesn't let you approve your own PR;
+ * PRs you merely take part in can't be snoozed or dismissed (nothing asked you to review them).
+ */
 export function reviewMenuActions(pr: PullRequest, canWrite: boolean): ReviewMenuAction[] {
   const items: ReviewMenuAction[] = []
   if (canWrite && !pr.viewerDidAuthor) items.push('approve')
-  items.push('snooze_hour', 'snooze_tomorrow', 'snooze_push', 'dismiss')
+  if (pr.source.kind !== 'involved') items.push('snooze_hour', 'snooze_tomorrow', 'snooze_push', 'dismiss')
   if (pr.branch) items.push('copy_branch')
   items.push('copy_link', 'open')
   return items
