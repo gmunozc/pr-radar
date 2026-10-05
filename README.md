@@ -24,12 +24,23 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 - **My PRs** tab:
   - where each PR stands (waiting, approved, changes requested, no reviewers);
   - who approved, who asked for changes and who is still pending;
-  - **Ready to merge**, or what's blocking it (conflicts, out of date, blocked).
-- **Dismiss or snooze** a review request ("in 1 hour", "tomorrow 9:00"). A snoozed PR comes back with a reminder, and a dismissed one comes back if your review is requested again.
+  - **Ready to merge**, or what's blocking it (conflicts, out of date, blocked);
+  - an **Auto-merge** chip when GitHub will merge it on its own.
+- **Act on your PRs** from the panel (OAuth App sessions): merge now with the repository's merge method, update the branch when it's behind, turn GitHub's auto-merge on or off, ask reviewers again after they requested changes, copy the branch name or the link.
+- **Approve** a review request from the panel (OAuth App sessions, never your own PR), with an optional comment.
+- **Dismiss or snooze** a review request ("in 1 hour", "tomorrow 9:00", "until new commits"). A snoozed PR comes back with a reminder, and a dismissed one comes back if your review is requested again.
+- **Filters and sorting** in the review list (direct or team requests, organization; newest, oldest or recently updated), **labels** in their colours, and requests that have waited longer than you like highlighted.
+- **Less noise:** hide PRs from Dependabot, Renovate and GitHub Actions, or from repositories and authors you choose.
+- **Merge when ready:** where GitHub's auto-merge is not available, PR Radar can merge one of your PRs itself once GitHub reports it mergeable (twice in a row, checks green, with the head commit it last saw). It stays armed if you push again; any failure disarms it and you are told.
+- **What is blocking a PR:** click the checks icon to see each check and open its details page; your PRs show unresolved review threads and "1/2" required approvals.
+- **Involved tab:** PRs where you were mentioned, assigned or commented without a review request (can be turned off in Settings).
+- **Keyboard:** arrows move between PRs, Enter opens, right-click or Shift+F10 shows the menu, Escape closes the panel, ⌘R refreshes, ⌘1/⌘2/⌘3 switch tabs, ⌘, opens Settings. A global shortcut (Settings → General) opens the panel from any app.
 - **Working hours (optional):** outside them, notifications wait and arrive together as one "While you were away" summary.
 - **Daily summary** of what's pending, on working days at the time you choose.
 - **English and Spanish**, following the system language or your choice in Settings.
-- **New version notice** with a link to the release.
+- **New version notice.** On macOS, **Install** downloads the dmg, checks it against the release's `SHA256SUMS.txt` and opens it; elsewhere it links to the release.
+- **Panel size** (compact, default, large) in Settings → General.
+- **PR details** inside the panel: click a title to see the checks, who reviewed, files, commits, comments and the description.
 - **Copy diagnostics:** a report you can attach to an issue, with tokens removed.
 
 <p>
@@ -61,6 +72,7 @@ Click **Connect with GitHub**, enter the code shown on github.com, and you're do
 | Access | Read-only: pull requests, checks, commit statuses, organization members | Full `repo` scope (read and write, all your repositories) |
 | Which PRs it sees | Only in repositories where the app is installed | Every repository you can access |
 | Organizations | An owner installs the app on the organization | An owner approves the app if the organization restricts OAuth Apps |
+| Actions on your PRs | No (read-only) | Merge, update branch, auto-merge |
 
 With the GitHub App, install it on your account and on each organization you review in. If the list is empty, the panel has a button to install it.
 
@@ -77,7 +89,7 @@ If an organization uses **SAML SSO**, authorize the app for it; the panel tells 
 - **Working hours:** outside them, notifications are held, and one "While you were away" notification arrives when your day starts. If the daily summary is due within the hour, the two are merged.
 - **Daily summary:** at most once a day, and skipped when nothing is pending.
 
-PR Radar checks GitHub every 30 seconds by default (minimum 15). Each check is one GraphQL query that costs about 3 points of GitHub's 5,000-points-per-hour limit.
+PR Radar checks GitHub every 30 seconds by default (minimum 15). Each check is one GraphQL query that costs about 6 points of GitHub's 5,000-points-per-hour limit.
 
 ## Privacy and security
 

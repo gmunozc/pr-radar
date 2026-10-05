@@ -24,12 +24,23 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **Pestaña Mis PRs:**
   - en qué punto está cada PR (esperando, aprobado, cambios solicitados, sin reviewers);
   - quién aprobó, quién pidió cambios y quién falta por revisar;
-  - **Listo para merge**, o qué lo bloquea (conflictos, desactualizado, bloqueado).
-- **Descartar o posponer** una review ("en 1 hora", "mañana 9:00"). Un PR pospuesto vuelve con un recordatorio, y uno descartado vuelve si te piden review de nuevo.
+  - **Listo para merge**, o qué lo bloquea (conflictos, desactualizado, bloqueado);
+  - una etiqueta **Auto-merge** cuando GitHub lo va a mergear solo.
+- **Actúa sobre tus PRs** desde el panel (sesiones con la OAuth App): mergear ahora con el método del repositorio, actualizar la rama cuando está desactualizada, activar o desactivar el auto-merge de GitHub, volver a pedir revisión a quien pidió cambios, copiar el nombre de la rama o el enlace.
+- **Aprobar** una review desde el panel (sesiones con la OAuth App, nunca un PR tuyo), con un comentario opcional.
+- **Descartar o posponer** una review ("en 1 hora", "mañana 9:00", "hasta nuevos commits"). Un PR pospuesto vuelve con un recordatorio, y uno descartado vuelve si te piden review de nuevo.
+- **Filtros y orden** en la lista de reviews (directas o de equipo, organización; más nuevas, más antiguas o actualizadas hace poco), **etiquetas** con sus colores, y las reviews que llevan más días de los que quieres, resaltadas.
+- **Menos ruido:** oculta los PRs de Dependabot, Renovate y GitHub Actions, o de los repositorios y autores que elijas.
+- **Mergear cuando esté listo:** donde el auto-merge de GitHub no está disponible, PR Radar puede mergear un PR tuyo por su cuenta cuando GitHub lo da por mergeable (dos consultas seguidas, checks en verde, con el último commit que vio). Sigue armado si vuelves a subir cambios; cualquier fallo lo desarma y te avisa.
+- **Qué bloquea un PR:** pulsa el icono de los checks para ver cada uno y abrir su página; tus PRs muestran los hilos sin resolver y las aprobaciones requeridas ("1/2").
+- **Pestaña Participo:** PRs donde te mencionaron, te asignaron o comentaste sin que te pidieran review (se puede desactivar en Ajustes).
+- **Teclado:** las flechas recorren los PRs, Enter abre, clic derecho o Shift+F10 muestra el menú, Escape cierra el panel, ⌘R actualiza, ⌘1/⌘2/⌘3 cambian de pestaña y ⌘, abre Ajustes. Un atajo global (Ajustes → General) abre el panel desde cualquier app.
 - **Horario laboral (opcional):** fuera de él, los avisos esperan y llegan juntos en un solo resumen "Mientras no estabas".
 - **Resumen diario** con lo pendiente, en días laborables y a la hora que elijas.
 - **En inglés y en español**, según el idioma del sistema o lo que elijas en Ajustes.
-- **Aviso de versión nueva**, con enlace a la Release.
+- **Aviso de versión nueva.** En macOS, **Instalar** descarga el dmg, lo comprueba contra el `SHA256SUMS.txt` de la Release y lo abre; en otros sistemas enlaza a la Release.
+- **Tamaño del panel** (compacto, normal, grande) en Ajustes → General.
+- **Detalle del PR** dentro del panel: pulsa un título para ver los checks, quién revisó, archivos, commits, comentarios y la descripción.
 - **Copiar diagnóstico:** un informe para adjuntar a un issue, sin tokens.
 
 ## Instalación
@@ -56,6 +67,7 @@ Pulsa **Conectar con GitHub**, introduce en github.com el código que aparece y 
 | Acceso | Solo lectura: pull requests, checks, estados de commits y miembros de la organización | Permiso `repo` completo (lectura y escritura en todos tus repos) |
 | Qué PRs ve | Solo en los repos donde la app está instalada | En todos los repos a los que tienes acceso |
 | Organizaciones | Un owner instala la app en la organización | Un owner aprueba la app si la organización restringe las OAuth Apps |
+| Acciones sobre tus PRs | No (solo lectura) | Merge, actualizar rama, auto-merge |
 
 Con la GitHub App, instálala en tu cuenta y en cada organización donde revisas. Si la lista sale vacía, el panel muestra un botón para instalarla.
 
@@ -72,7 +84,7 @@ Si una organización usa **SAML SSO**, autoriza la app para ella; el panel avisa
 - **Horario laboral:** fuera de él, los avisos esperan, y al empezar la jornada llega uno solo, "Mientras no estabas". Si el resumen diario toca dentro de la hora siguiente, se fusionan.
 - **Resumen diario:** como mucho uno al día, y no se envía si no hay nada pendiente.
 
-PR Radar consulta GitHub cada 30 segundos por defecto (mínimo 15). Cada consulta es una query de GraphQL que gasta unos 3 de los 5000 puntos por hora que permite GitHub.
+PR Radar consulta GitHub cada 30 segundos por defecto (mínimo 15). Cada consulta es una query de GraphQL que gasta unos 6 de los 5000 puntos por hora que permite GitHub.
 
 ## Privacidad y seguridad
 
