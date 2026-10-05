@@ -65,6 +65,7 @@ export const es: Record<MessageKey, string> = {
   'pr.newCommitsHint': 'El autor subió cambios después de tu review del {date}',
   'pr.dismiss': 'Descartar',
   'pr.dismissHint': 'Descartar (vuelve a aparecer si te piden review de nuevo)',
+  'pr.dismissInvolvedHint': 'Descartar (no se vuelve a mostrar mientras el PR siga abierto)',
 
   // My PRs
   'mine.emptyTitle': 'No tienes PRs abiertos',

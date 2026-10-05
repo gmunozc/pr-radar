@@ -37,8 +37,8 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const busy = pending !== undefined
   const canApprove = canWrite && !pr.viewerDidAuthor
-  // PRs you merely take part in were never asked of you: nothing to snooze or dismiss.
-  const hideable = pr.source.kind !== 'involved'
+  // A PR you merely take part in can be dismissed, but a snooze reminder would make no sense.
+  const snoozable = pr.source.kind !== 'involved'
 
   const open = () => void window.prRadar.openExternal(pr.url)
   const onKeyDown = (e: KeyboardEvent) => {
@@ -237,7 +237,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
             {busy ? <span className="spinner spinner-sm" /> : <CheckIcon size={12} />}
           </button>
         )}
-        {hideable && (
+        {snoozable && (
           <button
             className="pr-action"
             onClick={(e) => {
@@ -252,20 +252,18 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
             <ClockIcon size={12} />
           </button>
         )}
-        {hideable && (
-          <button
-            className="pr-action pr-action-dismiss"
-            onClick={(e) => {
-              e.stopPropagation()
-              dismiss()
-            }}
-            onMouseDown={(e) => e.preventDefault()}
-            title={t('pr.dismissHint')}
-            aria-label={t('pr.dismiss')}
-          >
-            <XIcon size={12} />
-          </button>
-        )}
+        <button
+          className="pr-action pr-action-dismiss"
+          onClick={(e) => {
+            e.stopPropagation()
+            dismiss()
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+          title={t(snoozable ? 'pr.dismissHint' : 'pr.dismissInvolvedHint')}
+          aria-label={t('pr.dismiss')}
+        >
+          <XIcon size={12} />
+        </button>
       </div>
       {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} />}
     </div>

@@ -15,7 +15,7 @@ const SORTS: ReviewSort[] = ['newest', 'oldest', 'updated']
 // Organizations that restrict OAuth Apps silently hide their PRs until access is granted.
 export const openOrgAccess = async () => window.prRadar.openExternal(await window.prRadar.auth.accessUrl())
 
-function RestoreHidden({ dismissed, snoozed }: { dismissed: number; snoozed: number }) {
+export function RestoreHidden({ dismissed, snoozed }: { dismissed: number; snoozed: number }) {
   const t = useT()
   const parts = [snoozed ? t('list.snoozed', { count: snoozed }) : '', dismissed ? t('list.dismissed', { count: dismissed }) : '']
   return (

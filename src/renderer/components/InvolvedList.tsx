@@ -4,6 +4,7 @@ import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
 import { PrItem } from './PrItem'
+import { RestoreHidden } from './PrList'
 
 const MENTIONED_URL = 'https://github.com/pulls/mentioned'
 
@@ -26,6 +27,11 @@ export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(pr
         <PullRequestIcon size={32} className="empty-icon-muted" />
         <div className="empty-title">{t('involved.emptyTitle')}</div>
         <div className="empty-sub">{t('involved.emptySub')}</div>
+        {state.dismissedCount + state.snoozedCount > 0 && (
+          <div className="empty-hint">
+            <RestoreHidden dismissed={state.dismissedCount} snoozed={state.snoozedCount} />
+          </div>
+        )}
       </main>
     )
   }
@@ -49,6 +55,9 @@ export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(pr
         <button className="link" onClick={() => void window.prRadar.openExternal(MENTIONED_URL)}>
           {t('involved.viewAll')}
         </button>
+        {state.dismissedCount + state.snoozedCount > 0 && (
+          <RestoreHidden dismissed={state.dismissedCount} snoozed={state.snoozedCount} />
+        )}
       </footer>
     </>
   )

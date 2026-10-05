@@ -68,6 +68,7 @@ export const en = {
   'pr.newCommitsHint': 'The author pushed after your review on {date}',
   'pr.dismiss': 'Dismiss',
   'pr.dismissHint': 'Dismiss (it comes back if your review is requested again)',
+  'pr.dismissInvolvedHint': 'Dismiss (hidden while the PR stays open)',
 
   // My PRs
   'mine.emptyTitle': 'No open PRs',

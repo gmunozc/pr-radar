@@ -24,6 +24,7 @@ import {
   diffMyPrs,
   diffPrs,
   planNotifications,
+  type HiddenPrs,
   type HiddenResult,
   type MyPrEvent,
   type NotificationPlan
@@ -142,6 +143,7 @@ export class Engine {
   private persisted: PersistedState | null
   /** Last full result from GitHub, including dismissed PRs. */
   private allPrs: PullRequest[] = []
+  private allInvolved: PullRequest[] = []
   /** When the search filter changes, the next result is a new baseline rather than "new" PRs. */
   private resetBaseline = false
   /** A problem with the session that doesn't stop polling, shown as a warning. */
@@ -200,8 +202,8 @@ export class Engine {
       const diff = diffPrs(this.resetBaseline ? result.prs.map((p) => p.id) : (stored?.seenIds ?? null), result.prs)
       this.resetBaseline = false
       this.allPrs = result.prs
-      const hidden = applyHidden(
-        result.prs,
+      this.allInvolved = result.involved
+      const hidden = this.hideAll(
         { dismissedIds: stored?.dismissedIds ?? [], snoozed: stored?.snoozed ?? {}, snoozedUntilPush: stored?.snoozedUntilPush ?? {} },
         now
       )
@@ -225,9 +227,9 @@ export class Engine {
         ...this.current,
         status: 'ready',
         viewer: result.viewer,
-        prs: hidden.visible,
+        prs: hidden.prs,
         myPrs: result.myPrs,
-        involved: result.involved,
+        involved: hidden.involved,
         lastUpdated: new Date(now).toISOString(),
         error: null,
         warnings: [...result.warnings, ...this.installWarnings, ...(this.sessionWarning ? [this.sessionWarning] : [])],
@@ -237,7 +239,7 @@ export class Engine {
         connection: this.connection
       })
       this.dispatch({
-        reviewPlan: planNotifications(diff, hidden.visible.length),
+        reviewPlan: planNotifications(diff, hidden.prs.length),
         returned: hidden.returned,
         mine: mine.events,
         merged: armed.merged,
@@ -420,7 +422,7 @@ export class Engine {
     action: RemoteAction
   ): { ok: true; target: ActionTarget } | Exclude<ActionResult, { ok: true }> {
     if (action.kind === 'approve') {
-      const pr = this.allPrs.find((p) => p.id === prId)
+      const pr = [...this.allPrs, ...this.allInvolved].find((p) => p.id === prId)
       if (!pr) return { ok: false, code: 'not_found' }
       if (pr.viewerDidAuthor) return { ok: false, code: 'forbidden', detail: 'You cannot approve your own pull request' }
       return { ok: true, target: { id: pr.id, headOid: pr.headOid, repo: pr.repo, number: pr.number } }
@@ -447,7 +449,7 @@ export class Engine {
 
   /** Description and counts for a PR the panel shows; only PRs in the current state are looked up. */
   async loadDetail(prId: string): Promise<PrDetail | null> {
-    const pr = [...this.allPrs, ...this.current.myPrs, ...this.current.involved].find((p) => p.id === prId)
+    const pr = [...this.allPrs, ...this.current.myPrs, ...this.allInvolved].find((p) => p.id === prId)
     if (!pr || !this.deps.fetchDetail || !this.deps.session.current) return null
     const key = `${pr.id}@${pr.updatedAt}`
     const cached = this.details.get(key)
@@ -487,9 +489,9 @@ export class Engine {
     const now = new Date(nowMs)
     const persisted = this.persisted
     if (persisted && this.deps.session.current && Object.values(persisted.snoozed).some((until) => until <= nowMs)) {
-      const hidden = applyHidden(this.allPrs, persisted, nowMs)
+      const hidden = this.hideAll(persisted, nowMs)
       this.save({ ...persisted, dismissedIds: hidden.dismissedIds, snoozed: hidden.snoozed, snoozedUntilPush: hidden.snoozedUntilPush })
-      this.publish({ ...this.current, prs: hidden.visible, snoozedCount: snoozedCount(hidden) })
+      this.publish({ ...this.current, prs: hidden.prs, involved: hidden.involved, snoozedCount: snoozedCount(hidden) })
       if (hidden.returned.length) this.dispatch({ reviewPlan: { kind: 'none' }, returned: hidden.returned, mine: [] })
     }
 
@@ -551,6 +553,7 @@ export class Engine {
     this.deps.log.info('switching sign-in method')
     this.deps.session.clear()
     this.allPrs = []
+    this.allInvolved = []
     this.sessionWarning = null
     this.resetInstallations()
     this.deps.onSessionEnded()
@@ -562,6 +565,7 @@ export class Engine {
     this.deps.log.warn('session expired', { reason })
     this.deps.session.clear()
     this.allPrs = []
+    this.allInvolved = []
     this.sessionWarning = null
     this.resetInstallations()
     this.deps.onSessionEnded()
@@ -576,6 +580,7 @@ export class Engine {
     this.deps.stateStore.remove()
     this.persisted = null
     this.allPrs = []
+    this.allInvolved = []
     this.sessionWarning = null
     this.resetInstallations()
     this.deps.onSessionEnded()
@@ -629,14 +634,32 @@ export class Engine {
   }
 
   private setHidden(next: PersistedState): void {
-    const hidden = applyHidden(this.allPrs, next, this.deps.now())
+    const hidden = this.hideAll(next, this.deps.now())
     this.save({ ...next, dismissedIds: hidden.dismissedIds, snoozed: hidden.snoozed, snoozedUntilPush: hidden.snoozedUntilPush })
     this.publish({
       ...this.current,
-      prs: hidden.visible,
+      prs: hidden.prs,
+      involved: hidden.involved,
       dismissedCount: hidden.dismissedIds.length,
       snoozedCount: snoozedCount(hidden)
     })
+  }
+
+  /**
+   * Dismissals and snoozes apply to review requests and to PRs you take part in, with one shared
+   * list of ids, so the pruning of ids that left looks at both lists. Reminders only concern
+   * review requests (a PR you take part in can't be snoozed).
+   */
+  private hideAll(hidden: HiddenPrs, now: number): HiddenResult & { prs: PullRequest[]; involved: PullRequest[] } {
+    const all = applyHidden([...this.allPrs, ...this.allInvolved], hidden, now)
+    const visible = new Set(all.visible.map((p) => p.id))
+    const involvedIds = new Set(this.allInvolved.map((p) => p.id))
+    return {
+      ...all,
+      prs: this.allPrs.filter((p) => visible.has(p.id)),
+      involved: this.allInvolved.filter((p) => visible.has(p.id)),
+      returned: all.returned.filter((p) => !involvedIds.has(p.id))
+    }
   }
 
   /** Delivers alerts now, or holds them back during quiet hours. */

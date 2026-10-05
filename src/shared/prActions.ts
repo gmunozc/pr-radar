@@ -56,13 +56,15 @@ export type ReviewMenuAction =
   | 'open'
 
 /**
- * Context-menu entries for a review request. GitHub doesn't let you approve your own PR;
- * PRs you merely take part in can't be snoozed or dismissed (nothing asked you to review them).
+ * Context-menu entries for a review request. GitHub doesn't let you approve your own PR; a PR
+ * you merely take part in can be dismissed but not snoozed (its reminders would talk about a
+ * review nobody asked for).
  */
 export function reviewMenuActions(pr: PullRequest, canWrite: boolean): ReviewMenuAction[] {
   const items: ReviewMenuAction[] = []
   if (canWrite && !pr.viewerDidAuthor) items.push('approve')
-  if (pr.source.kind !== 'involved') items.push('snooze_hour', 'snooze_tomorrow', 'snooze_push', 'dismiss')
+  if (pr.source.kind !== 'involved') items.push('snooze_hour', 'snooze_tomorrow', 'snooze_push')
+  items.push('dismiss')
   if (pr.branch) items.push('copy_branch')
   items.push('copy_link', 'details', 'open')
   return items

@@ -676,6 +676,29 @@ describe('Engine actions on PRs', () => {
   })
 })
 
+describe('Engine and PRs you take part in', () => {
+  it('dismisses them (shared with review requests), keeps that across polls, restores and approves them', async () => {
+    const involved = pr('i1', { source: { kind: 'involved' } })
+    const poll = { ...result(['a']), involved: [involved] }
+    const t = setup([poll, poll, poll], { auth: fresh() })
+    await t.engine.poll()
+    expect(t.engine.state.involved.map((p) => p.id)).toEqual(['i1'])
+
+    t.engine.dismiss('i1')
+    expect(t.engine.state.involved).toEqual([])
+    expect(t.engine.state.prs.map((p) => p.id)).toEqual(['a'])
+    expect(t.engine.state.dismissedCount).toBe(1)
+    await t.engine.poll()
+    expect(t.engine.state.involved).toEqual([])
+    expect(t.stored).toMatchObject({ dismissedIds: ['i1'] })
+
+    await expect(t.engine.runAction('i1', { kind: 'approve' })).resolves.toEqual({ ok: true })
+    t.engine.restoreHidden()
+    expect(t.engine.state.involved.map((p) => p.id)).toEqual(['i1'])
+    expect(t.engine.state.dismissedCount).toBe(0)
+  })
+})
+
 describe('Engine PR detail', () => {
   it('loads details for PRs it shows, caches them per update, and ignores unknown ids', async () => {
     const t = setup([result(['a']), { ...result([]), prs: [pr('a', { updatedAt: '2026-02-01T00:00:00Z' })] }], { auth: fresh() })

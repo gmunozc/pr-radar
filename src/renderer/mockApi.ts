@@ -273,7 +273,11 @@ export function createMockApi(): PrRadarApi {
     for (const cb of installListeners) cb(s)
   }
   const hide = (prId: string, key: 'dismissedCount' | 'snoozedCount') =>
-    publish({ prs: state.prs.filter((p) => p.id !== prId), [key]: state[key] + 1 })
+    publish({
+      prs: state.prs.filter((p) => p.id !== prId),
+      involved: state.involved.filter((p) => p.id !== prId),
+      [key]: state[key] + 1
+    })
 
   const action = async (prId: string, a: PrAction): Promise<ActionResult> => {
     publish({ pendingActions: { ...state.pendingActions, [prId]: a.kind } })

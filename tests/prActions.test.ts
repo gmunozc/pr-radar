@@ -27,8 +27,15 @@ describe('reviewMenuActions', () => {
     ])
   })
 
-  it('never snoozes or dismisses a PR you merely take part in', () => {
-    expect(reviewMenuActions(pr('a', { source: { kind: 'involved' } }), true)).toEqual(['approve', 'copy_branch', 'copy_link', 'details', 'open'])
+  it('lets you dismiss, but not snooze, a PR you merely take part in', () => {
+    expect(reviewMenuActions(pr('a', { source: { kind: 'involved' } }), true)).toEqual([
+      'approve',
+      'dismiss',
+      'copy_branch',
+      'copy_link',
+      'details',
+      'open'
+    ])
   })
 })
 
