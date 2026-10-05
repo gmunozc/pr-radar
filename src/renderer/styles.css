@@ -1035,9 +1035,9 @@ code {
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface-strong);
-  backdrop-filter: blur(14px) saturate(1.2);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  /* Opaque on purpose: the panel is a vibrancy window, so anything translucent shows the rows underneath. */
+  background: var(--bg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
 }
 
 .menu-up {
