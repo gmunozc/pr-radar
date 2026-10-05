@@ -4,6 +4,7 @@ import {
   type ActionResult,
   type AppState,
   type AuthMethod,
+  type InstallState,
   type MergeMethod,
   type PrAction,
   type Settings,
@@ -49,6 +50,10 @@ export interface IpcContext {
   downloadUpdate(): Promise<void>
   openUpdateNotes(): Promise<void>
   skipUpdate(): void
+  installUpdate(): Promise<void>
+  cancelInstall(): void
+  openInstaller(): Promise<void>
+  installState(): InstallState
 }
 
 export function isAllowedExternalUrl(url: string): boolean {
@@ -149,6 +154,10 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.updateDownload, () => ctx.downloadUpdate())
   ipcMain.handle(IPC.updateNotes, () => ctx.openUpdateNotes())
   ipcMain.handle(IPC.updateSkip, () => ctx.skipUpdate())
+  ipcMain.handle(IPC.updateInstall, () => ctx.installUpdate())
+  ipcMain.handle(IPC.updateInstallCancel, () => ctx.cancelInstall())
+  ipcMain.handle(IPC.updateOpenInstaller, () => ctx.openInstaller())
+  ipcMain.handle(IPC.updateInstallStateGet, () => ctx.installState())
   ipcMain.on(IPC.rendererError, (_e, message: unknown) => {
     logger.error('panel error', typeof message === 'string' ? message.slice(0, 4000) : 'unknown')
   })

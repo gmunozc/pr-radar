@@ -48,6 +48,8 @@ describe('exclusions and list settings', () => {
     expect(sanitizeSettingsPatch({ shortcut: 'Alt+Shift+P', showInvolved: false })).toEqual({ shortcut: 'Alt+Shift+P', showInvolved: false })
     expect(sanitizeSettingsPatch({ shortcut: '' })).toEqual({ shortcut: '' })
     expect(sanitizeSettingsPatch({ shortcut: 'Control+Q' })).toEqual({})
+    expect(sanitizeSettingsPatch({ panelSize: 'large' })).toEqual({ panelSize: 'large' })
+    expect(sanitizeSettingsPatch({ panelSize: 'huge' })).toEqual({})
   })
 
   it('clamps stale days and only accepts known filter and sort values', () => {

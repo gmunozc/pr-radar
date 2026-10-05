@@ -26,7 +26,8 @@ describe('renderNotification', () => {
       id: 'PR_1',
       title: 'Nueva review solicitada',
       body: 'acme/app#12 · Add feature — @octo',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' },
+      buttons: [{ label: 'Posponer 1 h', action: { kind: 'snooze', prId: 'PR_1', option: 'hour' } }]
     })
   })
 

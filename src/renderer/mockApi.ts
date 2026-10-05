@@ -7,6 +7,7 @@ import type {
   ActionResult,
   AppState,
   AuthStatus,
+  InstallState,
   MyPullRequest,
   PrAction,
   PrRadarApi,
@@ -248,7 +249,11 @@ export function createMockApi(): PrRadarApi {
     snoozedCount: 0,
     quietUntil: null,
     snoozeTomorrowAt: now + 16 * 3_600_000,
-    update: null,
+    update: {
+      version: '9.9.9',
+      releaseUrl: 'https://github.com/gmunozc/pr-radar/releases/tag/v9.9.9',
+      downloadUrl: 'https://github.com/gmunozc/pr-radar/releases/download/v9.9.9/PR-Radar-9.9.9-arm64.dmg'
+    },
     authMethod: 'oauth_app',
     installations: null,
     authNotice: null,
@@ -261,6 +266,12 @@ export function createMockApi(): PrRadarApi {
     for (const cb of stateListeners) cb(state)
   }
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+  let install: InstallState = { phase: 'idle' }
+  const installListeners = new Set<(s: InstallState) => void>()
+  const setInstall = (s: InstallState) => {
+    install = s
+    for (const cb of installListeners) cb(s)
+  }
   const hide = (prId: string, key: 'dismissedCount' | 'snoozedCount') =>
     publish({ prs: state.prs.filter((p) => p.id !== prId), [key]: state[key] + 1 })
 
@@ -357,6 +368,28 @@ export function createMockApi(): PrRadarApi {
     openLogs: async () => {},
     quit: async () => {},
     reportError: (message) => console.error('[mock]', message),
-    updates: { check: async () => {}, download: async () => {}, openNotes: async () => {}, skip: async () => {} }
+    updates: {
+      check: async () => {},
+      download: async () => console.info('[mock] download'),
+      openNotes: async () => {},
+      skip: async () => publish({ update: null }),
+      install: async () => {
+        for (let percent = 0; percent <= 1; percent += 0.25) {
+          setInstall({ phase: 'downloading', percent })
+          await sleep(350)
+          if (install.phase !== 'downloading') return
+        }
+        setInstall({ phase: 'verifying' })
+        await sleep(500)
+        setInstall({ phase: 'ready', path: '/tmp/PR-Radar-9.9.9-arm64.dmg' })
+      },
+      cancelInstall: async () => setInstall({ phase: 'error', code: 'cancelled' }),
+      openInstaller: async () => console.info('[mock] open installer'),
+      installState: async () => install,
+      onInstallState: (cb) => {
+        installListeners.add(cb)
+        return () => installListeners.delete(cb)
+      }
+    }
   }
 }

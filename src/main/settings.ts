@@ -52,6 +52,7 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (p.reviewFilter === 'all' || p.reviewFilter === 'direct' || p.reviewFilter === 'team') out.reviewFilter = p.reviewFilter
   if (p.reviewSort === 'newest' || p.reviewSort === 'oldest' || p.reviewSort === 'updated') out.reviewSort = p.reviewSort
   if (typeof p.shortcut === 'string' && (SHORTCUT_OPTIONS as readonly string[]).includes(p.shortcut)) out.shortcut = p.shortcut
+  if (p.panelSize === 'compact' || p.panelSize === 'default' || p.panelSize === 'large') out.panelSize = p.panelSize
   if (typeof p.clientId === 'string') out.clientId = p.clientId.trim()
   if (p.language === 'system' || p.language === 'en' || p.language === 'es') out.language = p.language
   for (const key of ['workStart', 'workEnd', 'digestTime'] as const) {

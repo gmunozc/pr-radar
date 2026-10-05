@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IPC, type AppState, type AuthStatus, type PrRadarApi, type Settings } from '../shared/types'
+import { IPC, type AppState, type AuthStatus, type InstallState, type PrRadarApi, type Settings } from '../shared/types'
 
 function subscribe<T>(channel: string, cb: (value: T) => void): () => void {
   const listener = (_e: IpcRendererEvent, value: T) => cb(value)
@@ -48,7 +48,12 @@ const api: PrRadarApi = {
     check: () => ipcRenderer.invoke(IPC.updateCheck),
     download: () => ipcRenderer.invoke(IPC.updateDownload),
     openNotes: () => ipcRenderer.invoke(IPC.updateNotes),
-    skip: () => ipcRenderer.invoke(IPC.updateSkip)
+    skip: () => ipcRenderer.invoke(IPC.updateSkip),
+    install: () => ipcRenderer.invoke(IPC.updateInstall),
+    cancelInstall: () => ipcRenderer.invoke(IPC.updateInstallCancel),
+    openInstaller: () => ipcRenderer.invoke(IPC.updateOpenInstaller),
+    installState: () => ipcRenderer.invoke(IPC.updateInstallStateGet),
+    onInstallState: (cb) => subscribe<InstallState>(IPC.updateInstallState, cb)
   },
   quit: () => ipcRenderer.invoke(IPC.quit)
 }

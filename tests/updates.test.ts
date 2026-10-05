@@ -1,14 +1,24 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { Logger } from '../src/main/log'
+import type { InstallState } from '../src/shared/types'
 import {
   CHECK_INTERVAL_MS,
   fetchLatestRelease,
   isNewer,
   isReleaseUrl,
+  parseChecksums,
   parseRelease,
+  sha256File,
   UpdateChecker,
+  UpdateInstaller,
+  verifyChecksum,
   type ReleaseCheck,
-  type UpdateCheckerState
+  type UpdateCheckerState,
+  type UpdateInfo,
+  type UpdateInstallerDeps
 } from '../src/main/updates'
 
 const silent: Logger = { debug() {}, info() {}, warn() {}, error() {} }
@@ -50,7 +60,9 @@ describe('parseRelease', () => {
     expect(parseRelease(release('v0.8.0'), 'arm64')).toEqual({
       version: '0.8.0',
       releaseUrl: 'https://github.com/gmunozc/pr-radar/releases/tag/v0.8.0',
-      downloadUrl: dmgUrl('v0.8.0', 'arm64')
+      downloadUrl: dmgUrl('v0.8.0', 'arm64'),
+      assetName: 'PR-Radar-0.8.0-arm64.dmg',
+      checksumsUrl: 'https://github.com/gmunozc/pr-radar/releases/download/x/SHA256SUMS.txt'
     })
     expect(parseRelease(release('v0.8.0'), 'x64')?.downloadUrl).toBe(dmgUrl('v0.8.0', 'x64'))
   })
@@ -151,5 +163,126 @@ describe('isReleaseUrl', () => {
     expect(isReleaseUrl('https://github.com/evil/pr-radar/releases/tag/v1', 'gmunozc/pr-radar')).toBe(false)
     expect(isReleaseUrl('http://github.com/gmunozc/pr-radar/releases/tag/v1', 'gmunozc/pr-radar')).toBe(false)
     expect(isReleaseUrl('https://github.com.evil.io/gmunozc/pr-radar/releases/', 'gmunozc/pr-radar')).toBe(false)
+  })
+})
+
+describe('checksums', () => {
+  const sums = parseChecksums(
+    'AB'.repeat(32) + '  PR-Radar-0.8.0-arm64.dmg\r\n' + 'cd'.repeat(32) + ' *PR-Radar-0.8.0-x64.dmg\n\nnot a line\n'
+  )
+
+  it('parses shasum output in both formats and ignores noise', () => {
+    expect(sums).toEqual({ 'PR-Radar-0.8.0-arm64.dmg': 'ab'.repeat(32), 'PR-Radar-0.8.0-x64.dmg': 'cd'.repeat(32) })
+  })
+
+  it('verifies a file against the list', () => {
+    expect(verifyChecksum(sums, 'PR-Radar-0.8.0-arm64.dmg', 'AB'.repeat(32))).toBe('ok')
+    expect(verifyChecksum(sums, 'PR-Radar-0.8.0-arm64.dmg', 'ff'.repeat(32))).toBe('mismatch')
+    expect(verifyChecksum(sums, 'other.dmg', 'ab'.repeat(32))).toBe('missing')
+  })
+
+  it('hashes a file with SHA-256', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'pr-radar-test-'))
+    const file = join(dir, 'x.bin')
+    writeFileSync(file, 'hello')
+    expect(await sha256File(file)).toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
+  })
+})
+
+describe('UpdateInstaller', () => {
+  const info: UpdateInfo = {
+    version: '0.8.0',
+    releaseUrl: 'https://github.com/gmunozc/pr-radar/releases/tag/v0.8.0',
+    downloadUrl: dmgUrl('v0.8.0', 'arm64'),
+    assetName: 'PR-Radar-0.8.0-arm64.dmg',
+    checksumsUrl: 'https://github.com/gmunozc/pr-radar/releases/download/v0.8.0/SHA256SUMS.txt'
+  }
+  const HEX = 'ab'.repeat(32)
+
+  function setup(over: Partial<UpdateInstallerDeps> = {}) {
+    const states: InstallState[] = []
+    const removed: string[] = []
+    const opened: string[] = []
+    const deps: UpdateInstallerDeps = {
+      dir: '/downloads',
+      download: vi.fn(async (_url, _dest, onProgress) => {
+        onProgress(0.5)
+        onProgress(1)
+      }),
+      fetchText: vi.fn(async () => `${HEX}  PR-Radar-0.8.0-arm64.dmg\n`),
+      sha256: vi.fn(async () => HEX),
+      openPath: vi.fn(async (path: string) => void opened.push(path)),
+      removeFile: (path) => removed.push(path),
+      joinPath: (dir, name) => `${dir}/${name}`,
+      onChange: (s) => states.push(s),
+      log: silent,
+      ...over
+    }
+    return { installer: new UpdateInstaller(deps), deps, states, removed, opened }
+  }
+
+  it('downloads, verifies and opens the dmg, reporting progress', async () => {
+    const t = setup()
+    await t.installer.install(info)
+    expect(t.states).toEqual([
+      { phase: 'downloading', percent: null },
+      { phase: 'downloading', percent: 0.5 },
+      { phase: 'downloading', percent: 1 },
+      { phase: 'verifying' },
+      { phase: 'ready', path: '/downloads/PR-Radar-0.8.0-arm64.dmg' }
+    ])
+    expect(t.opened).toEqual(['/downloads/PR-Radar-0.8.0-arm64.dmg'])
+    expect(t.deps.download).toHaveBeenCalledWith(info.downloadUrl, '/downloads/PR-Radar-0.8.0-arm64.dmg', expect.any(Function), expect.any(AbortSignal))
+    expect(t.installer.state).toEqual({ phase: 'ready', path: '/downloads/PR-Radar-0.8.0-arm64.dmg' })
+  })
+
+  it('deletes a download that does not match the checksum', async () => {
+    const t = setup({ sha256: async () => 'ff'.repeat(32) })
+    await t.installer.install(info)
+    expect(t.installer.state).toEqual({ phase: 'error', code: 'checksum' })
+    expect(t.removed).toEqual(['/downloads/PR-Radar-0.8.0-arm64.dmg'])
+    expect(t.opened).toEqual([])
+  })
+
+  it('refuses to install without checksums or without a dmg for this Mac', async () => {
+    const noSums = setup()
+    await noSums.installer.install({ ...info, checksumsUrl: null })
+    expect(noSums.installer.state).toEqual({ phase: 'error', code: 'checksum' })
+    expect(noSums.deps.download).not.toHaveBeenCalled()
+
+    const unlisted = setup({ fetchText: async () => `${HEX}  something-else.dmg\n` })
+    await unlisted.installer.install(info)
+    expect(unlisted.installer.state).toEqual({ phase: 'error', code: 'checksum' })
+
+    const noDmg = setup()
+    await noDmg.installer.install({ ...info, downloadUrl: null, assetName: null })
+    expect(noDmg.installer.state).toEqual({ phase: 'error', code: 'unavailable' })
+  })
+
+  it('reports network and file errors, and a cancelled download', async () => {
+    const offline = setup({
+      download: async () => {
+        throw new TypeError('fetch failed')
+      }
+    })
+    await offline.installer.install(info)
+    expect(offline.installer.state).toEqual({ phase: 'error', code: 'network' })
+
+    const disk = setup({
+      download: async () => {
+        throw Object.assign(new Error('no space'), { code: 'ENOSPC' })
+      }
+    })
+    await disk.installer.install(info)
+    expect(disk.installer.state).toEqual({ phase: 'error', code: 'io' })
+
+    const slow = setup({
+      download: (_url, _dest, _onProgress, signal) =>
+        new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('download cancelled'))))
+    })
+    const pending = slow.installer.install(info)
+    slow.installer.cancel()
+    await pending
+    expect(slow.installer.state).toEqual({ phase: 'error', code: 'cancelled' })
   })
 })

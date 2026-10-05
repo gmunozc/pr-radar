@@ -1,6 +1,6 @@
 /** What PR Radar can notify about, and how each notification reads. Free of Electron APIs. */
 import type { Translate } from '../shared/i18n'
-import type { ActionErrorCode, MergeMethod, MyPullRequest, PullRequest } from '../shared/types'
+import type { ActionErrorCode, MergeMethod, MyPullRequest, PullRequest, SnoozeOption } from '../shared/types'
 import type { MyPrEvent, NotificationPlan } from './diff'
 
 /** What happened while quiet hours held notifications back. */
@@ -40,14 +40,20 @@ export type NotificationEvent =
   | { kind: 'session_expired' }
   | { kind: 'test' }
 
-export type NotificationAction = { kind: 'open_url'; url: string } | { kind: 'open_panel' }
+export type NotificationAction =
+  | { kind: 'open_url'; url: string }
+  | { kind: 'open_panel' }
+  | { kind: 'snooze'; prId: string; option: SnoozeOption }
 
 export interface RenderedNotification {
   /** Posting again with the same id replaces the previous notification. */
   id?: string
   title: string
   body: string
+  /** What a click does. */
   action: NotificationAction
+  /** Extra buttons (macOS shows them only for signed apps, Windows always). */
+  buttons?: Array<{ label: string; action: NotificationAction }>
 }
 
 export function planToEvents(plan: NotificationPlan): NotificationEvent[] {
@@ -106,7 +112,13 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
             ? t('notif.reviewRequestedTeam', { slug: pr.source.slug })
             : t('notif.reviewRequestedTeamUnnamed')
           : t('notif.reviewRequested')
-      return { id: pr.id, title, body: describe(pr), action: { kind: 'open_url', url: pr.url } }
+      return {
+        id: pr.id,
+        title,
+        body: describe(pr),
+        action: { kind: 'open_url', url: pr.url },
+        buttons: [{ label: t('notif.actionSnooze'), action: { kind: 'snooze', prId: pr.id, option: 'hour' } }]
+      }
     }
     case 'my_pr_changes_requested':
       return {

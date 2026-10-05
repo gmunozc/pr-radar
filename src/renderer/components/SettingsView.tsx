@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
 import type { LanguagePref } from '../../shared/i18n'
-import { MIN_POLL_INTERVAL_SEC, SHORTCUT_OPTIONS, type AppState, type NotifyResult, type Settings } from '../../shared/types'
+import {
+  MIN_POLL_INTERVAL_SEC,
+  SHORTCUT_OPTIONS,
+  type AppState,
+  type NotifyResult,
+  type PanelSize,
+  type Settings
+} from '../../shared/types'
 
+const PANEL_SIZES: PanelSize[] = ['compact', 'default', 'large']
 const MAC_KEYS: Record<string, string> = { CommandOrControl: '⌘', Control: '⌃', Alt: '⌥', Shift: '⇧' }
 const PC_KEYS: Record<string, string> = { CommandOrControl: 'Ctrl', Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift' }
 
@@ -383,6 +391,18 @@ export function SettingsView({ state }: { state: AppState }) {
             {SHORTCUT_OPTIONS.map((accelerator) => (
               <option key={accelerator} value={accelerator}>
                 {accelerator ? shortcutLabel(accelerator, api.platform) : t('settings.shortcutNone')}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="setting">
+          <div className="setting-text">
+            <div className="setting-label">{t('settings.panelSize')}</div>
+          </div>
+          <select className="input select" value={settings.panelSize} onChange={(e) => void update({ panelSize: e.target.value as PanelSize })}>
+            {PANEL_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {t(`settings.panelSize.${size}`)}
               </option>
             ))}
           </select>

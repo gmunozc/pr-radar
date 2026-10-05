@@ -28,6 +28,11 @@ function Panel() {
     if (!showInvolved && tab === 'involved') setTab('review')
   }, [showInvolved, tab])
 
+  // Settings → Panel size: "compact" tightens the rows (the window itself is resized by main).
+  useEffect(() => {
+    document.documentElement.dataset.density = settings?.panelSize === 'compact' ? 'compact' : 'default'
+  }, [settings?.panelSize])
+
   useEffect(() => {
     void api.getState().then(setState)
     const offState = api.onState((s) => {

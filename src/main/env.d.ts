@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly MAIN_VITE_GITHUB_APP_SLUG?: string
   /** owner/repo whose releases are checked for updates; empty disables the check (forks). */
   readonly MAIN_VITE_UPDATE_REPO?: string
+  /** "1" adds buttons to notifications; macOS only shows them for Developer ID-signed builds. */
+  readonly MAIN_VITE_NOTIFICATION_ACTIONS?: string
 }
 
 interface ImportMeta {

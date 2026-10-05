@@ -1298,3 +1298,46 @@ code {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* Installing an update */
+.progress {
+  height: 4px;
+  margin: 8px 0 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+.update-status {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.update-error {
+  color: var(--error-fg);
+}
+
+/* Settings → Panel size → Compact */
+html[data-density='compact'] .pr {
+  padding: 5px 8px;
+  gap: 8px;
+}
+
+html[data-density='compact'] .pr-title {
+  -webkit-line-clamp: 1;
+}
+
+html[data-density='compact'] .pr-tags {
+  margin-top: 3px;
+}
+
+html[data-density='compact'] .pr-author,
+html[data-density='compact'] .diff {
+  display: none;
+}

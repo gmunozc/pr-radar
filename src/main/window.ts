@@ -1,10 +1,13 @@
 import { BrowserWindow, screen, type Rectangle } from 'electron'
 import { join } from 'node:path'
+import type { PanelSize } from '../shared/types'
 import { logger } from './log'
 import { displayNearest, placePanel } from './position'
 
 export const PANEL_WIDTH = 380
 export const PANEL_HEIGHT = 540
+/** Heights per Settings → Panel size; the width stays the same. */
+export const PANEL_HEIGHTS: Record<PanelSize, number> = { compact: 460, default: PANEL_HEIGHT, large: 680 }
 /** Check the panel this long after a load starts; a load still running by then is stuck. */
 const LOAD_CHECK_MS = 5000
 /** After the page loads, give React this long to mount before checking. */
@@ -144,6 +147,14 @@ export class Panel {
   /** Display the panel was last opened on (for diagnostics). */
   get displayId(): number | null {
     return this.lastDisplayId
+  }
+
+  /** Applies Settings → Panel size; a visible panel is placed again so it stays on screen. */
+  resize(size: PanelSize): void {
+    const height = PANEL_HEIGHTS[size] ?? PANEL_HEIGHT
+    if (this.win.getSize()[1] === height) return
+    this.win.setSize(PANEL_WIDTH, height, false)
+    if (this.win.isVisible()) this.show()
   }
 
   hide(): void {

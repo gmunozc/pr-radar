@@ -1,9 +1,9 @@
 /** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
-import { app, clipboard, globalShortcut, net, Notification, powerMonitor, screen, shell } from 'electron'
-import { mkdtempSync } from 'node:fs'
+import { app, clipboard, globalShortcut, net, Notification, powerMonitor, screen, session, shell, type DownloadItem } from 'electron'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { IPC, type AuthMethod, type AuthStatus, type Settings, type Warning } from '../shared/types'
+import { IPC, type AuthMethod, type AuthStatus, type InstallState, type Settings, type Warning } from '../shared/types'
 import { runPrAction } from './actions'
 import { createAuthStore, DeviceLogin } from './auth'
 import { debugMenu, FaultInjector } from './debug'
@@ -21,7 +21,7 @@ import { normalizeSettings } from './settings'
 import { applyShortcut } from './shortcut'
 import { JsonFile } from './store'
 import { AppTray } from './tray'
-import { fetchLatestRelease, isReleaseUrl, UpdateChecker, type UpdateCheckerState } from './updates'
+import { fetchLatestRelease, isReleaseUrl, sha256File, UpdateChecker, UpdateInstaller, type UpdateCheckerState } from './updates'
 import { Panel } from './window'
 
 // CI smoke tests (PR_RADAR_SMOKE=1) start from an empty data folder and exit once the panel
@@ -86,6 +86,7 @@ function main(): void {
 
   const faults = app.isPackaged ? null : new FaultInjector()
   const panel = new Panel()
+  panel.resize(settings.panelSize)
   const showPanel = () => panel.show(tray?.getBounds())
   const togglePanel = () => panel.toggle(tray?.getBounds())
 
@@ -108,7 +109,13 @@ function main(): void {
         write: (state) => stateFile.write(state),
         remove: () => stateFile.remove()
       },
-      notify: (events) => deliverEvents(events, showPanel),
+      notify: (events) =>
+        deliverEvents(events, {
+          openPanel: showPanel,
+          perform: (action) => {
+            if (action.kind === 'snooze') engine.snooze(action.prId, action.option)
+          }
+        }),
       publish: (state) => {
         tray?.update(state)
         if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.state, state)
@@ -126,14 +133,16 @@ function main(): void {
 
   const poller = new Poller(() => engine.poll(), () => settings.pollIntervalSec)
 
-  // Update notice: packaged builds only, against this repository's GitHub releases.
+  // Update notice: packaged builds only, against this repository's GitHub releases. In
+  // development, PR_RADAR_DEV_VERSION=0.0.1 pretends to be that version to exercise the flow.
   const updateRepo = (import.meta.env.MAIN_VITE_UPDATE_REPO ?? 'gmunozc/pr-radar').trim()
+  const devVersion = !app.isPackaged ? process.env.PR_RADAR_DEV_VERSION : undefined
   const appFile = new JsonFile<UpdateCheckerState>(join(userData, 'app.json'), () => ({}))
   const updates =
-    app.isPackaged && updateRepo
+    (app.isPackaged || devVersion) && updateRepo
       ? new UpdateChecker({
           repo: updateRepo,
-          currentVersion: app.getVersion(),
+          currentVersion: devVersion || app.getVersion(),
           now: Date.now,
           load: () => appFile.read(),
           save: (state) => appFile.write(state),
@@ -142,6 +151,31 @@ function main(): void {
           log: logger
         })
       : null
+
+  // Installing an update: download the dmg here, verify it, open it. Leftovers from a previous
+  // run are useless, so start clean.
+  const updatesDir = join(userData, 'updates')
+  rmSync(updatesDir, { recursive: true, force: true })
+  const installer = new UpdateInstaller({
+    dir: updatesDir,
+    download: downloadFile,
+    fetchText: async (url, signal) => {
+      const res = await fetch(url, { signal, headers: { 'User-Agent': 'pr-radar' } })
+      if (!res.ok) throw new Error(`GitHub answered ${res.status}`)
+      return res.text()
+    },
+    sha256: sha256File,
+    openPath: async (path) => {
+      const error = await shell.openPath(path)
+      if (error) throw Object.assign(new Error(error), { code: 'EOPEN' })
+    },
+    removeFile: (path) => rmSync(path, { force: true }),
+    joinPath: join,
+    onChange: (state: InstallState) => {
+      if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.updateInstallState, state)
+    },
+    log: logger
+  })
   const runUpdateCheck = async (force = false) => {
     if (!updates || (!force && !settings.checkUpdates)) return
     const announce = await updates.check(force)
@@ -302,6 +336,7 @@ function main(): void {
       settings = { ...settings, ...rest }
       // A shortcut another app owns can't be registered: fall back to none so the UI says so.
       if (rest.shortcut !== undefined && !applyShortcut(settings.shortcut, togglePanel)) settings = { ...settings, shortcut: '' }
+      if (rest.panelSize !== undefined) panel.resize(settings.panelSize)
       settingsFile.write(settings)
       if (applyLanguage(settings.language, app.getPreferredSystemLanguages())) {
         logger.info('language changed', { locale: currentLocale() })
@@ -326,6 +361,15 @@ function main(): void {
     checkUpdates: () => runUpdateCheck(true),
     downloadUpdate: () => openRelease(updates?.available?.downloadUrl ?? updates?.available?.releaseUrl),
     openUpdateNotes: () => openRelease(updates?.available?.releaseUrl),
+    installUpdate: async () => {
+      const available = updates?.available
+      if (!available || !isReleaseUrl(available.downloadUrl ?? '', updateRepo)) return
+      mkdirSync(updatesDir, { recursive: true })
+      await installer.install(available)
+    },
+    cancelInstall: () => installer.cancel(),
+    openInstaller: () => installer.openInstaller(),
+    installState: () => installer.state,
     skipUpdate: () => {
       const available = updates?.available
       if (!available || !updates) return
@@ -368,6 +412,34 @@ function main(): void {
     // First launch (or no tray icon): open the panel so the user sees how to connect.
     panel.win.once('ready-to-show', showPanel)
   }
+}
+
+/**
+ * Downloads `url` to `dest` through Chromium's download manager (follows GitHub's redirect to
+ * objects.githubusercontent.com), reporting progress; `signal` cancels it.
+ */
+function downloadFile(url: string, dest: string, onProgress: (percent: number | null) => void, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ses = session.defaultSession
+    const onWillDownload = (_e: Electron.Event, item: DownloadItem) => {
+      if (item.getURLChain()[0] !== url) return
+      ses.removeListener('will-download', onWillDownload)
+      item.setSavePath(dest)
+      const abort = () => item.cancel()
+      signal.addEventListener('abort', abort, { once: true })
+      item.on('updated', () => {
+        const total = item.getTotalBytes()
+        onProgress(total > 0 ? Math.min(1, item.getReceivedBytes() / total) : null)
+      })
+      item.once('done', (_ev, state) => {
+        signal.removeEventListener('abort', abort)
+        if (state === 'completed') resolve()
+        else reject(new Error(`download ${state}`))
+      })
+    }
+    ses.on('will-download', onWillDownload)
+    ses.downloadURL(url)
+  })
 }
 
 /** CI: exit 0 once the panel has rendered, 1 after 60 s without it, 2 on an uncaught error. */

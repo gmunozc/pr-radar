@@ -154,6 +154,18 @@ export type ActionErrorCode =
 
 export type ActionResult = { ok: true } | { ok: false; code: ActionErrorCode; detail?: string }
 
+export type PanelSize = 'compact' | 'default' | 'large'
+
+export type InstallErrorCode = 'network' | 'checksum' | 'io' | 'cancelled' | 'unavailable'
+
+/** Where installing a new version stands (macOS: download the dmg, verify it, open it). */
+export type InstallState =
+  | { phase: 'idle' }
+  | { phase: 'downloading'; percent: number | null }
+  | { phase: 'verifying' }
+  | { phase: 'ready'; path: string }
+  | { phase: 'error'; code: InstallErrorCode }
+
 export interface Viewer {
   login: string
   avatarUrl: string
@@ -249,6 +261,7 @@ export interface Settings {
   showInvolved: boolean
   /** Electron accelerator that opens the panel from anywhere; '' for none (see SHORTCUT_OPTIONS). */
   shortcut: string
+  panelSize: PanelSize
   pollIntervalSec: number
   clientId: string
   language: LanguagePref
@@ -280,6 +293,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reviewSort: 'newest',
   showInvolved: true,
   shortcut: '',
+  panelSize: 'default',
   pollIntervalSec: 30,
   clientId: '',
   language: 'system',
@@ -361,9 +375,16 @@ export interface PrRadarApi {
   reportError(message: string): void
   updates: {
     check(): Promise<void>
+    /** Opens the dmg's download page in the browser (the fallback on every platform). */
     download(): Promise<void>
     openNotes(): Promise<void>
     skip(): Promise<void>
+    /** macOS: downloads the dmg, verifies it against SHA256SUMS.txt and opens it. */
+    install(): Promise<void>
+    cancelInstall(): Promise<void>
+    openInstaller(): Promise<void>
+    installState(): Promise<InstallState>
+    onInstallState(cb: (state: InstallState) => void): () => void
   }
 }
 
@@ -401,5 +422,10 @@ export const IPC = {
   updateDownload: 'update:download',
   updateNotes: 'update:notes',
   updateSkip: 'update:skip',
+  updateInstall: 'update:install',
+  updateInstallCancel: 'update:install-cancel',
+  updateOpenInstaller: 'update:open-installer',
+  updateInstallStateGet: 'update:install-state-get',
+  updateInstallState: 'update:install-state',
   quit: 'app:quit'
 } as const
