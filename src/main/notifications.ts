@@ -119,7 +119,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
       return {
         id: `mine-${event.pr.id}`,
         title: t('notif.readyToMerge'),
-        body: describeMine(event.pr),
+        body: describeMine(event.pr) + (event.pr.autoMerge ? ` · ${t('notif.readyAutoMerge')}` : ''),
         action: { kind: 'open_url', url: event.pr.url }
       }
     case 'my_prs_grouped':

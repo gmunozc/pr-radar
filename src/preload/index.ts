@@ -15,6 +15,11 @@ const api: PrRadarApi = {
   dismiss: (prId) => ipcRenderer.invoke(IPC.dismiss, prId),
   snooze: (prId, option) => ipcRenderer.invoke(IPC.snooze, prId, option),
   restoreDismissed: () => ipcRenderer.invoke(IPC.restoreDismissed),
+  prs: {
+    action: (prId, action) => ipcRenderer.invoke(IPC.prAction, prId, action)
+  },
+  copyText: (text) => ipcRenderer.invoke(IPC.copyText, text),
+  relaunch: () => ipcRenderer.invoke(IPC.relaunch),
   auth: {
     start: (method) => ipcRenderer.invoke(IPC.authStart, method),
     cancel: () => ipcRenderer.invoke(IPC.authCancel),

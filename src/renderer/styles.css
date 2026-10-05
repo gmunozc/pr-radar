@@ -1023,3 +1023,151 @@ code {
   background: var(--border);
   border-radius: 4px;
 }
+
+/* In-panel menu: per-PR actions and the context menu (native menus would blur and hide the panel) */
+.menu {
+  position: absolute;
+  top: 30px;
+  right: 6px;
+  z-index: 2;
+  min-width: 180px;
+  max-width: 240px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-strong);
+  backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
+.menu-up {
+  top: auto;
+  bottom: 30px;
+}
+
+.menu-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.menu-item:focus {
+  outline: none;
+}
+
+.menu-item-active:not(:disabled),
+.menu-item:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.menu-item:disabled {
+  color: var(--text-faint);
+}
+
+.menu-item-danger:not(:disabled) {
+  color: var(--error-fg);
+}
+
+.menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-hint {
+  flex: none;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* Inline confirmation under a PR (merge, auto-merge, approve…) */
+.confirm-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 7px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.confirm-message {
+  font-weight: 500;
+}
+
+.confirm-hint {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.confirm-error {
+  color: var(--error-fg);
+  font-size: 11.5px;
+}
+
+/* Segmented control: one choice among a few */
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.segment {
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.segment:hover:not(.segment-on) {
+  background: var(--surface-hover);
+}
+
+.segment-on {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.segment:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* GitHub's auto-merge is enabled on one of your PRs */
+.chip-automerge {
+  background: var(--direct-bg);
+  color: var(--direct-fg);
+}
+
+/* Short "Copied" feedback next to the row actions */
+.pr-copied {
+  align-self: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}

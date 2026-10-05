@@ -1,10 +1,23 @@
 import { app, ipcMain, shell } from 'electron'
-import { IPC, type AppState, type AuthMethod, type Settings } from '../shared/types'
+import {
+  IPC,
+  type ActionResult,
+  type AppState,
+  type AuthMethod,
+  type MergeMethod,
+  type PrAction,
+  type Settings
+} from '../shared/types'
 import { logger } from './log'
 import { testNotification } from './notifier'
 import { sanitizeSettingsPatch, type SettingsPatch } from './settings'
 
 type SettingsView = Settings & { openAtLogin: boolean }
+
+/** Longest text the panel may put on the clipboard (branch names, links). */
+export const MAX_COPY_LENGTH = 500
+const MAX_REVIEW_BODY = 2000
+const MERGE_METHODS: readonly string[] = ['MERGE', 'SQUASH', 'REBASE']
 
 export interface IpcContext {
   getState(): AppState
@@ -12,6 +25,9 @@ export interface IpcContext {
   dismiss(prId: string): void
   snooze(prId: string, option: 'hour' | 'tomorrow'): void
   restoreDismissed(): void
+  prAction(prId: string, action: PrAction): Promise<ActionResult>
+  copyText(text: string): Promise<{ ok: boolean }>
+  relaunch(): void
   hasClientId(): boolean
   authMethods(): { available: Record<AuthMethod, boolean>; preferred: AuthMethod }
   switchMethod(): void
@@ -40,12 +56,43 @@ export function isAllowedExternalUrl(url: string): boolean {
   }
 }
 
+/** Validates an action sent by the panel; anything unexpected is dropped rather than guessed. */
+export function parsePrAction(value: unknown): PrAction | null {
+  if (!value || typeof value !== 'object') return null
+  const a = value as Record<string, unknown>
+  switch (a.kind) {
+    case 'update_branch':
+    case 'disable_auto_merge':
+    case 'rerequest_review':
+      return { kind: a.kind }
+    case 'enable_auto_merge':
+    case 'merge':
+      return typeof a.method === 'string' && MERGE_METHODS.includes(a.method)
+        ? { kind: a.kind, method: a.method as MergeMethod }
+        : null
+    case 'approve':
+      if (a.body === undefined) return { kind: 'approve' }
+      return typeof a.body === 'string' && a.body.length <= MAX_REVIEW_BODY ? { kind: 'approve', body: a.body } : null
+    default:
+      return null
+  }
+}
+
 export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.getState, () => ctx.getState())
   ipcMain.handle(IPC.refresh, () => ctx.refresh())
   ipcMain.handle(IPC.dismiss, (_e, prId: unknown) => {
     if (typeof prId === 'string') ctx.dismiss(prId)
   })
+  ipcMain.handle(IPC.prAction, (_e, prId: unknown, action: unknown): Promise<ActionResult> | ActionResult => {
+    const parsed = parsePrAction(action)
+    if (typeof prId !== 'string' || !parsed) return { ok: false, code: 'unknown', detail: 'Invalid request' }
+    return ctx.prAction(prId, parsed)
+  })
+  ipcMain.handle(IPC.copyText, (_e, text: unknown) =>
+    typeof text === 'string' && text.length <= MAX_COPY_LENGTH ? ctx.copyText(text) : { ok: false }
+  )
+  ipcMain.handle(IPC.relaunch, () => ctx.relaunch())
   ipcMain.handle(IPC.snooze, (_e, prId: unknown, option: unknown) => {
     if (typeof prId === 'string' && (option === 'hour' || option === 'tomorrow')) ctx.snooze(prId, option)
   })

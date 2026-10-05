@@ -75,6 +75,9 @@ describe('notifications about your PRs', () => {
     })
     expect(render({ kind: 'my_pr_changes_requested', pr: mine, by: ['ana'] }, en).title).toBe('Changes requested on your PR')
     expect(render({ kind: 'my_pr_ready', pr: mine }, en)).toMatchObject({ id: 'mine-MY_1', title: 'Ready to merge' })
+    const auto = { ...mine, autoMerge: { method: 'SQUASH' as const, enabledAt: 'T' } }
+    expect(render({ kind: 'my_pr_ready', pr: auto }, en).body).toBe('acme/app#12 · Add feature · It will merge on its own.')
+    expect(render({ kind: 'my_pr_ready', pr: auto }, es).body).toBe('acme/app#12 · Add feature · Se mergeará solo.')
     expect(render({ kind: 'my_prs_grouped', count: 5 }, es).body).toBe('5 novedades en tus PRs')
   })
 

@@ -1,6 +1,6 @@
 # Third-party notices
 
-PR Radar includes icons from [GitHub Octicons](https://github.com/primer/octicons): the pull request, sync, gear, arrow, alert, check, x, dot, clock and git-merge glyphs in `src/renderer/icons.tsx`, and the pull request glyph that `scripts/gen-icons.mjs` turns into the app and menu bar icons.
+PR Radar includes icons from [GitHub Octicons](https://github.com/primer/octicons): the pull request, sync, gear, arrow, alert, check, x, dot, clock, git-merge, kebab-horizontal and copy glyphs in `src/renderer/icons.tsx`, and the pull request glyph that `scripts/gen-icons.mjs` turns into the app and menu bar icons.
 
 Octicons are distributed under the MIT License:
 

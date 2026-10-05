@@ -74,6 +74,10 @@ jobs:
           check "dist/mac/PR Radar.app" x86_64
           du -sh dist/mac*/*.app dist/*.dmg
 
+      # The app exits 0 once the panel has rendered (PR_RADAR_SMOKE=1), 1 after 60 s without it.
+      - name: Start the app (smoke test)
+        run: PR_RADAR_SMOKE=1 "dist/mac-arm64/PR Radar.app/Contents/MacOS/PR Radar"
+
       - name: Checksums
         working-directory: dist
         run: shasum -a 256 *.dmg | tee SHA256SUMS.txt

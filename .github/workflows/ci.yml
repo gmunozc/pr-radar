@@ -26,3 +26,38 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # Starts the packaged app on each desktop OS; PR_RADAR_SMOKE=1 makes it exit 0 once the
+  # panel has rendered (see runSmokeTest in src/main/index.ts).
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Package (unpacked)
+        run: npx electron-builder --dir --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Start the app (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb
+          PR_RADAR_SMOKE=1 timeout 120 xvfb-run -a ./dist/linux-unpacked/pr-radar
+      - name: Start the app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:PR_RADAR_SMOKE = '1'
+          $p = Start-Process -FilePath 'dist\win-unpacked\PR Radar.exe' -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw 'PR Radar did not exit within 120 s' }
+          if ($p.ExitCode -ne 0) { throw "PR Radar exited with $($p.ExitCode)" }

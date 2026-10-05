@@ -280,6 +280,13 @@ export interface PrRadarApi {
   dismiss(prId: string): Promise<void>
   snooze(prId: string, option: 'hour' | 'tomorrow'): Promise<void>
   restoreDismissed(): Promise<void>
+  prs: {
+    /** Writes to GitHub (merge, update branch, …); the main process decides the exact target. */
+    action(prId: string, action: PrAction): Promise<ActionResult>
+  }
+  copyText(text: string): Promise<{ ok: boolean }>
+  /** Restarts the app (needed for Chromium's own UI language to change). */
+  relaunch(): Promise<void>
   auth: {
     start(method?: AuthMethod): Promise<void>
     cancel(): Promise<void>
@@ -320,6 +327,9 @@ export const IPC = {
   dismiss: 'prs:dismiss',
   snooze: 'prs:snooze',
   restoreDismissed: 'prs:restore',
+  prAction: 'prs:action',
+  copyText: 'clipboard:copy',
+  relaunch: 'app:relaunch',
   authStart: 'auth:start',
   authCancel: 'auth:cancel',
   authLogout: 'auth:logout',

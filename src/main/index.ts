@@ -1,7 +1,10 @@
 /** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
 import { app, clipboard, net, Notification, powerMonitor, screen, shell } from 'electron'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { IPC, type AuthMethod, type AuthStatus, type Settings, type Warning } from '../shared/types'
+import { runPrAction } from './actions'
 import { createAuthStore, DeviceLogin } from './auth'
 import { debugMenu, FaultInjector } from './debug'
 import { refreshAccessToken } from './deviceFlow'
@@ -20,9 +23,21 @@ import { AppTray } from './tray'
 import { fetchLatestRelease, isReleaseUrl, UpdateChecker, type UpdateCheckerState } from './updates'
 import { Panel } from './window'
 
-// Development runs use their own data folder (and a plain-text session, see createAuthStore)
-// so they never touch the installed app's session, Keychain item or single-instance lock.
-if (!app.isPackaged) app.setPath('userData', join(app.getPath('appData'), 'PR Radar Dev'))
+// CI smoke tests (PR_RADAR_SMOKE=1) start from an empty data folder and exit once the panel
+// has rendered. Development runs use their own data folder (and a plain-text session, see
+// createAuthStore) so they never touch the installed app's session, Keychain item or
+// single-instance lock.
+const smoke = process.env.PR_RADAR_SMOKE === '1'
+if (smoke) app.setPath('userData', mkdtempSync(join(tmpdir(), 'pr-radar-smoke-')))
+else if (!app.isPackaged) app.setPath('userData', join(app.getPath('appData'), 'PR Radar Dev'))
+
+const settingsFile = new JsonFile<unknown>(join(app.getPath('userData'), 'settings.json'), () => ({}))
+let settings: Settings = normalizeSettings(settingsFile.read())
+// Chromium's own UI (time fields, context menus, spellcheck) follows its locale, which is
+// fixed before the app is ready; make it follow the language chosen in Settings.
+if (settings.language !== 'system') app.commandLine.appendSwitch('lang', settings.language)
+// Ubuntu CI runners forbid Chromium's user namespace sandbox.
+if (smoke && process.platform === 'linux') app.commandLine.appendSwitch('no-sandbox')
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -42,13 +57,11 @@ function main(): void {
   logger.init({
     file: join(userData, 'logs', 'pr-radar.log'),
     minLevel: process.env.PR_RADAR_DEBUG ? 'debug' : 'info',
-    echo: !app.isPackaged
+    echo: !app.isPackaged || smoke
   })
   logger.info('PR Radar starting', { version: app.getVersion(), os: `${process.platform} ${process.arch}` })
 
-  const settingsFile = new JsonFile<unknown>(join(userData, 'settings.json'), () => ({}))
   const stateFile = new JsonFile<unknown>(join(userData, 'state.json'), () => null)
-  let settings: Settings = normalizeSettings(settingsFile.read())
   const clientId = () => import.meta.env.MAIN_VITE_GITHUB_CLIENT_ID?.trim() || settings.clientId.trim()
   const appClientId = import.meta.env.MAIN_VITE_GITHUB_APP_CLIENT_ID?.trim() ?? ''
   const appSlug = import.meta.env.MAIN_VITE_GITHUB_APP_SLUG?.trim() ?? ''
@@ -74,7 +87,7 @@ function main(): void {
 
   const faults = app.isPackaged ? null : new FaultInjector()
   const panel = new Panel()
-  const showPanel = () => panel.show(tray.getBounds())
+  const showPanel = () => panel.show(tray?.getBounds())
 
   const publishAuth = (status: AuthStatus) => {
     if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.authStatus, status)
@@ -88,6 +101,8 @@ function main(): void {
       session,
       fetchPullRequests: faults ? faults.wrap(fetchPullRequests) : fetchPullRequests,
       fetchInstallations: (token) => fetchInstallations(token),
+      runPrAction: (token, pr, action) => runPrAction(token, pr, action),
+      requestPoll: () => void poller.runNow(),
       stateStore: {
         read: () => stateFile.read(),
         write: (state) => stateFile.write(state),
@@ -95,7 +110,7 @@ function main(): void {
       },
       notify: (events) => deliverEvents(events, showPanel),
       publish: (state) => {
-        tray.update(state)
+        tray?.update(state)
         if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.state, state)
       },
       onSessionEnded: () => {
@@ -170,30 +185,36 @@ function main(): void {
     }
   }
 
-  const tray = new AppTray(panel, {
-    refresh: () => {
-      engine.forceInstallationCheck()
-      void poller.runNow()
-    },
-    downloadUpdate: () => void openRelease(updates?.available?.downloadUrl ?? updates?.available?.releaseUrl),
-    logout: () => engine.logout(),
-    isLoggedIn: () => session.current !== null,
-    extraMenu: faults
-      ? () =>
-          debugMenu({
-            faults,
-            pollNow: () => void poller.runNow(),
-            renewToken: async () => {
-              try {
-                await session.refreshNow()
-              } catch (err) {
-                logger.warn('manual renewal failed', err)
-              }
-            },
-            copyDiagnostics: () => void copyDiagnostics()
-          })
-      : undefined
-  })
+  // Some Linux desktops have no tray host; the app must still run (with the panel open).
+  let tray: AppTray | null = null
+  try {
+    tray = new AppTray(panel, {
+      refresh: () => {
+        engine.forceInstallationCheck()
+        void poller.runNow()
+      },
+      downloadUpdate: () => void openRelease(updates?.available?.downloadUrl ?? updates?.available?.releaseUrl),
+      logout: () => engine.logout(),
+      isLoggedIn: () => session.current !== null,
+      extraMenu: faults
+        ? () =>
+            debugMenu({
+              faults,
+              pollNow: () => void poller.runNow(),
+              renewToken: async () => {
+                try {
+                  await session.refreshNow()
+                } catch (err) {
+                  logger.warn('manual renewal failed', err)
+                }
+              },
+              copyDiagnostics: () => void copyDiagnostics()
+            })
+        : undefined
+    })
+  } catch (err) {
+    logger.error('could not create the tray icon', err)
+  }
 
   registerIpc({
     getState: () => engine.state,
@@ -204,6 +225,21 @@ function main(): void {
     dismiss: (prId) => engine.dismiss(prId),
     restoreDismissed: () => engine.restoreHidden(),
     snooze: (prId, option) => engine.snooze(prId, option),
+    prAction: (prId, action) => engine.runAction(prId, action),
+    copyText: async (text) => {
+      try {
+        await clipboard.writeText(text)
+        return { ok: true }
+      } catch (err) {
+        logger.warn('could not copy to the clipboard', err)
+        return { ok: false }
+      }
+    },
+    relaunch: () => {
+      logger.info('relaunching')
+      app.relaunch()
+      app.quit()
+    },
     hasClientId: () => clientId() !== '',
     authMethods,
     switchMethod: () => engine.switchMethod(),
@@ -306,11 +342,37 @@ function main(): void {
   setTimeout(() => void runUpdateCheck(), 30_000)
   setInterval(() => void runUpdateCheck(), 3_600_000)
 
-  tray.update(engine.state)
-  if (session.current) {
+  tray?.update(engine.state)
+  if (smoke) {
+    runSmokeTest(panel)
+  } else if (session.current) {
     poller.start()
   } else {
-    // First launch: open the panel so the user sees how to connect.
+    // First launch (or no tray icon): open the panel so the user sees how to connect.
     panel.win.once('ready-to-show', showPanel)
   }
+}
+
+/** CI: exit 0 once the panel has rendered, 1 after 60 s without it, 2 on an uncaught error. */
+function runSmokeTest(panel: Panel): void {
+  const fail = (why: string, code: number) => {
+    logger.error(`smoke test failed: ${why}`)
+    app.exit(code)
+  }
+  const deadline = setTimeout(() => fail('timeout', 1), 60_000)
+  process.on('uncaughtException', (err) => fail(String(err), 2))
+  const probe = setInterval(() => {
+    const wc = panel.win.webContents
+    if (wc.isLoading()) return
+    wc.executeJavaScript('document.getElementById("root")?.childElementCount ?? 0').then(
+      (mounted) => {
+        if (Number(mounted) <= 0) return
+        clearInterval(probe)
+        clearTimeout(deadline)
+        logger.info('smoke test ok')
+        app.exit(0)
+      },
+      (err) => fail(`probe failed: ${String(err)}`, 3)
+    )
+  }, 250)
 }

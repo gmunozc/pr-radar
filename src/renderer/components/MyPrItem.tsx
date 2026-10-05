@@ -1,11 +1,15 @@
-import type { KeyboardEvent } from 'react'
+import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { formatDateTime, timeAgo } from '../../shared/format'
 import type { Translate } from '../../shared/i18n'
 import type { MessageKey } from '../../shared/i18n/en'
-import type { MyPullRequest, MyReviewStatus } from '../../shared/types'
-import { GitMergeIcon, PullRequestIcon } from '../icons'
+import { myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
+import type { MergeMethod, MyPullRequest, MyReviewStatus, PrAction } from '../../shared/types'
+import { GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
+import { ActionMenu, type MenuItem } from './ActionMenu'
 import { CiIcon } from './CiIcon'
+import { ConfirmRow } from './ConfirmRow'
+import { Segmented } from './Segmented'
 
 const STATUS: Record<MyReviewStatus, { label: MessageKey; className: string }> = {
   waiting: { label: 'status.waiting', className: 'waiting' },
@@ -20,6 +24,7 @@ const BLOCKER_CHIPS: Partial<Record<NonNullable<MyPullRequest['blocker']>, { lab
 }
 
 const MAX_AVATARS = 4
+const COPIED_MS = 2000
 
 interface Person {
   key: string
@@ -54,9 +59,23 @@ function people(pr: MyPullRequest, t: Translate): { avatars: Person[]; teams: st
   return { avatars, teams }
 }
 
-export function MyPrItem({ pr }: { pr: MyPullRequest }) {
+/** An action that needs a confirmation (and a merge method) before it runs. */
+interface Confirming {
+  kind: 'merge' | 'enable_auto_merge'
+  method: MergeMethod
+}
+
+export function MyPrItem({ pr, canWrite, pending }: { pr: MyPullRequest; canWrite: boolean; pending?: PrAction['kind'] }) {
   const t = useT()
   const locale = useLocale()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [confirming, setConfirming] = useState<Confirming | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const kebab = useRef<HTMLButtonElement>(null)
+  const closeMenu = useCallback(() => setMenuOpen(false), [])
+  const busy = pending !== undefined
+
   const open = () => void window.prRadar.openExternal(pr.url)
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -64,11 +83,68 @@ export function MyPrItem({ pr }: { pr: MyPullRequest }) {
       open()
     }
   }
+  const toggleMenu = (e: MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen((o) => !o)
+  }
+  const run = async (action: PrAction) => {
+    setError(null)
+    const result = await window.prRadar.prs.action(pr.id, action)
+    if (result.ok) setConfirming(null)
+    else setError(t(`action.error.${result.code}`, { detail: result.detail ?? '' }))
+  }
+  const copy = async (text: string) => {
+    const { ok } = await window.prRadar.copyText(text)
+    if (!ok) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), COPIED_MS)
+  }
+
+  const menuItem = (id: MyPrMenuAction): MenuItem => {
+    switch (id) {
+      case 'merge':
+        return {
+          id,
+          label: t('action.mergeNow'),
+          disabled: busy,
+          onSelect: () => setConfirming({ kind: 'merge', method: pr.merge.defaultMethod })
+        }
+      case 'update_branch':
+        return { id, label: t('action.updateBranch'), disabled: busy, onSelect: () => void run({ kind: 'update_branch' }) }
+      case 'enable_auto_merge':
+        return {
+          id,
+          label: t('action.enableAutoMerge'),
+          disabled: busy,
+          onSelect: () => setConfirming({ kind: 'enable_auto_merge', method: pr.merge.defaultMethod })
+        }
+      case 'disable_auto_merge':
+        return { id, label: t('action.disableAutoMerge'), disabled: busy, onSelect: () => void run({ kind: 'disable_auto_merge' }) }
+      case 'no_auto_merge':
+        return { id, label: t('action.noAutoMerge'), disabled: true, onSelect: () => {} }
+      case 'repo_settings':
+        return {
+          id,
+          label: t('action.repoSettings'),
+          onSelect: () => void window.prRadar.openExternal(`https://github.com/${pr.repo}/settings`)
+        }
+      case 'copy_branch':
+        return { id, label: t('action.copyBranch'), onSelect: () => void copy(pr.branch) }
+      case 'copy_link':
+        return { id, label: t('action.copyLink'), onSelect: () => void copy(pr.url) }
+      case 'open':
+        return { id, label: t('action.open'), onSelect: open }
+    }
+  }
+  const items = myPrMenuActions(pr, canWrite).map(menuItem)
+  if (!canWrite) items.unshift({ id: 'read_only', label: t('action.readOnly'), disabled: true, onSelect: () => {} })
+
   const [owner, name] = pr.repo.split('/')
   const status = pr.readyToMerge ? { label: 'status.ready' as MessageKey, className: 'ready' } : STATUS[pr.status]
   const blockerChip = pr.blocker ? BLOCKER_CHIPS[pr.blocker] : undefined
   const { avatars, teams } = people(pr, t)
   const extra = avatars.length - MAX_AVATARS
+  const actionsOpen = menuOpen || confirming !== null || busy
 
   return (
     <div className="pr" role="button" tabIndex={0} onClick={open} onKeyDown={onKeyDown} title={pr.url}>
@@ -90,6 +166,11 @@ export function MyPrItem({ pr }: { pr: MyPullRequest }) {
         <div className="pr-title">{pr.title}</div>
         <div className="pr-tags">
           <span className={`chip chip-${status.className}`}>{t(status.label)}</span>
+          {pr.autoMerge && (
+            <span className="chip chip-automerge" title={t('chip.autoMergeHint')}>
+              {t('chip.autoMerge', { method: t(`action.method.${pr.autoMerge.method}`) })}
+            </span>
+          )}
           {pr.conflicts && (
             <span className="chip chip-conflicts" title={t('blocker.conflictsHint')}>
               {t('blocker.conflicts')}
@@ -116,7 +197,62 @@ export function MyPrItem({ pr }: { pr: MyPullRequest }) {
             {extra > 0 && <span className="reviewer-more">+{extra}</span>}
           </span>
         </div>
+        {confirming && (
+          <ConfirmRow
+            message={
+              confirming.kind === 'merge'
+                ? t('action.mergeConfirm', { number: pr.number, base: pr.baseBranch || 'base' })
+                : t('action.autoMergeConfirm')
+            }
+            hint={pr.merge.deleteBranchOnMerge ? t('action.deletesBranch') : undefined}
+            confirmLabel={confirming.kind === 'merge' ? t('action.mergeNow') : t('action.enableAutoMerge')}
+            cancelLabel={t('action.cancel')}
+            busy={busy}
+            error={error}
+            onConfirm={() =>
+              void run(
+                confirming.kind === 'merge'
+                  ? { kind: 'merge', method: confirming.method }
+                  : { kind: 'enable_auto_merge', method: confirming.method }
+              )
+            }
+            onCancel={() => {
+              setConfirming(null)
+              setError(null)
+            }}
+          >
+            {pr.merge.methods.length > 1 && (
+              <Segmented
+                options={pr.merge.methods.map((m) => ({ value: m, label: t(`action.method.${m}`) }))}
+                value={confirming.method}
+                onChange={(method) => setConfirming({ kind: confirming.kind, method })}
+                label={t('action.method')}
+              />
+            )}
+          </ConfirmRow>
+        )}
+        {!confirming && error && (
+          <div className="confirm-error" role="alert">
+            {error}
+          </div>
+        )}
       </div>
+      <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
+        {copied && <span className="pr-copied">{t('action.copied')}</span>}
+        <button
+          ref={kebab}
+          className="pr-action"
+          onClick={toggleMenu}
+          onMouseDown={(e) => e.preventDefault()}
+          title={t('action.menu')}
+          aria-label={t('action.menu')}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+        >
+          {busy ? <span className="spinner spinner-sm" /> : <KebabHorizontalIcon size={12} />}
+        </button>
+      </div>
+      {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} anchor={kebab} />}
     </div>
   )
 }

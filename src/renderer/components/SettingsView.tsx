@@ -65,6 +65,8 @@ export function SettingsView({ state }: { state: AppState }) {
   const [version, setVersion] = useState('')
   const [copied, setCopied] = useState(false)
   const [updateCheck, setUpdateCheck] = useState<'idle' | 'checking' | 'up_to_date' | 'available'>('idle')
+  // Chromium's own UI (time fields, menus) only picks up a new language after a restart.
+  const [languageChanged, setLanguageChanged] = useState(false)
 
   const checkNow = async () => {
     setUpdateCheck('checking')
@@ -249,13 +251,26 @@ export function SettingsView({ state }: { state: AppState }) {
           <select
             className="input select"
             value={settings.language}
-            onChange={(e) => void update({ language: e.target.value as LanguagePref })}
+            onChange={(e) => {
+              setLanguageChanged(true)
+              void update({ language: e.target.value as LanguagePref })
+            }}
           >
             <option value="system">{t('settings.languageSystem')}</option>
             <option value="en">English</option>
             <option value="es">Español</option>
           </select>
         </label>
+        {languageChanged && (
+          <div className="setting">
+            <div className="setting-text">
+              <div className="setting-hint">{t('settings.languageRestartHint')}</div>
+            </div>
+            <button className="btn" onClick={() => void api.relaunch()}>
+              {t('settings.restart')}
+            </button>
+          </div>
+        )}
         {!isLinux && (
           <Toggle
             label={t('settings.openAtLogin')}

@@ -43,5 +43,7 @@ nsis:
 linux:
   icon: build/icon.png
   category: Development
+  # Fixed name so CI can start dist/linux-unpacked/pr-radar.
+  executableName: pr-radar
   target:
     - AppImage

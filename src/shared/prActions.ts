@@ -1,0 +1,39 @@
+/** Which actions the panel offers on a PR. Pure, so the renderer's decisions can be unit tested. */
+import type { MyPullRequest } from './types'
+
+export type MyPrMenuAction =
+  | 'merge'
+  | 'update_branch'
+  | 'enable_auto_merge'
+  | 'disable_auto_merge'
+  /** Disabled hint: the repository doesn't allow GitHub's auto-merge. */
+  | 'no_auto_merge'
+  | 'repo_settings'
+  | 'copy_branch'
+  | 'copy_link'
+  | 'open'
+
+/**
+ * Menu entries for one of your PRs. Write actions need a session that can write and the
+ * matching repository permission; GitHub's own flags decide update-branch and auto-merge.
+ * A merge is offered whenever GitHub would accept one, approvals or not.
+ */
+export function myPrMenuActions(pr: MyPullRequest, canWrite: boolean): MyPrMenuAction[] {
+  const items: MyPrMenuAction[] = []
+  if (canWrite) {
+    if (pr.mergeable && pr.can.merge && pr.merge.methods.length > 0) items.push('merge')
+    if (pr.can.updateBranch) items.push('update_branch')
+    if (pr.autoMerge) {
+      if (pr.can.disableAutoMerge) items.push('disable_auto_merge')
+    } else if (!pr.mergeable && !pr.isDraft) {
+      if (pr.can.enableAutoMerge) items.push('enable_auto_merge')
+      else if (!pr.merge.autoMergeAllowed && pr.can.merge) {
+        items.push('no_auto_merge')
+        if (pr.permission === 'ADMIN') items.push('repo_settings')
+      }
+    }
+  }
+  if (pr.branch) items.push('copy_branch')
+  items.push('copy_link', 'open')
+  return items
+}

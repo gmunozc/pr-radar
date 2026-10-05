@@ -30,7 +30,7 @@ export function MyPrList({ state }: { state: AppState }) {
     <>
       <main className="list">
         {state.myPrs.map((pr) => (
-          <MyPrItem key={pr.id} pr={pr} />
+          <MyPrItem key={pr.id} pr={pr} canWrite={state.canWrite} pending={state.pendingActions[pr.id]} />
         ))}
       </main>
       <footer className="footer">
