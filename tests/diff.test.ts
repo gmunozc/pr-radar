@@ -94,6 +94,35 @@ describe('diffMyPrs', () => {
     expect(snap.a.readyNotifiedOid).toBe('h1')
     expect(diffMyPrs(snap, [mine('a', { status: 'approved', readyToMerge: true, headOid: 'h1' })]).events).toEqual([])
   })
+
+  it('reports failing checks once per head commit, naming the checks', () => {
+    const checks = [{ name: 'lint', state: 'failure' as const, url: null }]
+    let snap = diffMyPrs(undefined, [mine('a', { ci: 'pending', headOid: 'h1' })]).snapshot
+    let r = diffMyPrs(snap, [mine('a', { ci: 'failure', checks, headOid: 'h1' })])
+    expect(r.events).toEqual([{ kind: 'my_pr_ci_failed', pr: expect.objectContaining({ id: 'a' }), failing: ['lint'] }])
+    expect(r.snapshot.a).toMatchObject({ ci: 'failure', ciFailedOid: 'h1' })
+    // A rerun that fails again on the same head is not news; a new push that fails is.
+    snap = diffMyPrs(r.snapshot, [mine('a', { ci: 'pending', headOid: 'h1' })]).snapshot
+    expect(diffMyPrs(snap, [mine('a', { ci: 'failure', checks, headOid: 'h1' })]).events).toEqual([])
+    snap = diffMyPrs(snap, [mine('a', { ci: 'pending', headOid: 'h2' })]).snapshot
+    expect(diffMyPrs(snap, [mine('a', { ci: 'failure', checks, headOid: 'h2' })]).events.map((e) => e.kind)).toEqual(['my_pr_ci_failed'])
+  })
+
+  it('stays quiet about checks already failing when first seen, or when the snapshot never saw the checks', () => {
+    const snap = diffMyPrs(undefined, [mine('a', { ci: 'failure', headOid: 'h1' })]).snapshot
+    expect(snap.a).toMatchObject({ ci: 'failure', ciFailedOid: 'h1' })
+    expect(diffMyPrs(snap, [mine('a', { ci: 'failure', headOid: 'h1' })]).events).toEqual([])
+    // A snapshot written by an older version has no `ci`: the first poll is the baseline.
+    expect(diffMyPrs({ a: { status: 'waiting' } }, [mine('a', { ci: 'failure' })]).events).toEqual([])
+  })
+
+  it('reports new merge conflicts alongside review news, once', () => {
+    const base = diffMyPrs(undefined, [mine('a')]).snapshot
+    const r = diffMyPrs(base, [mine('a', { conflicts: true, status: 'approved' })])
+    expect(r.events.map((e) => e.kind)).toEqual(['my_pr_approved', 'my_pr_conflicts'])
+    expect(diffMyPrs(r.snapshot, [mine('a', { conflicts: true, status: 'approved' })]).events).toEqual([])
+    expect(diffMyPrs({ a: { status: 'waiting' } }, [mine('a', { conflicts: true })]).events).toEqual([])
+  })
 })
 
 describe('applyHidden', () => {

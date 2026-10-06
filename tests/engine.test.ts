@@ -88,6 +88,8 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     opts.actions ? opts.actions(target, action) : { ok: true }
   )
   const requestPoll = vi.fn()
+  const retireNotifications = vi.fn()
+  const clearNotifications = vi.fn()
   const fetchDetail = vi.fn(async (_token: string, prId: string) => ({ body: `about ${prId}`, changedFiles: 1, commits: 2, comments: 3 }))
   const deps: EngineDeps = {
     now: () => clock,
@@ -100,6 +102,8 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     fetchDetail,
     stateStore: { read: () => stored, write: (s) => (stored = s), remove: () => (stored = null) },
     notify: (e) => events.push(...e),
+    retireNotifications,
+    clearNotifications,
     publish: (s) => published.push(s),
     onSessionEnded,
     isOnline: opts.online ?? (() => true),
@@ -116,6 +120,8 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     fetchPullRequests,
     runPrAction,
     requestPoll,
+    retireNotifications,
+    clearNotifications,
     fetchDetail,
     refresh,
     onSessionEnded,
@@ -455,7 +461,18 @@ describe('Engine quiet hours', () => {
     expect(t.events).toEqual([
       {
         kind: 'catch_up',
-        counts: { reviews: 2, reminders: 0, approved: 1, changes: 0, ready: 0, merged: 0, mergeFailed: 0, sessionExpired: false }
+        counts: {
+          reviews: 2,
+          reminders: 0,
+          approved: 1,
+          changes: 0,
+          ready: 0,
+          ciFailed: 0,
+          conflicts: 0,
+          merged: 0,
+          mergeFailed: 0,
+          sessionExpired: false
+        }
       }
     ])
     expect(t.stored).toMatchObject({ queued: { reviews: [], approved: [] } })
@@ -798,5 +815,54 @@ describe('Engine merge when ready', () => {
     expect(t.runPrAction).toHaveBeenCalledTimes(1)
     expect(t.events).toEqual([])
     expect(t.stored).toMatchObject({ queued: { merged: ['m1'] } })
+  })
+})
+
+describe('Engine and delivered notifications', () => {
+  it('retires notifications about review requests that left and PRs of yours that closed or recovered', async () => {
+    const t = setup([
+      result(['a', 'b'], 'me', [], [myPr('m1', { ci: 'failure' }), myPr('m2')]),
+      result(['b'], 'me', [], [myPr('m1', { ci: 'success' })])
+    ])
+    await t.engine.poll()
+    expect(t.retireNotifications).not.toHaveBeenCalled()
+    await t.engine.poll()
+    expect(t.retireNotifications).toHaveBeenCalledWith(['a', 'ci-m1', 'mine-m2', 'ci-m2', 'conflicts-m2'])
+  })
+
+  it('retires the notification of a PR you dismiss or snooze, and all of them on sign-out', async () => {
+    const t = setup([result(['a', 'b'])])
+    await t.engine.poll()
+    t.engine.dismiss('a')
+    expect(t.retireNotifications).toHaveBeenLastCalledWith(['a'])
+    t.engine.snooze('b', 'hour')
+    expect(t.retireNotifications).toHaveBeenLastCalledWith(['b'])
+    t.engine.logout()
+    expect(t.clearNotifications).toHaveBeenCalledTimes(1)
+  })
+
+  it('notifies failing checks and new conflicts on your PRs', async () => {
+    const t = setup([
+      result([], 'me', [], [myPr('m1', { ci: 'pending' })]),
+      result([], 'me', [], [myPr('m1', { ci: 'failure', checks: [{ name: 'lint', state: 'failure', url: null }], conflicts: true })])
+    ])
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.events.map((e) => e.kind)).toEqual(['my_pr_ci_failed', 'my_pr_conflicts'])
+    expect(t.events[0]).toMatchObject({ failing: ['lint'] })
+  })
+
+  it('holds failing checks and conflicts back in quiet hours and counts them in the catch-up', async () => {
+    const t = setup(
+      [result([], 'me', [], [myPr('m1', { ci: 'pending' })]), result([], 'me', [], [myPr('m1', { ci: 'failure', conflicts: true })])],
+      { auth: fresh(), settings: { quietHours: true, digest: false }, now: at(5, '07:00') }
+    )
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+    expect(t.stored).toMatchObject({ queued: { ciFailed: ['m1'], conflicts: ['m1'] } })
+    t.setNow(at(5, '09:00'))
+    t.engine.tick()
+    expect(t.events).toEqual([{ kind: 'catch_up', counts: expect.objectContaining({ ciFailed: 1, conflicts: 1 }) }])
   })
 })

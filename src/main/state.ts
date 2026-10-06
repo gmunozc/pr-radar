@@ -1,4 +1,4 @@
-import type { MergeMethod } from '../shared/types'
+import type { CiState, MergeMethod } from '../shared/types'
 import type { MyPrSnapshot } from './diff'
 
 /** One of your PRs that PR Radar merges itself once GitHub would accept it. */
@@ -12,6 +12,7 @@ export interface ArmedMerge {
 }
 
 const MERGE_METHODS: readonly string[] = ['MERGE', 'SQUASH', 'REBASE']
+const CI_STATES: readonly string[] = ['success', 'failure', 'pending', 'none', 'unknown']
 
 /** What PR Radar remembers between polls and restarts (state.json), per GitHub account. */
 export interface PersistedState {
@@ -41,6 +42,8 @@ export interface QueuedAlerts {
   approved: string[]
   changes: string[]
   ready: string[]
+  ciFailed: string[]
+  conflicts: string[]
   merged: string[]
   mergeFailed: string[]
   sessionExpired: boolean
@@ -52,6 +55,8 @@ export const emptyQueue = (): QueuedAlerts => ({
   approved: [],
   changes: [],
   ready: [],
+  ciFailed: [],
+  conflicts: [],
   merged: [],
   mergeFailed: [],
   sessionExpired: false
@@ -65,6 +70,8 @@ function queue(v: unknown): QueuedAlerts {
     approved: stringArray(r.approved),
     changes: stringArray(r.changes),
     ready: stringArray(r.ready),
+    ciFailed: stringArray(r.ciFailed),
+    conflicts: stringArray(r.conflicts),
     merged: stringArray(r.merged),
     mergeFailed: stringArray(r.mergeFailed),
     sessionExpired: r.sessionExpired === true
@@ -109,7 +116,10 @@ function snapshot(v: unknown): Record<string, MyPrSnapshot> | undefined {
     if (!r || typeof r.status !== 'string') continue
     out[id] = {
       status: r.status,
-      ...(typeof r.readyNotifiedOid === 'string' ? { readyNotifiedOid: r.readyNotifiedOid } : {})
+      ...(typeof r.readyNotifiedOid === 'string' ? { readyNotifiedOid: r.readyNotifiedOid } : {}),
+      ...(typeof r.ci === 'string' && CI_STATES.includes(r.ci) ? { ci: r.ci as CiState } : {}),
+      ...(typeof r.ciFailedOid === 'string' ? { ciFailedOid: r.ciFailedOid } : {}),
+      ...(typeof r.conflicts === 'boolean' ? { conflicts: r.conflicts } : {})
     }
   }
   return out

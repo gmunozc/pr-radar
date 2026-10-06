@@ -1,4 +1,4 @@
-import type { MyPullRequest, MyReviewStatus, PullRequest } from '../shared/types'
+import type { CiState, MyPullRequest, MyReviewStatus, PullRequest } from '../shared/types'
 
 export interface DiffResult {
   /** PRs that were not present in the previous snapshot. */
@@ -104,19 +104,31 @@ export interface MyPrSnapshot {
   status: MyReviewStatus
   /** Head SHA we last sent "ready to merge" for, so it's sent once per push. */
   readyNotifiedOid?: string
+  /** Checks as of the last poll; missing in snapshots written before 0.13 (no "failed" alert then). */
+  ci?: CiState
+  /** Head SHA we last reported failing checks for: once per push, however often they are rerun. */
+  ciFailedOid?: string
+  /** Whether it had merge conflicts, so only new ones are reported. */
+  conflicts?: boolean
 }
 
 export type MyPrEvent =
   | { kind: 'my_pr_changes_requested'; pr: MyPullRequest; by: string[] }
   | { kind: 'my_pr_approved'; pr: MyPullRequest; by: string[] }
   | { kind: 'my_pr_ready'; pr: MyPullRequest }
+  /** The checks on the current head failed; `failing` names them (empty when GitHub didn't say). */
+  | { kind: 'my_pr_ci_failed'; pr: MyPullRequest; failing: string[] }
+  | { kind: 'my_pr_conflicts'; pr: MyPullRequest }
 
 const reviewersWith = (pr: MyPullRequest, state: 'APPROVED' | 'CHANGES_REQUESTED') =>
   pr.reviews.filter((r) => r.state === state).map((r) => r.login)
 
+const failingChecks = (pr: MyPullRequest) => pr.checks.filter((c) => c.state === 'failure').map((c) => c.name)
+
 /**
  * Compares your open PRs with the previous snapshot. Silent on the first run and for PRs that
- * just appeared, so only real transitions notify: changes requested, approved, ready to merge.
+ * just appeared, so only real transitions notify: changes requested, approved, ready to merge,
+ * checks failed, new conflicts.
  */
 export function diffMyPrs(
   prev: Record<string, MyPrSnapshot> | undefined,
@@ -126,7 +138,13 @@ export function diffMyPrs(
   const events: MyPrEvent[] = []
   for (const pr of current) {
     const before = prev?.[pr.id]
-    const next: MyPrSnapshot = { status: pr.status, readyNotifiedOid: before?.readyNotifiedOid }
+    const next: MyPrSnapshot = {
+      status: pr.status,
+      readyNotifiedOid: before?.readyNotifiedOid,
+      ci: pr.ci,
+      ciFailedOid: before?.ciFailedOid,
+      conflicts: pr.conflicts
+    }
     if (before) {
       if (pr.readyToMerge && before.readyNotifiedOid !== pr.headOid) {
         events.push({ kind: 'my_pr_ready', pr })
@@ -136,9 +154,17 @@ export function diffMyPrs(
       } else if (pr.status === 'approved' && before.status !== 'approved') {
         events.push({ kind: 'my_pr_approved', pr, by: reviewersWith(pr, 'APPROVED') })
       }
-    } else if (pr.readyToMerge) {
-      // Already ready when first seen: remember it so it isn't announced later.
-      next.readyNotifiedOid = pr.headOid
+      // Failing checks and conflicts are news on their own, whatever the reviews say. A rerun that
+      // fails again on the same head is not; a snapshot that never saw the checks is the baseline.
+      if (pr.ci === 'failure' && before.ci !== undefined && before.ci !== 'failure' && before.ciFailedOid !== pr.headOid) {
+        events.push({ kind: 'my_pr_ci_failed', pr, failing: failingChecks(pr) })
+        next.ciFailedOid = pr.headOid
+      }
+      if (pr.conflicts && before.conflicts === false) events.push({ kind: 'my_pr_conflicts', pr })
+    } else {
+      // Already ready or failing when first seen: remember it so it isn't announced later.
+      if (pr.readyToMerge) next.readyNotifiedOid = pr.headOid
+      if (pr.ci === 'failure') next.ciFailedOid = pr.headOid
     }
     snapshot[pr.id] = next
   }

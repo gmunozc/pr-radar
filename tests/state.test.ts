@@ -11,7 +11,18 @@ describe('migrateState', () => {
       snoozed: {},
       snoozedUntilPush: {},
       mergeWhenReady: {},
-      queued: { reviews: [], reminders: [], approved: [], changes: [], ready: [], merged: [], mergeFailed: [], sessionExpired: false },
+      queued: {
+        reviews: [],
+        reminders: [],
+        approved: [],
+        changes: [],
+        ready: [],
+        ciFailed: [],
+        conflicts: [],
+        merged: [],
+        mergeFailed: [],
+        sessionExpired: false
+      },
       lastDigestDay: null
     })
     expect(migrateState({ login: 'octo', seenIds: ['a'], dismissedIds: ['a'] })?.dismissedIds).toEqual(['a'])
@@ -44,6 +55,21 @@ describe('migrateState and your PRs snapshot', () => {
       myPrs: { a: { status: 'approved', readyNotifiedOid: 'h1' }, b: { nope: true }, c: null }
     })
     expect(state?.myPrs).toEqual({ a: { status: 'approved', readyNotifiedOid: 'h1' } })
+  })
+
+  it('keeps what it knows about checks and conflicts, dropping invalid values', () => {
+    const state = migrateState({
+      v: 2,
+      login: 'me',
+      seenIds: [],
+      myPrs: {
+        a: { status: 'waiting', ci: 'failure', ciFailedOid: 'h1', conflicts: true },
+        b: { status: 'waiting', ci: 'nope', ciFailedOid: 3, conflicts: 'yes' }
+      },
+      queued: { ciFailed: ['a', 1], conflicts: ['b'] }
+    })
+    expect(state?.myPrs).toEqual({ a: { status: 'waiting', ci: 'failure', ciFailedOid: 'h1', conflicts: true }, b: { status: 'waiting' } })
+    expect(state?.queued).toMatchObject({ ciFailed: ['a'], conflicts: ['b'] })
   })
 
   it('leaves the snapshot undefined for older state files', () => {

@@ -31,7 +31,7 @@ import {
 } from './diff'
 import { GithubError, installationWarnings, type FetchResult, type InstallationInfo } from './github'
 import type { Logger } from './log'
-import { capMyPrEvents, planToEvents, type CatchUp, type NotificationEvent } from './notifications'
+import { capMyPrEvents, planToEvents, staleNotifications, type CatchUp, type NotificationEvent } from './notifications'
 import { SessionExpiredError, type ExpiryReason, type Session } from './session'
 import { dayKey, digestDue, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil } from './schedule'
 import type { SnoozeOption } from '../shared/types'
@@ -60,6 +60,10 @@ export interface EngineDeps {
   fetchDetail?(token: string, prId: string): Promise<PrDetail | null>
   stateStore: StateStore
   notify(events: NotificationEvent[]): void
+  /** Removes delivered notifications that no longer apply (reviewed, merged, dismissed, checks green again). */
+  retireNotifications?(ids: string[]): void
+  /** Removes every delivered notification (sign-out). */
+  clearNotifications?(): void
   publish(state: AppState): void
   /** The session ended (expired or logged out): stop polling and any login in progress. */
   onSessionEnded(): void
@@ -105,11 +109,20 @@ interface Alerts {
 }
 
 const hasAny = (c: CatchUp) =>
-  c.reviews + c.reminders + c.approved + c.changes + c.ready + c.merged + c.mergeFailed > 0 || c.sessionExpired
+  c.reviews + c.reminders + c.approved + c.changes + c.ready + c.ciFailed + c.conflicts + c.merged + c.mergeFailed > 0 ||
+  c.sessionExpired
 const snoozedCount = (h: Pick<HiddenResult, 'snoozed' | 'snoozedUntilPush'>) =>
   Object.keys(h.snoozed).length + Object.keys(h.snoozedUntilPush).length
 const queueHasItems = (q: QueuedAlerts) =>
-  q.reviews.length + q.reminders.length + q.approved.length + q.changes.length + q.ready.length + q.merged.length + q.mergeFailed.length >
+  q.reviews.length +
+    q.reminders.length +
+    q.approved.length +
+    q.changes.length +
+    q.ready.length +
+    q.ciFailed.length +
+    q.conflicts.length +
+    q.merged.length +
+    q.mergeFailed.length >
     0 || q.sessionExpired
 
 export function loggedOutState(authNotice: AuthNotice | null = null, locale: Locale = 'en'): AppState {
@@ -208,6 +221,8 @@ export class Engine {
         now
       )
       const mine = diffMyPrs(stored?.myPrs, result.myPrs)
+      const stale = staleNotifications(stored?.seenIds ?? [], result.prs, stored?.myPrs, result.myPrs)
+      if (stale.length) this.deps.retireNotifications?.(stale)
       const armed = await this.fireArmedMerges(stored?.mergeWhenReady ?? {}, result.myPrs)
       this.save({
         v: 2,
@@ -273,12 +288,14 @@ export class Engine {
 
   dismiss(prId: string): void {
     if (!this.persisted) return
+    this.deps.retireNotifications?.([prId])
     this.setHidden({ ...this.persisted, dismissedIds: [...this.persisted.dismissedIds, prId] })
   }
 
   /** Hides a review request until later: an hour, the next working morning, or the author's next push. */
   snooze(prId: string, option: SnoozeOption): void {
     if (!this.persisted) return
+    this.deps.retireNotifications?.([prId])
     if (option === 'push') {
       const head = this.allPrs.find((p) => p.id === prId)?.headOid
       if (head) {
@@ -578,6 +595,7 @@ export class Engine {
     this.deps.log.info('logout')
     this.deps.session.clear()
     this.deps.stateStore.remove()
+    this.deps.clearNotifications?.()
     this.persisted = null
     this.allPrs = []
     this.allInvolved = []
@@ -695,6 +713,8 @@ export class Engine {
           approved: [...new Set([...q.approved, ...ids('my_pr_approved')])],
           changes: [...new Set([...q.changes, ...ids('my_pr_changes_requested')])],
           ready: [...new Set([...q.ready, ...ids('my_pr_ready')])],
+          ciFailed: [...new Set([...q.ciFailed, ...ids('my_pr_ci_failed')])],
+          conflicts: [...new Set([...q.conflicts, ...ids('my_pr_conflicts')])],
           merged: [...new Set([...q.merged, ...merged.map((m) => m.pr.id)])],
           mergeFailed: [...new Set([...q.mergeFailed, ...mergeFailed.map((m) => m.pr.id)])],
           sessionExpired: q.sessionExpired || alerts.sessionExpired === true
@@ -724,6 +744,8 @@ export class Engine {
       approved: q.approved.filter((id) => mine.get(id)?.status === 'approved').length,
       changes: q.changes.filter((id) => mine.get(id)?.status === 'changes_requested').length,
       ready: q.ready.filter((id) => mine.get(id)?.readyToMerge).length,
+      ciFailed: q.ciFailed.filter((id) => mine.get(id)?.ci === 'failure').length,
+      conflicts: q.conflicts.filter((id) => mine.get(id)?.conflicts).length,
       merged: q.merged.length,
       mergeFailed: q.mergeFailed.length,
       sessionExpired: q.sessionExpired

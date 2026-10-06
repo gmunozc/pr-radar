@@ -15,8 +15,8 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 
 - **Contador en la barra de menú** con los pull requests que esperan tu review. El icono se atenúa si no hay conexión con GitHub y muestra un punto cuando tienes que volver a conectar.
 - **Notificaciones nativas:**
-  - cuando te piden una review nueva, o te la vuelven a pedir después de que el autor subiera commits nuevos;
-  - cuando aprueban un PR tuyo, te piden cambios o queda listo para merge.
+  - cuando te piden una review nueva, o te la vuelven a pedir después de que el autor subiera commits nuevos, con botones para posponerla o descartarla;
+  - cuando aprueban un PR tuyo, te piden cambios, queda listo para merge, fallan sus checks o tiene conflictos.
 - **Pestaña Por revisar:**
   - el estado de los checks de cada PR;
   - si la petición es para ti o para uno de tus equipos;
@@ -79,8 +79,10 @@ Si una organización usa **SAML SSO**, autoriza la app para ella; el panel avisa
 
 - **La primera vez:** un solo resumen en lugar de un aviso por PR.
 - **Reviews nuevas:** hasta tres avisos individuales; si son más, se agrupan en uno.
-- **Tus PRs:** "aprobado", "cambios solicitados" y "listo para merge", este último una vez por cada push. Se desactivan en Ajustes → **Novedades en mis PRs**.
+- **Botones:** las reviews y los recordatorios llevan **Posponer 1 h**, **Hasta mañana** y **Descartar**. En macOS, pasa el ratón por encima del aviso y abre **Opciones**.
+- **Tus PRs:** "aprobado", "cambios solicitados", "listo para merge" y "fallan los checks" (estos dos una vez por cada push), y "conflictos". Se desactivan en Ajustes → **Novedades en mis PRs**.
 - **PRs pospuestos:** vuelven con un recordatorio.
+- **Centro de notificaciones:** los avisos se apilan por repositorio y muestran el avatar de quien actuó. Desaparecen solos cuando el PR se revisa, se mergea, se descarta o se pospone, cuando sus checks vuelven a estar en verde o se resuelven sus conflictos, y al cerrar sesión.
 - **Horario laboral:** fuera de él, los avisos esperan, y al empezar la jornada llega uno solo, "Mientras no estabas". Si el resumen diario toca dentro de la hora siguiente, se fusionan.
 - **Resumen diario:** como mucho uno al día, y no se envía si no hay nada pendiente.
 

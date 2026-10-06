@@ -15,8 +15,8 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 
 - **Menu bar count** of the pull requests waiting for your review. The icon dims when GitHub can't be reached and shows a badge when you need to sign in again.
 - **Native notifications:**
-  - a new review request, or a review requested again after the author pushed new commits;
-  - one of your PRs is approved, gets changes requested, or becomes ready to merge.
+  - a new review request, or a review requested again after the author pushed new commits, with buttons to snooze or dismiss it;
+  - one of your PRs is approved, gets changes requested, becomes ready to merge, fails its checks or gets merge conflicts.
 - **To review** tab:
   - the status of each PR's checks;
   - whether the request was sent to you or to one of your teams;
@@ -84,8 +84,10 @@ If an organization uses **SAML SSO**, authorize the app for it; the panel tells 
 
 - **First run:** a single summary instead of one notification per PR.
 - **New review requests:** up to three individual notifications; more than that become one grouped notification.
-- **Your PRs:** "approved", "changes requested" and "ready to merge", the last one once per push. Turn them off in Settings → **Updates on my PRs**.
+- **Buttons:** review requests and reminders carry **Snooze 1 h**, **Until tomorrow** and **Dismiss**. On macOS, hover over the notification and open **Options**.
+- **Your PRs:** "approved", "changes requested", "ready to merge" and "checks failed" (the last two once per push), and "conflicts". Turn them off in Settings → **Updates on my PRs**.
 - **Snoozed PRs** come back with a reminder.
+- **Notification Center:** notifications are stacked per repository and show the avatar of whoever acted. They are removed on their own once the PR is reviewed, merged, dismissed or snoozed, when its checks are green again or its conflicts are solved, and when you sign out.
 - **Working hours:** outside them, notifications are held, and one "While you were away" notification arrives when your day starts. If the daily summary is due within the hour, the two are merged.
 - **Daily summary:** at most once a day, and skipped when nothing is pending.
 

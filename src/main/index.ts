@@ -14,7 +14,7 @@ import { fetchInstallations, fetchPullRequestDetail, fetchPullRequests } from '.
 import { applyLanguage, currentLocale } from './i18n'
 import { isKnownCheckUrl, registerIpc } from './ipc'
 import { logger } from './log'
-import { deliverEvents } from './notifier'
+import { deliverEvents, retire, retireAll } from './notifier'
 import { Poller } from './poller'
 import { Session, SessionExpiredError } from './session'
 import { normalizeSettings } from './settings'
@@ -115,8 +115,11 @@ function main(): void {
           openPanel: showPanel,
           perform: (action) => {
             if (action.kind === 'snooze') engine.snooze(action.prId, action.option)
+            else if (action.kind === 'dismiss') engine.dismiss(action.prId)
           }
         }),
+      retireNotifications: retire,
+      clearNotifications: retireAll,
       publish: (state) => {
         tray?.update(state)
         if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.state, state)
