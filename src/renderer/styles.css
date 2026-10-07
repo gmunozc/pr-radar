@@ -1091,6 +1091,19 @@ code {
   font-size: 11px;
 }
 
+.menu-item-back {
+  color: var(--text-muted);
+}
+
+/* "Send to…": shown under a PR while its workspace is prepared */
+.launch-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
 /* Inline confirmation under a PR (merge, auto-merge, approve…) */
 .confirm-row {
   display: flex;

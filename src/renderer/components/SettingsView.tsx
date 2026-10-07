@@ -20,6 +20,7 @@ export function shortcutLabel(accelerator: string, platform: string): string {
   return keys.join(mac ? '' : '+')
 }
 import { useLocale, useT } from '../i18n'
+import { LaunchersSettings } from './LaunchersSettings'
 import { openOrgAccess } from './PrList'
 
 const api = window.prRadar
@@ -454,6 +455,9 @@ export function SettingsView({ state }: { state: AppState }) {
           </button>
         </div>
       </section>
+
+      {/* Warp tab configs and /bin/sh: macOS only for now. */}
+      {api.platform === 'darwin' && <LaunchersSettings />}
 
       <section className="group">
         <div className="group-title">{t('settings.help')}</div>

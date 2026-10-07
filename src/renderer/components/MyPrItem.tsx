@@ -6,12 +6,14 @@ import { myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
 import type { AppState, MergeMethod, MyPullRequest, MyReviewStatus, PrAction } from '../../shared/types'
 import { GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
+import { useSendTo, withSendTo } from '../useLaunchers'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
 import { CiIcon } from './CiIcon'
 import { ConfirmRow } from './ConfirmRow'
 import { Labels } from './Labels'
 import { Segmented } from './Segmented'
+import { SendToStatus } from './SendToStatus'
 
 const DAY_MS = 86_400_000
 
@@ -90,6 +92,7 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const kebab = useRef<HTMLButtonElement>(null)
+  const sendTo = useSendTo(pr)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const busy = pending !== undefined
 
@@ -158,9 +161,12 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
         return { id, label: t('action.open'), onSelect: open }
     }
   }
-  const items = myPrMenuActions(pr, canWrite, armed !== undefined)
-    .filter((id) => id !== 'details' || onDetail)
-    .map(menuItem)
+  const items = withSendTo(
+    myPrMenuActions(pr, canWrite, armed !== undefined)
+      .filter((id) => id !== 'details' || onDetail)
+      .map(menuItem),
+    sendTo.item
+  )
   const showDetail = (e: MouseEvent) => {
     if (!onDetail) return
     e.stopPropagation()
@@ -292,6 +298,7 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
             {error}
           </div>
         )}
+        <SendToStatus sendTo={sendTo} />
       </div>
       <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
         {copied && <span className="pr-copied">{t('action.copied')}</span>}

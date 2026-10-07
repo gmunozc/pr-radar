@@ -4,10 +4,12 @@ import { reviewMenuActions, type ReviewMenuAction } from '../../shared/prActions
 import type { PrAction, PullRequest, SnoozeOption } from '../../shared/types'
 import { CheckIcon, ClockIcon, XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
+import { useSendTo, withSendTo } from '../useLaunchers'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
 import { CiIcon } from './CiIcon'
 import { ConfirmRow } from './ConfirmRow'
+import { SendToStatus } from './SendToStatus'
 import { Labels } from './Labels'
 
 const DAY_MS = 86_400_000
@@ -35,6 +37,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
+  const sendTo = useSendTo(pr)
   const busy = pending !== undefined
   const canApprove = canWrite && !pr.viewerDidAuthor
   // A PR you merely take part in can be dismissed, but a snooze reminder would make no sense.
@@ -105,9 +108,12 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
         return { id, label: t('action.open'), onSelect: open }
     }
   }
-  const items = reviewMenuActions(pr, canWrite)
-    .filter((id) => id !== 'details' || onDetail)
-    .map(menuItem)
+  const items = withSendTo(
+    reviewMenuActions(pr, canWrite)
+      .filter((id) => id !== 'details' || onDetail)
+      .map(menuItem),
+    sendTo.item
+  )
   const showDetail = (e: MouseEvent) => {
     if (!onDetail) return
     e.stopPropagation()
@@ -218,6 +224,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
             {error}
           </div>
         )}
+        <SendToStatus sendTo={sendTo} />
       </div>
       <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
         {copied && <span className="pr-copied">{t('action.copied')}</span>}
