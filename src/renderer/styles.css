@@ -72,9 +72,13 @@ body {
   overflow: hidden;
 }
 
-/* On macOS the window uses native vibrancy; let it show through. */
 html[data-platform='darwin'] body {
-  background: transparent;
+  /*
+   * The window's vibrancy shows a blurred copy of whatever is behind the panel. Over a white
+   * page the "popover" material turns light grey and the muted text vanishes, so the page
+   * itself tints it with the theme background; the 20 % left keeps a hint of the blur.
+   */
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
 }
 
 button {
