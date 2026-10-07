@@ -58,6 +58,7 @@ export type LaunchErrorCode =
   | 'git_failed'
   | 'terminal_failed'
   | 'busy'
+  | 'unknown'
 
 export type LaunchResult = { ok: true } | { ok: false; code: LaunchErrorCode }
 

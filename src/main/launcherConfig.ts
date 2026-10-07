@@ -46,7 +46,8 @@ export const TERMINAL_PLACEHOLDERS = ['command', 'dir'] as const
 
 const ACTION_ID = /^[\w-]{1,40}$/
 const AGENT_NAME = /^[\w-]{1,40}$/
-const REMOTE = /^[\w.-]{1,100}$/
+/** A remote name; never starting with "-", so git can't read it as an option. */
+const REMOTE = /^\w[\w.-]{0,99}$/
 const MAX_LABEL = 60
 const MAX_TEMPLATE = 1000
 
