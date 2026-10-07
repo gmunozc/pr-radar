@@ -86,7 +86,7 @@ Si una organización usa **SAML SSO**, autoriza la app para ella; el panel avisa
 - **Horario laboral:** fuera de él, los avisos esperan, y al empezar la jornada llega uno solo, "Mientras no estabas". Si el resumen diario toca dentro de la hora siguiente, se fusionan.
 - **Resumen diario:** como mucho uno al día, y no se envía si no hay nada pendiente.
 
-PR Radar consulta GitHub cada 30 segundos por defecto (mínimo 15). Cada consulta es una query de GraphQL que gasta unos 6 de los 5000 puntos por hora que permite GitHub.
+El **modo rápido** (activado por defecto) lanza cada 5 segundos una consulta ligera que detecta cambios (2 puntos del límite de GitHub) y hace la consulta completa (unos 6 puntos) en cuanto algo cambió, y cada 2 minutos en cualquier caso: unos 2000 de los 5000 puntos por hora que permite GitHub, y el aviso llega pocos segundos después del evento. Las sondas se pausan tras 10 minutos sin usar el equipo. Con el modo rápido desactivado, PR Radar hace la consulta completa cada 30 segundos por defecto (mínimo 15), unos 720 puntos por hora.
 
 ## Privacidad y seguridad
 

@@ -91,7 +91,7 @@ If an organization uses **SAML SSO**, authorize the app for it; the panel tells 
 - **Working hours:** outside them, notifications are held, and one "While you were away" notification arrives when your day starts. If the daily summary is due within the hour, the two are merged.
 - **Daily summary:** at most once a day, and skipped when nothing is pending.
 
-PR Radar checks GitHub every 30 seconds by default (minimum 15). Each check is one GraphQL query that costs about 6 points of GitHub's 5,000-points-per-hour limit.
+**Fast mode** (on by default) sends a cheap change probe every 5 seconds (2 rate-limit points) and runs the full check (about 6 points) as soon as something changed, and every 2 minutes regardless: roughly 2,000 of GitHub's 5,000 points per hour, and a notification within a few seconds of the event. Probes pause after 10 minutes without using the computer. With fast mode off, PR Radar runs the full check every 30 seconds by default (minimum 15), about 720 points per hour.
 
 ## Privacy and security
 

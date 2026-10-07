@@ -272,6 +272,8 @@ export interface Settings {
   shortcut: string
   panelSize: PanelSize
   pollIntervalSec: number
+  /** Seconds between cheap change probes that trigger a full check; 0 turns them off (FAST_POLL_OPTIONS). */
+  fastPoll: number
   clientId: string
   language: LanguagePref
   /** Notify when your PRs are approved, get changes requested or become ready to merge. */
@@ -304,6 +306,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shortcut: '',
   panelSize: 'default',
   pollIntervalSec: 30,
+  fastPoll: 5,
   clientId: '',
   language: 'system',
   notifyMyPrs: true,
@@ -317,6 +320,10 @@ export const DEFAULT_SETTINGS: Settings = {
 }
 
 export const MIN_POLL_INTERVAL_SEC = 15
+/** Probe cadences the settings offer, in seconds; 0 is off. */
+export const FAST_POLL_OPTIONS = [5, 10, 0] as const
+/** While probes run, the full check is only a safety net. */
+export const FULL_POLL_WITH_FAST_SEC = 120
 
 export type NotifyResult = { ok: true } | { ok: false; error: string }
 

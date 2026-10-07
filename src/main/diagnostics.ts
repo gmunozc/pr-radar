@@ -34,7 +34,7 @@ export function buildDiagnostics(d: DiagnosticsInput): string {
       .join(' · ')}`,
     `Panel last shown on display ${d.panelDisplayId ?? 'none'}`,
     `Settings includeTeams=${settings.includeTeams} showDrafts=${settings.showDrafts} notifications=${settings.notifications} ` +
-      `pollIntervalSec=${settings.pollIntervalSec} clientId=${d.clientIdConfigured ? 'configured' : 'missing'}`,
+      `pollIntervalSec=${settings.pollIntervalSec} fastPoll=${settings.fastPoll} clientId=${d.clientIdConfigured ? 'configured' : 'missing'}`,
     // Only counts: the bug template asks users not to share private repository names.
     `Filters hideBots=${settings.hideBots} excludeRepos=${settings.excludeRepos.length} excludeAuthors=${settings.excludeAuthors.length} ` +
       `staleAfterDays=${settings.staleAfterDays} reviewFilter=${settings.reviewFilter} reviewSort=${settings.reviewSort} ` +

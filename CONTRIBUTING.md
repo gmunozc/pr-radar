@@ -24,7 +24,7 @@ CI runs both on every push and pull request.
 
 ```
 src/main/          main process
-  engine.ts        polling, new-PR detection, dismiss/snooze, quiet hours, digest (no Electron imports)
+  engine.ts        polling and change probes, new-PR detection, dismiss/snooze, quiet hours, digest (no Electron imports)
   github.ts        GraphQL query and mapping; deviceFlow.ts / session.ts: sign-in and token renewal
   diff.ts          pure "what changed" logic; schedule.ts: calendar rules; notifications.ts: texts
   index.ts         composition root: wires the engine to Electron (tray, panel, IPC, timers)

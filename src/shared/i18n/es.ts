@@ -316,6 +316,11 @@ export const es: Record<MessageKey, string> = {
   'settings.notifyMyPrsHint': 'Cuando aprueban tus PRs, te piden cambios, quedan listos para merge, fallan sus checks o tienen conflictos.',
   'settings.interval': 'Revisar cada',
   'settings.intervalHint': 'Segundos entre consultas (mínimo {min}).',
+  'settings.fastPoll': 'Modo rápido',
+  'settings.fastPollHint':
+    'Una consulta ligera detecta cambios y dispara la consulta completa, que además se hace cada 2 minutos. Se pausa tras 10 minutos sin usar el equipo.',
+  'settings.fastPollEvery': 'Cada {seconds} s',
+  'settings.fastPollOff': 'Desactivado',
   'settings.test': 'Probar notificación',
   'settings.testHint': 'En macOS, la primera vez pedirá permiso. El aviso de prueba lleva un botón: pasa el ratón por encima y abre Opciones.',
   'settings.testSent':

@@ -8,6 +8,8 @@ describe('sanitizeSettingsPatch', () => {
       sanitizeSettingsPatch({ includeTeams: false, pollIntervalSec: 3, clientId: '  abc ', evil: 1, notifications: 'yes' })
     ).toEqual({ includeTeams: false, pollIntervalSec: 15, clientId: 'abc' })
     expect(sanitizeSettingsPatch({ pollIntervalSec: 99999 })).toEqual({ pollIntervalSec: 3600 })
+    expect(sanitizeSettingsPatch({ fastPoll: 10 })).toEqual({ fastPoll: 10 })
+    expect(sanitizeSettingsPatch({ fastPoll: 7 })).toEqual({})
     expect(sanitizeSettingsPatch(null)).toEqual({})
   })
 })

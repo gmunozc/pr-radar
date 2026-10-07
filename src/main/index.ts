@@ -10,7 +10,7 @@ import { debugMenu, FaultInjector } from './debug'
 import { refreshAccessToken } from './deviceFlow'
 import { buildDiagnostics } from './diagnostics'
 import { Engine } from './engine'
-import { fetchInstallations, fetchPullRequestDetail, fetchPullRequests } from './github'
+import { fetchFingerprint, fetchInstallations, fetchPullRequestDetail, fetchPullRequests } from './github'
 import { applyLanguage, currentLocale } from './i18n'
 import { isKnownCheckUrl, registerIpc } from './ipc'
 import { logger } from './log'
@@ -31,6 +31,9 @@ import { Panel } from './window'
 const smoke = process.env.PR_RADAR_SMOKE === '1'
 if (smoke) app.setPath('userData', mkdtempSync(join(tmpdir(), 'pr-radar-smoke-')))
 else if (!app.isPackaged) app.setPath('userData', join(app.getPath('appData'), 'PR Radar Dev'))
+
+/** Change probes pause after this long without keyboard or mouse input. */
+const PROBE_PAUSE_IDLE_SEC = 10 * 60
 
 const settingsFile = new JsonFile<unknown>(join(app.getPath('userData'), 'settings.json'), () => ({}))
 let settings: Settings = normalizeSettings(settingsFile.read())
@@ -101,6 +104,7 @@ function main(): void {
       settings: () => settings,
       session,
       fetchPullRequests: faults ? faults.wrap(fetchPullRequests) : fetchPullRequests,
+      fetchFingerprint: (token, s) => fetchFingerprint(token, s),
       fetchInstallations: (token) => fetchInstallations(token),
       runPrAction: (token, pr, action) => runPrAction(token, pr, action),
       requestPoll: () => void poller.runNow(),
@@ -135,7 +139,12 @@ function main(): void {
     authStore.readError
   )
 
-  const poller = new Poller(() => engine.poll(), () => settings.pollIntervalSec)
+  const poller = new Poller(() => engine.poll(), () => settings.pollIntervalSec, {
+    intervalSec: () => settings.fastPoll,
+    run: () => engine.probe(),
+    // Nobody needs a notification within seconds while they are away from the computer.
+    paused: () => powerMonitor.getSystemIdleTime() >= PROBE_PAUSE_IDLE_SEC
+  })
 
   // Update notice: packaged builds only, against this repository's GitHub releases. In
   // development, PR_RADAR_DEV_VERSION=0.0.1 pretends to be that version to exercise the flow.
@@ -352,6 +361,7 @@ function main(): void {
         void poller.runNow()
       }
       engine.settingsChanged()
+      poller.refresh()
       const view = { ...settings, openAtLogin: app.getLoginItemSettings().openAtLogin }
       if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.settingsChanged, view)
       return view

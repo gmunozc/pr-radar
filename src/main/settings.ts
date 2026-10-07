@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, MIN_POLL_INTERVAL_SEC, SHORTCUT_OPTIONS, type Settings } from '../shared/types'
+import { DEFAULT_SETTINGS, FAST_POLL_OPTIONS, MIN_POLL_INTERVAL_SEC, SHORTCUT_OPTIONS, type Settings } from '../shared/types'
 
 export type SettingsPatch = Partial<Settings> & { openAtLogin?: boolean }
 
@@ -42,6 +42,7 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (typeof p.pollIntervalSec === 'number' && Number.isFinite(p.pollIntervalSec)) {
     out.pollIntervalSec = Math.min(3600, Math.max(MIN_POLL_INTERVAL_SEC, Math.round(p.pollIntervalSec)))
   }
+  if (typeof p.fastPoll === 'number' && (FAST_POLL_OPTIONS as readonly number[]).includes(p.fastPoll)) out.fastPoll = p.fastPoll
   if (typeof p.staleAfterDays === 'number' && Number.isFinite(p.staleAfterDays)) {
     out.staleAfterDays = Math.min(MAX_STALE_DAYS, Math.max(0, Math.round(p.staleAfterDays)))
   }

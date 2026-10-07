@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type {
   CheckInfo,
   CheckState,
@@ -24,6 +25,29 @@ import type {
 
 export const GRAPHQL_URL = 'https://api.github.com/graphql'
 export const PAGE_SIZE = 50
+
+/**
+ * The cheap "did anything change?" document, 2 rate-limit points against ~6 for the full one:
+ * the same searches with just the fields a change would show in. See probeFingerprint.
+ */
+export const PROBE_QUERY = /* GraphQL */ `
+  fragment ProbeFields on PullRequest {
+    id
+    updatedAt
+    headRefOid
+    isDraft
+    reviewDecision
+    mergeable
+    mergeStateStatus
+    commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  }
+
+  query PullRequestsProbe($requested: String!, $mine: String!, $involved: String!, $first: Int!, $withInvolved: Boolean!) {
+    requested: search(query: $requested, type: ISSUE, first: $first) { issueCount nodes { ...ProbeFields } }
+    mine: search(query: $mine, type: ISSUE, first: $first) { issueCount nodes { ...ProbeFields } }
+    involved: search(query: $involved, type: ISSUE, first: $first) @include(if: $withInvolved) { issueCount nodes { ...ProbeFields } }
+  }
+`
 
 // Both lists come from a single query (~2 rate-limit points).
 export const PULL_REQUESTS_QUERY = /* GraphQL */ `
@@ -697,6 +721,68 @@ export async function graphqlRequest<T>(
     throw new GithubError('unknown', 'GitHub answered with something that is not JSON')
   }
   return { body, response: res }
+}
+
+interface RawProbePr {
+  id: string
+  updatedAt: string
+  headRefOid: string
+  isDraft: boolean
+  reviewDecision: string | null
+  mergeable: string
+  mergeStateStatus: string
+  commits: { nodes: Array<{ commit: { statusCheckRollup: { state: string } | null } }> }
+}
+
+export interface RawProbeResponse {
+  data?: { requested: RawSearch<RawProbePr>; mine: RawSearch<RawProbePr>; involved?: RawSearch<RawProbePr> } | null
+  errors?: Array<{ message: string }>
+}
+
+/**
+ * A digest of everything a change would show in: which PRs there are and, for each, when it
+ * was last updated, its head commit, draft state, review decision, merge state and the state
+ * of its checks. Independent of the order GitHub returns results in.
+ */
+export function probeFingerprint(data: NonNullable<RawProbeResponse['data']>): string {
+  const lines: string[] = []
+  const lists = [
+    ['requested', data.requested],
+    ['mine', data.mine],
+    ['involved', data.involved]
+  ] as const
+  for (const [name, list] of lists) {
+    if (!list) continue
+    lines.push(`${name}:${list.issueCount}`)
+    const rows = list.nodes
+      .filter((pr): pr is RawProbePr => Boolean(pr && pr.id))
+      .map((pr) => {
+        const rollup = pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state ?? 'none'
+        return [pr.id, pr.updatedAt, pr.headRefOid, pr.isDraft, pr.reviewDecision ?? 'none', pr.mergeable, pr.mergeStateStatus, rollup].join('|')
+      })
+      .sort()
+    lines.push(...rows)
+  }
+  return createHash('sha256').update(lines.join('\n')).digest('hex').slice(0, 16)
+}
+
+/** Runs the probe (PROBE_QUERY). GraphQL errors without data are failures; partial data is fine. */
+export async function fetchFingerprint(token: string, settings: SearchSettings, fetchFn: FetchFn = fetch): Promise<string> {
+  const queries = searchQueries(settings)
+  const { body } = await graphqlRequest<RawProbeResponse>(
+    token,
+    PROBE_QUERY,
+    {
+      requested: queries.requested,
+      mine: queries.mine,
+      involved: queries.involved,
+      first: PAGE_SIZE,
+      withInvolved: settings.showInvolved ?? true
+    },
+    fetchFn
+  )
+  if (!body.data) throw new GithubError('unknown', body.errors?.[0]?.message ?? 'GitHub returned no data')
+  return probeFingerprint(body.data)
 }
 
 export async function fetchPullRequests(

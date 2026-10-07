@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { LanguagePref } from '../../shared/i18n'
 import {
+  FAST_POLL_OPTIONS,
   MIN_POLL_INTERVAL_SEC,
   SHORTCUT_OPTIONS,
   type AppState,
@@ -304,23 +305,38 @@ export function SettingsView({ state }: { state: AppState }) {
         )}
         <label className="setting">
           <div className="setting-text">
-            <div className="setting-label">{t('settings.interval')}</div>
-            <div className="setting-hint">{t('settings.intervalHint', { min: MIN_POLL_INTERVAL_SEC })}</div>
+            <div className="setting-label">{t('settings.fastPoll')}</div>
+            <div className="setting-hint">{t('settings.fastPollHint')}</div>
           </div>
-          <div className="row">
-            <input
-              className="input input-num"
-              type="number"
-              min={MIN_POLL_INTERVAL_SEC}
-              step={5}
-              value={interval}
-              onChange={(e) => setIntervalValue(e.target.value)}
-              onBlur={commitInterval}
-              onKeyDown={(e) => e.key === 'Enter' && commitInterval()}
-            />
-            <span className="unit">s</span>
-          </div>
+          <select className="input select" value={settings.fastPoll} onChange={(e) => void update({ fastPoll: Number(e.target.value) })}>
+            {FAST_POLL_OPTIONS.map((seconds) => (
+              <option key={seconds} value={seconds}>
+                {seconds === 0 ? t('settings.fastPollOff') : t('settings.fastPollEvery', { seconds })}
+              </option>
+            ))}
+          </select>
         </label>
+        {settings.fastPoll === 0 && (
+          <label className="setting">
+            <div className="setting-text">
+              <div className="setting-label">{t('settings.interval')}</div>
+              <div className="setting-hint">{t('settings.intervalHint', { min: MIN_POLL_INTERVAL_SEC })}</div>
+            </div>
+            <div className="row">
+              <input
+                className="input input-num"
+                type="number"
+                min={MIN_POLL_INTERVAL_SEC}
+                step={5}
+                value={interval}
+                onChange={(e) => setIntervalValue(e.target.value)}
+                onBlur={commitInterval}
+                onKeyDown={(e) => e.key === 'Enter' && commitInterval()}
+              />
+              <span className="unit">s</span>
+            </div>
+          </label>
+        )}
         <div className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.test')}</div>

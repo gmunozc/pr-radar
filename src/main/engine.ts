@@ -50,6 +50,8 @@ export interface EngineDeps {
   settings(): Settings
   session: SessionLike
   fetchPullRequests(token: string, settings: Settings, login?: string): Promise<FetchResult>
+  /** The cheap change probe between full polls (see Engine.probe); absent means no fast mode. */
+  fetchFingerprint?(token: string, settings: Settings): Promise<string>
   /** GitHub App sessions only: where the app is installed. */
   fetchInstallations?(token: string): Promise<InstallationInfo[]>
   /** Writes to GitHub (merge, update branch, …); absent when the build can't write. */
@@ -86,6 +88,12 @@ export const INSTALLATION_RECHECK_EMPTY_MS = 5 * 60_000
  */
 export const READY_POLLS_BEFORE_MERGE = 2
 const DAY_MS = 24 * 3_600_000
+
+export interface ProbeResult {
+  /** `changed` asks for a full poll now; `failed` pauses probes (GitHub said when, if `retryAt`). */
+  outcome: 'changed' | 'same' | 'skipped' | 'failed'
+  retryAt?: number
+}
 
 interface MergeDone {
   pr: MyPullRequest
@@ -174,6 +182,8 @@ export class Engine {
   private readyStreak = new Map<string, { headOid: string; count: number }>()
   /** Detail view cache, keyed by PR id and last update, so reopening a PR costs nothing. */
   private details = new Map<string, PrDetail>()
+  /** What the last change probe saw; null until one runs (or after the searches change). */
+  private fingerprint: string | null = null
 
   constructor(
     private readonly deps: EngineDeps,
@@ -278,6 +288,34 @@ export class Engine {
         connection: this.connection
       })
       return { retryAt }
+    }
+  }
+
+  /**
+   * Cheap "did anything change?" check between full polls (2 rate-limit points against ~6).
+   * The first probe only takes a baseline; later ones compare with it, and a difference makes
+   * the poller run a full poll right away, so a notification arrives seconds after the event.
+   */
+  async probe(): Promise<ProbeResult> {
+    const fetchFingerprint = this.deps.fetchFingerprint
+    if (!fetchFingerprint || !this.deps.session.current || this.current.status !== 'ready' || this.current.error) {
+      return { outcome: 'skipped' }
+    }
+    try {
+      const fingerprint = await this.withToken((token) => fetchFingerprint(token, this.deps.settings()))
+      const changed = this.fingerprint !== null && fingerprint !== this.fingerprint
+      this.fingerprint = fingerprint
+      if (changed) this.deps.log.debug('probe saw a change')
+      return { outcome: changed ? 'changed' : 'same' }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        this.expire(err.reason)
+        return { outcome: 'failed' }
+      }
+      // The next full poll reports the problem, if it persists.
+      this.deps.log.debug('probe failed', err)
+      const retryAt = err instanceof GithubError && err.kind === 'rate_limited' ? err.retryAt : undefined
+      return { outcome: 'failed', retryAt }
     }
   }
 
@@ -549,6 +587,7 @@ export class Engine {
   /** The search filters changed: the next poll sets a new baseline without notifying. */
   filtersChanged(): void {
     this.resetBaseline = true
+    this.fingerprint = null
   }
 
   /** A new login succeeded; `warning` explains a session problem that doesn't block polling. */
@@ -556,6 +595,7 @@ export class Engine {
     this.sessionWarning = warning
     this.failures = 0
     this.connection = 'ok'
+    this.fingerprint = null
     this.resetInstallations()
     this.publish({ ...loggedOutState(), status: 'loading' })
   }
@@ -571,6 +611,7 @@ export class Engine {
     this.deps.session.clear()
     this.allPrs = []
     this.allInvolved = []
+    this.fingerprint = null
     this.sessionWarning = null
     this.resetInstallations()
     this.deps.onSessionEnded()
@@ -583,6 +624,7 @@ export class Engine {
     this.deps.session.clear()
     this.allPrs = []
     this.allInvolved = []
+    this.fingerprint = null
     this.sessionWarning = null
     this.resetInstallations()
     this.deps.onSessionEnded()
@@ -599,6 +641,7 @@ export class Engine {
     this.persisted = null
     this.allPrs = []
     this.allInvolved = []
+    this.fingerprint = null
     this.sessionWarning = null
     this.resetInstallations()
     this.deps.onSessionEnded()

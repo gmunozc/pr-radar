@@ -51,6 +51,8 @@ interface Options {
   installations?: Array<InstallationInfo[] | Error>
   /** Fake GitHub writes; defaults to success. */
   actions?: (pr: ActionTarget, action: PrAction) => Promise<ActionResult>
+  /** What each change probe returns, in order. */
+  fingerprints?: Array<string | Error>
 }
 
 function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
@@ -88,6 +90,13 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     opts.actions ? opts.actions(target, action) : { ok: true }
   )
   const requestPoll = vi.fn()
+  const fingerprintQueue = [...(opts.fingerprints ?? [])]
+  const fetchFingerprint = vi.fn(async () => {
+    const next = fingerprintQueue.shift()
+    if (next === undefined) throw new Error('unexpected probe')
+    if (next instanceof Error) throw next
+    return next
+  })
   const retireNotifications = vi.fn()
   const clearNotifications = vi.fn()
   const fetchDetail = vi.fn(async (_token: string, prId: string) => ({ body: `about ${prId}`, changedFiles: 1, commits: 2, comments: 3 }))
@@ -97,6 +106,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     settings: () => settings,
     session,
     fetchPullRequests,
+    fetchFingerprint,
     runPrAction,
     requestPoll,
     fetchDetail,
@@ -118,6 +128,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     events,
     published,
     fetchPullRequests,
+    fetchFingerprint,
     runPrAction,
     requestPoll,
     retireNotifications,
@@ -864,5 +875,44 @@ describe('Engine and delivered notifications', () => {
     t.setNow(at(5, '09:00'))
     t.engine.tick()
     expect(t.events).toEqual([{ kind: 'catch_up', counts: expect.objectContaining({ ciFailed: 1, conflicts: 1 }) }])
+  })
+})
+
+describe('Engine change probes', () => {
+  it('skips until the first poll, takes a baseline, then reports changes', async () => {
+    const t = setup([result(['a'])], { fingerprints: ['f1', 'f1', 'f2', 'f2'] })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'skipped' })
+    await t.engine.poll()
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'same' })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'same' })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'changed' })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'same' })
+    expect(t.fetchFingerprint).toHaveBeenCalledTimes(4)
+    expect(t.fetchFingerprint).toHaveBeenCalledWith('gho_old', expect.objectContaining({ includeTeams: true }))
+  })
+
+  it('starts over when the searches change, and reports rate limits and failures without touching the state', async () => {
+    const fingerprints = ['f1', 'f2', new GithubError('rate_limited', 'slow down', NOW + 60_000), new GithubError('network', 'down')]
+    const t = setup([result(['a'])], { fingerprints })
+    await t.engine.poll()
+    await t.engine.probe()
+    t.engine.filtersChanged()
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'same' })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'failed', retryAt: NOW + 60_000 })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'failed', retryAt: undefined })
+    expect(t.engine.state).toMatchObject({ status: 'ready', error: null, connection: 'ok' })
+  })
+
+  it('skips while the last poll failed, and signs out when the token turns out revoked', async () => {
+    const t = setup([result(['a']), new GithubError('network', 'down'), result(['a'])], {
+      fingerprints: [new GithubError('unauthorized', 'x'), new GithubError('unauthorized', 'x')]
+    })
+    await t.engine.poll()
+    await t.engine.poll()
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'skipped' })
+    await t.engine.poll()
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'failed' })
+    expect(t.engine.state).toMatchObject({ status: 'logged_out', authNotice: 'session_expired' })
+    expect(t.onSessionEnded).toHaveBeenCalledTimes(1)
   })
 })

@@ -318,6 +318,11 @@ export const en = {
   'settings.notifyMyPrsHint': 'When your PRs get approved, changes requested, become ready to merge, fail their checks or get conflicts.',
   'settings.interval': 'Check every',
   'settings.intervalHint': 'Seconds between checks (minimum {min}).',
+  'settings.fastPoll': 'Fast mode',
+  'settings.fastPollHint':
+    'A cheap query spots changes and triggers the full check, which also runs every 2 minutes. Pauses after 10 minutes without using the computer.',
+  'settings.fastPollEvery': 'Every {seconds} s',
+  'settings.fastPollOff': 'Off',
   'settings.test': 'Test notification',
   'settings.testHint': 'On macOS, it asks for permission the first time. The test alert has a button: hover over it and open Options.',
   'settings.testSent':

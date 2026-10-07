@@ -7,6 +7,7 @@ import {
   buildMyPrsQuery,
   buildSearchQuery,
   ciFromRollup,
+  fetchFingerprint,
   fetchPullRequests,
   GithubError,
   GRAPHQL_URL,
@@ -15,6 +16,8 @@ import {
   mergeBlocker,
   mergeOptions,
   myReviewStatus,
+  PROBE_QUERY,
+  probeFingerprint,
   reviewFreshness,
   searchQueries
 } from '../src/main/github'
@@ -586,5 +589,55 @@ describe('GitHub App installations', () => {
   it('reports an expired token as unauthorized', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ message: 'Bad credentials' }, { status: 401 }))
     await expect(fetchInstallations('ghu_x', fetchFn)).rejects.toMatchObject({ kind: 'unauthorized' })
+  })
+})
+
+describe('change probes', () => {
+  const probePr = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    updatedAt: 'T1',
+    headRefOid: 'h1',
+    isDraft: false,
+    reviewDecision: null,
+    mergeable: 'MERGEABLE',
+    mergeStateStatus: 'CLEAN',
+    commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] },
+    ...over
+  })
+  const data = (requested: unknown[], mine: unknown[] = [], involved?: unknown[]) =>
+    ({ requested: search(requested), mine: search(mine), ...(involved ? { involved: search(involved) } : {}) }) as Parameters<
+      typeof probeFingerprint
+    >[0]
+
+  it('does not depend on the order GitHub returns PRs in', () => {
+    expect(probeFingerprint(data([probePr('a'), probePr('b')]))).toBe(probeFingerprint(data([probePr('b'), probePr('a')])))
+  })
+
+  it('changes with anything a notification could come from', () => {
+    const base = probeFingerprint(data([probePr('a')]))
+    const variants = [
+      data([probePr('a'), probePr('b')]),
+      data([probePr('a', { updatedAt: 'T2' })]),
+      data([probePr('a', { headRefOid: 'h2' })]),
+      data([probePr('a', { isDraft: true })]),
+      data([probePr('a', { reviewDecision: 'APPROVED' })]),
+      data([probePr('a', { mergeStateStatus: 'BEHIND' })]),
+      data([probePr('a', { commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] } })]),
+      data([probePr('a', { commits: { nodes: [{ commit: { statusCheckRollup: null } }] } })]),
+      data([], [probePr('a')]),
+      data([probePr('a')], [], [probePr('c')])
+    ]
+    for (const variant of variants) expect(probeFingerprint(variant)).not.toBe(base)
+    expect(new Set(variants.map(probeFingerprint)).size).toBe(variants.length)
+  })
+
+  it('asks for the same searches as the full query and fails without data', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: data([probePr('a')]) }))
+    await expect(fetchFingerprint('tok', { ...settings, showInvolved: false }, fetchFn)).resolves.toHaveLength(16)
+    const { query, variables } = JSON.parse(fetchFn.mock.calls[0][1].body)
+    expect(query).toBe(PROBE_QUERY)
+    expect(variables).toMatchObject({ requested: searchQueries(settings).requested, withInvolved: false, first: 50 })
+    const noData = vi.fn().mockResolvedValue(jsonResponse({ data: null, errors: [{ message: 'nope' }] }))
+    await expect(fetchFingerprint('tok', settings, noData)).rejects.toMatchObject({ kind: 'unknown', message: 'nope' })
   })
 })
