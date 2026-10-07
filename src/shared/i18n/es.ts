@@ -188,6 +188,8 @@ export const es: Record<MessageKey, string> = {
   'ci.unknown': 'Checks no disponibles',
   'reviewer.approved': '@{login}: aprobó',
   'reviewer.changes': '@{login}: pidió cambios',
+  'reviewer.commented': '@{login}: comentó',
+  'reviewer.dismissed': '@{login}: revisión descartada',
   'reviewer.pending': '{name}: pendiente',
   'reviewer.team': 'equipo',
 

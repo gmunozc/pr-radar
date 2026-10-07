@@ -24,7 +24,7 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
   - a ⋯ menu on each row (also on right-click) to approve, snooze, dismiss, copy the link or the branch name, open the detail or open GitHub.
 - **My PRs** tab:
   - where each PR stands (waiting, approved, changes requested, no reviewers);
-  - who approved, who asked for changes and who is still pending;
+  - who approved, who asked for changes, who only commented and who is still pending;
   - **Ready to merge**, or what's blocking it (conflicts, out of date, blocked);
   - an **Auto-merge** chip when GitHub will merge it on its own.
 - **Act on your PRs** from the panel (OAuth App sessions): merge now with the repository's merge method, update the branch when it's behind, turn GitHub's auto-merge on or off, ask reviewers again after they requested changes, copy the branch name or the link.

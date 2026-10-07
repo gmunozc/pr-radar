@@ -632,6 +632,12 @@ html[data-platform='darwin'] .tab-active {
   opacity: 0.8;
 }
 
+/* Commented or dismissed: they looked, nobody has decided. */
+.ring-commented {
+  box-shadow: 0 0 0 1.5px var(--text-faint);
+  opacity: 0.85;
+}
+
 .reviewer-team,
 .reviewer-more {
   color: var(--text-faint);
@@ -1396,8 +1402,12 @@ html[data-density='compact'] .diff {
   box-shadow: 0 0 0 1.5px var(--green);
 }
 
-.review-changes_requested .reviewer {
+.review-changes .reviewer {
   box-shadow: 0 0 0 1.5px var(--red);
+}
+
+.review-commented .reviewer {
+  box-shadow: 0 0 0 1.5px var(--text-faint);
 }
 
 .detail-stats {

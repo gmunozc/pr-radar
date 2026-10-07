@@ -6,6 +6,7 @@ import { myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
 import type { AppState, MergeMethod, MyPullRequest, MyReviewStatus, PrAction } from '../../shared/types'
 import { GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
+import { REVIEW_LOOK } from '../reviews'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
 import { CiIcon } from './CiIcon'
@@ -33,20 +34,17 @@ const COPIED_MS = 2000
 interface Person {
   key: string
   avatarUrl: string
-  ring: 'approved' | 'changes' | 'waiting'
+  ring: 'approved' | 'changes' | 'commented' | 'waiting'
   title: string
 }
 
-/** Who already reviewed (approved / changes) and who is still pending, as avatars. */
+/** Who already reviewed (approved, changes, comments) and who is still pending, as avatars. */
 function people(pr: MyPullRequest, t: Translate): { avatars: Person[]; teams: string[] } {
-  const avatars: Person[] = pr.reviews
-    .filter((r) => r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED')
-    .map((r) => ({
-      key: `r-${r.login}`,
-      avatarUrl: r.avatarUrl,
-      ring: r.state === 'APPROVED' ? 'approved' : 'changes',
-      title: t(r.state === 'APPROVED' ? 'reviewer.approved' : 'reviewer.changes', { login: r.login })
-    }))
+  const avatars: Person[] = []
+  for (const r of pr.reviews) {
+    const look = REVIEW_LOOK[r.state]
+    if (look) avatars.push({ key: `r-${r.login}`, avatarUrl: r.avatarUrl, ring: look.ring, title: t(look.label, { login: r.login }) })
+  }
   const teams: string[] = []
   for (const r of pr.pendingReviewers) {
     if (r.kind === 'user') {

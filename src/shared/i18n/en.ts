@@ -191,6 +191,8 @@ export const en = {
   'ci.unknown': 'Checks unavailable',
   'reviewer.approved': '@{login}: approved',
   'reviewer.changes': '@{login}: requested changes',
+  'reviewer.commented': '@{login}: commented',
+  'reviewer.dismissed': '@{login}: review dismissed',
   'reviewer.pending': '{name}: pending',
   'reviewer.team': 'team',
 

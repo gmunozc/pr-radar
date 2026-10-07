@@ -159,6 +159,16 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
               }
             }
           }
+          latestReviews(first: 20) {
+            nodes {
+              state
+              author {
+                login
+                avatarUrl
+                ... on User { id }
+              }
+            }
+          }
           latestOpinionatedReviews(first: 20) {
             nodes {
               state
@@ -272,9 +282,15 @@ interface RawMyPr extends RawPr {
   repository: RawPr['repository'] & RawRepoMerge
   baseRef?: { branchProtectionRule: { requiredApprovingReviewCount: number | null } | null } | null
   reviewThreads?: { totalCount: number; nodes: Array<{ isResolved: boolean } | null> } | null
-  latestOpinionatedReviews: {
-    nodes: Array<{ state: ReviewState; author: { id?: string; login: string; avatarUrl: string } | null }>
-  }
+  /** Latest review per user, comments included. */
+  latestReviews?: { nodes: RawReview[] } | null
+  /** Latest approval or change request per user, which stands even if they commented later. */
+  latestOpinionatedReviews: { nodes: RawReview[] }
+}
+
+interface RawReview {
+  state: ReviewState
+  author: { id?: string; login: string; avatarUrl: string } | null
 }
 
 interface RawSearch<T> {
@@ -365,7 +381,32 @@ export function myReviewStatus(
   // REVIEW_REQUIRED: branch protection still needs approvals.
   if (decision === 'REVIEW_REQUIRED') return reviewStates.length > 0 ? 'waiting' : 'no_reviewers'
   if (reviewStates.includes('APPROVED')) return 'approved'
-  return 'no_reviewers'
+  // Comments or a dismissed decision without an approval: someone is looking, nobody has decided.
+  return reviewStates.length > 0 ? 'waiting' : 'no_reviewers'
+}
+
+/** Review states worth showing: decisions, comments, and dismissed decisions (the person did review). */
+const SHOWN_REVIEW_STATES: readonly ReviewState[] = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED']
+
+/**
+ * One entry per reviewer. A standing decision (latest approval or change request) wins over a
+ * later comment, the way GitHub's review decision does; comment-only and dismissed reviews come
+ * from `latestReviews`. Your own comment reviews on your own PR are not reviews.
+ */
+export function mergeReviews(n: Pick<RawMyPr, 'latestReviews' | 'latestOpinionatedReviews'>, viewerLogin: string): MyPullRequest['reviews'] {
+  const out = new Map<string, MyPullRequest['reviews'][number]>()
+  const add = (r: RawReview, states: readonly ReviewState[]) => {
+    if (!r.author || r.author.login === viewerLogin || !states.includes(r.state) || out.has(r.author.login)) return
+    out.set(r.author.login, {
+      login: r.author.login,
+      avatarUrl: r.author.avatarUrl,
+      state: r.state,
+      ...(r.author.id ? { id: r.author.id } : {})
+    })
+  }
+  for (const r of n.latestOpinionatedReviews?.nodes ?? []) add(r, ['APPROVED', 'CHANGES_REQUESTED'])
+  for (const r of n.latestReviews?.nodes ?? []) add(r, SHOWN_REVIEW_STATES)
+  return [...out.values()]
 }
 
 export function ciFromRollup(state: string | null | undefined): CiState {
@@ -525,18 +566,11 @@ function toReviewer(r: RawReviewer | null): Reviewer | null {
   return null
 }
 
-function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boolean }): MyPullRequest {
+function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boolean }, viewerLogin: string): MyPullRequest {
   const pendingReviewers = (n.reviewRequests?.nodes ?? [])
     .map((x) => toReviewer(x.requestedReviewer))
     .filter((r): r is Reviewer => r !== null)
-  const reviews = n.latestOpinionatedReviews.nodes
-    .filter((r) => r.author)
-    .map((r) => ({
-      login: r.author!.login,
-      avatarUrl: r.author!.avatarUrl,
-      state: r.state,
-      ...(r.author!.id ? { id: r.author!.id } : {})
-    }))
+  const reviews = mergeReviews(n, viewerLogin)
   const base = baseFields(n, readable.ci)
   const status = myReviewStatus(
     n.reviewDecision,
@@ -599,7 +633,8 @@ const TOLERATED_FIELDS = new Set([
   'viewerCanEnableAutoMerge',
   'viewerCanDisableAutoMerge',
   'viewerDidAuthor',
-  'labels'
+  'labels',
+  'latestReviews'
 ])
 
 /** Fields GitHub refused to return (e.g. a GitHub App without Checks permission). */
@@ -633,7 +668,7 @@ export function mapResponse(body: RawResponse): FetchResult {
     .sort(newestFirst)
   const myPrs: MyPullRequest[] = data.mine.nodes
     .filter(isPr)
-    .map((n) => toMyPr(n, readable))
+    .map((n) => toMyPr(n, readable, viewer.login))
     .sort(newestFirst)
   const involved: PullRequest[] = (data.involved?.nodes ?? [])
     .filter(isPr)

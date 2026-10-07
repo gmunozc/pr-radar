@@ -182,7 +182,8 @@ const mine: MyPullRequest[] = [
     status: 'changes_requested',
     reviews: [
       { login: 'bob', avatarUrl: people.bob.avatarUrl, state: 'CHANGES_REQUESTED', id: 'U_bob' },
-      { login: 'cris', avatarUrl: people.cris.avatarUrl, state: 'APPROVED', id: 'U_cris' }
+      { login: 'cris', avatarUrl: people.cris.avatarUrl, state: 'APPROVED', id: 'U_cris' },
+      { login: 'ana', avatarUrl: people.ana.avatarUrl, state: 'COMMENTED', id: 'U_ana' }
     ],
     unresolvedThreads: 3,
     can: { ...myBase.can, updateBranch: true },

@@ -15,6 +15,7 @@ import {
   isReadyToMerge,
   mergeBlocker,
   mergeOptions,
+  mergeReviews,
   myReviewStatus,
   PROBE_QUERY,
   probeFingerprint,
@@ -60,6 +61,7 @@ const rawMyPr = (over: Record<string, unknown> = {}) => ({
   ...rawPr({ author: { login: 'me', avatarUrl: 'x' }, reviewRequests: { nodes: [] } }),
   reviewDecision: null,
   latestOpinionatedReviews: { nodes: [] },
+  latestReviews: { nodes: [] },
   ...over
 })
 
@@ -146,6 +148,9 @@ describe('myReviewStatus', () => {
     expect(myReviewStatus(null, 1, ['CHANGES_REQUESTED'])).toBe('changes_requested')
     expect(myReviewStatus(null, 0, ['APPROVED'])).toBe('approved')
     expect(myReviewStatus(null, 0, [])).toBe('no_reviewers')
+    // Comments without a decision: someone is looking, so it is waiting rather than unreviewed.
+    expect(myReviewStatus(null, 0, ['COMMENTED'])).toBe('waiting')
+    expect(myReviewStatus('REVIEW_REQUIRED', 0, ['COMMENTED', 'DISMISSED'])).toBe('waiting')
   })
 })
 
@@ -639,5 +644,35 @@ describe('change probes', () => {
     expect(variables).toMatchObject({ requested: searchQueries(settings).requested, withInvolved: false, first: 50 })
     const noData = vi.fn().mockResolvedValue(jsonResponse({ data: null, errors: [{ message: 'nope' }] }))
     await expect(fetchFingerprint('tok', settings, noData)).rejects.toMatchObject({ kind: 'unknown', message: 'nope' })
+  })
+})
+
+describe('mergeReviews', () => {
+  const review = (login: string, state: string, id?: string) => ({ state, author: { login, avatarUrl: login[0], ...(id ? { id } : {}) } })
+
+  it('shows commenters and dismissed reviews next to the decisions, once per person', () => {
+    const reviews = mergeReviews(
+      {
+        latestOpinionatedReviews: { nodes: [review('ana', 'APPROVED', 'U_1'), review('dan', 'DISMISSED')] } as never,
+        latestReviews: { nodes: [review('ana', 'COMMENTED', 'U_1'), review('bob', 'COMMENTED'), review('dan', 'DISMISSED'), review('eve', 'PENDING')] } as never
+      },
+      'me'
+    )
+    expect(reviews).toEqual([
+      { login: 'ana', avatarUrl: 'a', state: 'APPROVED', id: 'U_1' },
+      { login: 'bob', avatarUrl: 'b', state: 'COMMENTED' },
+      { login: 'dan', avatarUrl: 'd', state: 'DISMISSED' }
+    ])
+  })
+
+  it('ignores your own comment reviews and copes without the latestReviews field', () => {
+    expect(mergeReviews({ latestOpinionatedReviews: { nodes: [] }, latestReviews: { nodes: [review('me', 'COMMENTED')] } } as never, 'me')).toEqual([])
+    expect(mergeReviews({ latestOpinionatedReviews: { nodes: [review('ana', 'APPROVED')] }, latestReviews: null } as never, 'me')).toHaveLength(1)
+  })
+
+  it('turns "no reviewers" into "waiting" once someone has commented', async () => {
+    const mine = rawMyPr({ reviewDecision: 'REVIEW_REQUIRED', latestReviews: { nodes: [review('claude', 'COMMENTED'), review('dan', 'COMMENTED')] } })
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], {}, [mine])))
+    expect(result.myPrs[0]).toMatchObject({ status: 'waiting', reviews: [{ login: 'claude', state: 'COMMENTED' }, { login: 'dan', state: 'COMMENTED' }] })
   })
 })
