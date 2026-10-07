@@ -1,4 +1,5 @@
 import type { LanguagePref, Locale } from './i18n'
+import type { LaunchersInfo, LaunchResult } from './launchers'
 
 /** Why a PR is in the review list: asked directly, through a team, or you merely take part in it. */
 export type ReviewSource = { kind: 'direct' } | { kind: 'team'; slug: string } | { kind: 'involved' }
@@ -397,6 +398,17 @@ export interface PrRadarApi {
     installState(): Promise<InstallState>
     onInstallState(cb: (state: InstallState) => void): () => void
   }
+  /** "Send to…": actions from launchers.json that open a terminal tab with an agent on a PR. */
+  launchers: {
+    /** Re-reads launchers.json. */
+    get(): Promise<LaunchersInfo>
+    /** Prepares the PR's workspace and opens the action's agent in a terminal tab. */
+    launch(prId: string, actionId: string): Promise<LaunchResult>
+    /** Opens launchers.json, writing an example first when it doesn't exist. */
+    openFile(): Promise<void>
+    openWorktrees(): Promise<void>
+    onChange(cb: (info: LaunchersInfo) => void): () => void
+  }
 }
 
 export const IPC = {
@@ -439,5 +451,10 @@ export const IPC = {
   updateOpenInstaller: 'update:open-installer',
   updateInstallStateGet: 'update:install-state-get',
   updateInstallState: 'update:install-state',
+  launchersGet: 'launchers:get',
+  launchersChanged: 'launchers:update',
+  launch: 'launchers:launch',
+  launchersOpenFile: 'launchers:open-file',
+  launchersOpenWorktrees: 'launchers:open-worktrees',
   quit: 'app:quit'
 } as const

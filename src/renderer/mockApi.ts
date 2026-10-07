@@ -16,6 +16,7 @@ import type {
   SnoozeOption
 } from '../shared/types'
 import { DEFAULT_SETTINGS } from '../shared/types'
+import type { LaunchersInfo } from '../shared/launchers'
 
 type SettingsView = Settings & { openAtLogin: boolean }
 
@@ -409,6 +410,30 @@ export function createMockApi(): PrRadarApi {
         installListeners.add(cb)
         return () => installListeners.delete(cb)
       }
+    },
+    launchers: {
+      get: async () => launchers,
+      // R4 has no local clone mapped, so the error path can be seen too.
+      launch: async (prId, actionId) => {
+        await sleep(900)
+        console.info('[mock] launch', actionId, 'on', prId)
+        return prId === 'R4' ? { ok: false, code: 'repo_not_mapped' } : { ok: true }
+      },
+      openFile: async () => console.info('[mock] open', launchers.path),
+      openWorktrees: async () => console.info('[mock] open', launchers.worktreesDir),
+      onChange: () => () => {}
     }
   }
+}
+
+const launchers: LaunchersInfo = {
+  path: '~/Library/Application Support/PR Radar Dev/launchers.json',
+  exists: true,
+  actions: [
+    { id: 'triage-review', label: 'Revisar la review', showOn: 'mine' },
+    { id: 'code-review', label: 'Code review', showOn: 'review' },
+    { id: 'explain', label: 'Explicar el PR', showOn: 'all' }
+  ],
+  errors: [{ code: 'unknown_placeholder', at: 'actions[3].prompt', detail: '{branch}' }],
+  worktreesDir: '~/.pr-radar/worktrees'
 }

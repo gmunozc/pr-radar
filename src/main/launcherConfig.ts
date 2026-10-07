@@ -3,7 +3,7 @@
  * home folder. Invalid entries are dropped and reported, so one typo doesn't disable the rest.
  */
 import { isAbsolute, join } from 'node:path'
-import type { LauncherConfigError, LauncherShowOn } from '../shared/launchers'
+import type { LauncherConfigError, LaunchersInfo, LauncherShowOn } from '../shared/launchers'
 import { REPO } from './settings'
 
 export type TerminalConfig = { kind: 'warp' } | { kind: 'warp-preview' } | { kind: 'custom'; command: string }
@@ -182,6 +182,17 @@ export function parseLauncherConfig(text: string | null, home: string): ParsedLa
   } else if (raw.actions !== undefined) fail('invalid_action', 'actions')
 
   return { config: { terminal, agents, worktreesDir, repos, actions }, errors }
+}
+
+/** What the panel sees: ids and labels, never commands or local paths of repositories. */
+export function describeLaunchers(parsed: ParsedLaunchers, path: string, exists: boolean, home: string): LaunchersInfo {
+  return {
+    path,
+    exists,
+    actions: (parsed.config?.actions ?? []).map(({ id, label, showOn }) => ({ id, label, showOn })),
+    errors: parsed.errors,
+    worktreesDir: parsed.config?.worktreesDir ?? expandHome(DEFAULT_WORKTREES_DIR, home)
+  }
 }
 
 /** A starting point written when the user opens a launchers.json that doesn't exist yet. */

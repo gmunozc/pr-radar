@@ -1,4 +1,5 @@
 import { app, ipcMain, shell } from 'electron'
+import type { LaunchersInfo, LaunchResult } from '../shared/launchers'
 import {
   IPC,
   type ActionResult,
@@ -20,6 +21,7 @@ type SettingsView = Settings & { openAtLogin: boolean }
 /** Longest text the panel may put on the clipboard (branch names, links). */
 export const MAX_COPY_LENGTH = 500
 const MAX_REVIEW_BODY = 2000
+const MAX_ID_LENGTH = 100
 const MERGE_METHODS: readonly string[] = ['MERGE', 'SQUASH', 'REBASE']
 const SNOOZE_OPTIONS: readonly string[] = ['hour', 'tomorrow', 'push']
 
@@ -56,6 +58,10 @@ export interface IpcContext {
   cancelInstall(): void
   openInstaller(): Promise<void>
   installState(): InstallState
+  launchers(): LaunchersInfo
+  launch(prId: string, actionId: string): Promise<LaunchResult>
+  openLaunchersFile(): Promise<void>
+  openWorktrees(): Promise<void>
 }
 
 export function isAllowedExternalUrl(url: string): boolean {
@@ -161,6 +167,14 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.updateInstallCancel, () => ctx.cancelInstall())
   ipcMain.handle(IPC.updateOpenInstaller, () => ctx.openInstaller())
   ipcMain.handle(IPC.updateInstallStateGet, () => ctx.installState())
+  ipcMain.handle(IPC.launchersGet, () => ctx.launchers())
+  ipcMain.handle(IPC.launch, (_e, prId: unknown, actionId: unknown): Promise<LaunchResult> | LaunchResult =>
+    typeof prId === 'string' && typeof actionId === 'string' && actionId.length <= MAX_ID_LENGTH
+      ? ctx.launch(prId, actionId)
+      : { ok: false, code: 'unknown_action' }
+  )
+  ipcMain.handle(IPC.launchersOpenFile, () => ctx.openLaunchersFile())
+  ipcMain.handle(IPC.launchersOpenWorktrees, () => ctx.openWorktrees())
   ipcMain.on(IPC.rendererError, (_e, message: unknown) => {
     logger.error('panel error', typeof message === 'string' ? message.slice(0, 4000) : 'unknown')
   })

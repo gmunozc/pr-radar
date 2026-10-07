@@ -1,8 +1,10 @@
 /** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
 import { app, clipboard, globalShortcut, net, Notification, powerMonitor, screen, session, shell, type DownloadItem } from 'electron'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { execFile, spawn } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import type { LaunchersInfo } from '../shared/launchers'
 import { IPC, type AuthMethod, type AuthStatus, type InstallState, type Settings, type Warning } from '../shared/types'
 import { runPrAction } from './actions'
 import { createAuthStore, DeviceLogin } from './auth'
@@ -13,6 +15,8 @@ import { Engine } from './engine'
 import { fetchInstallations, fetchPullRequestDetail, fetchPullRequests } from './github'
 import { applyLanguage, currentLocale } from './i18n'
 import { isKnownCheckUrl, registerIpc } from './ipc'
+import { Launcher } from './launcher'
+import { describeLaunchers, EXAMPLE_LAUNCHERS, LAUNCHERS_FILE, parseLauncherConfig, type ParsedLaunchers } from './launcherConfig'
 import { logger } from './log'
 import { deliverEvents, retire, retireAll } from './notifier'
 import { Poller } from './poller'
@@ -190,6 +194,87 @@ function main(): void {
     if (url && isReleaseUrl(url, updateRepo)) await shell.openExternal(url)
   }
 
+  // "Send to…": launchers.json is re-read when it changes on disk and whenever the panel asks.
+  const home = homedir()
+  const launchersPath = join(userData, LAUNCHERS_FILE)
+  const readLaunchers = (): ParsedLaunchers => {
+    let text: string | null = null
+    try {
+      text = readFileSync(launchersPath, 'utf8')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logger.warn('could not read launchers.json', err)
+    }
+    return parseLauncherConfig(text, home)
+  }
+  let launchers = readLaunchers()
+  let launchersInfo = describeLaunchers(launchers, launchersPath, existsSync(launchersPath), home)
+  const reloadLaunchers = (): LaunchersInfo => {
+    launchers = readLaunchers()
+    const info = describeLaunchers(launchers, launchersPath, existsSync(launchersPath), home)
+    if (JSON.stringify(info) !== JSON.stringify(launchersInfo)) {
+      launchersInfo = info
+      if (info.errors.length > 0) logger.warn('launchers.json has problems', { codes: info.errors.map((e) => e.code) })
+      if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.launchersChanged, info)
+    }
+    return launchersInfo
+  }
+  let reloadTimer: NodeJS.Timeout | null = null
+  try {
+    // Editors save by replacing the file, so watch the folder rather than the file itself.
+    watch(userData, (_event, name) => {
+      if (name !== LAUNCHERS_FILE) return
+      if (reloadTimer) clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(reloadLaunchers, 200)
+    })
+  } catch (err) {
+    logger.warn('could not watch launchers.json', err)
+  }
+  const launcher = new Launcher({
+    config: () => launchers.config,
+    findPr: (prId) => {
+      const s = engine.state
+      return [...s.prs, ...s.myPrs, ...s.involved].find((pr) => pr.id === prId) ?? null
+    },
+    run: (file, args, { cwd, timeoutMs }) =>
+      new Promise((resolve, reject) => {
+        // No credential prompts: a fetch that needs one fails instead of hanging.
+        const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+        execFile(file, args, { cwd, timeout: timeoutMs, env }, (err, stdout, stderr) => {
+          if (err) reject(new Error(String(stderr).trim() || err.message))
+          else resolve(String(stdout))
+        })
+      }),
+    spawnDetached: (file, args) =>
+      new Promise((resolve, reject) => {
+        const child = spawn(file, args, { detached: true, stdio: 'ignore' })
+        child.once('error', reject)
+        child.once('spawn', () => {
+          child.unref()
+          resolve()
+        })
+      }),
+    isDir: (path) => {
+      try {
+        return statSync(path).isDirectory()
+      } catch {
+        return false
+      }
+    },
+    mkdir: (path) => mkdirSync(path, { recursive: true }),
+    writeFile: (path, text) => writeFileSync(path, text),
+    listDir: (path) => readdirSync(path),
+    removeFile: (path) => rmSync(path, { force: true }),
+    openUrl: (url) => shell.openExternal(url),
+    home,
+    now: Date.now,
+    log: logger
+  })
+  launcher.cleanTabConfigs()
+  const openPath = async (path: string) => {
+    const error = await shell.openPath(path)
+    if (error) logger.warn('could not open a path', { error })
+  }
+
   const diagnostics = () =>
     buildDiagnostics({
       app: { version: app.getVersion(), packaged: app.isPackaged },
@@ -209,6 +294,12 @@ function main(): void {
       state: engine.state,
       consecutiveFailures: engine.consecutiveFailures,
       notificationsSupported: Notification.isSupported(),
+      launchers: {
+        terminal: launchers.config?.terminal.kind ?? null,
+        actions: launchers.config?.actions.length ?? 0,
+        repos: Object.keys(launchers.config?.repos ?? {}).length,
+        errors: launchers.errors.length
+      },
       logs: logger.recent(50, 'warn'),
       now: Date.now()
     })
@@ -380,6 +471,22 @@ function main(): void {
       if (!available || !updates) return
       updates.skip(available.version)
       engine.setUpdate(null)
+    },
+    launchers: reloadLaunchers,
+    launch: (prId, actionId) => {
+      reloadLaunchers()
+      return launcher.launch(prId, actionId)
+    },
+    openLaunchersFile: async () => {
+      if (!existsSync(launchersPath)) {
+        writeFileSync(launchersPath, `${JSON.stringify(EXAMPLE_LAUNCHERS, null, 2)}\n`, { flag: 'wx' })
+        reloadLaunchers()
+      }
+      await openPath(launchersPath)
+    },
+    openWorktrees: async () => {
+      mkdirSync(launchersInfo.worktreesDir, { recursive: true })
+      await openPath(launchersInfo.worktreesDir)
     }
   })
 

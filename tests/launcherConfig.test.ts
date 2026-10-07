@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { expandHome, parseLauncherConfig, placeholders } from '../src/main/launcherConfig'
+import { describeLaunchers, expandHome, parseLauncherConfig, placeholders } from '../src/main/launcherConfig'
 import { launchersFor, launchTargetOf, type LauncherEntry } from '../src/shared/launchers'
 import { myPr, pr } from './fixtures'
 
@@ -137,5 +137,22 @@ describe('launchersFor', () => {
     expect(launchersFor(myPr('a'), entries).map((e) => e.id)).toEqual(['mine', 'all'])
     expect(launchersFor(pr('a'), entries).map((e) => e.id)).toEqual(['review', 'all'])
     expect(launchersFor(pr('a', { source: { kind: 'involved' } }), entries).map((e) => e.id)).toEqual(['involved', 'all'])
+  })
+})
+
+describe('describeLaunchers', () => {
+  it('gives the panel ids and labels only', () => {
+    const info = describeLaunchers(parse(valid), '/data/launchers.json', true, HOME)
+    expect(info).toEqual({
+      path: '/data/launchers.json',
+      exists: true,
+      actions: [
+        { id: 'triage', label: 'Triage the review', showOn: 'mine' },
+        { id: 'review', label: 'Code review', showOn: 'review' }
+      ],
+      errors: [],
+      worktreesDir: '/Users/me/.pr-radar/worktrees'
+    })
+    expect(describeLaunchers(parseLauncherConfig(null, HOME), '/x', false, HOME).actions).toEqual([])
   })
 })
