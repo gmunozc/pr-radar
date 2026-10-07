@@ -1,8 +1,8 @@
-import { useCallback, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { formatClock, formatDateTime, isTomorrow, timeAgo, weekdayName } from '../../shared/format'
 import { reviewMenuActions, type ReviewMenuAction } from '../../shared/prActions'
 import type { PrAction, PullRequest, SnoozeOption } from '../../shared/types'
-import { CheckIcon, ClockIcon, XIcon } from '../icons'
+import { CheckIcon, ClockIcon, KebabHorizontalIcon, XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
@@ -34,6 +34,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
   const [comment, setComment] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const kebab = useRef<HTMLButtonElement>(null)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const busy = pending !== undefined
   const canApprove = canWrite && !pr.viewerDidAuthor
@@ -54,6 +55,10 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
     e.preventDefault()
     e.stopPropagation()
     setMenuOpen(true)
+  }
+  const toggleMenu = (e: MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen((o) => !o)
   }
   const stop = (e: MouseEvent) => e.stopPropagation()
   const dismiss = () => void window.prRadar.dismiss(pr.id)
@@ -264,8 +269,20 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
         >
           <XIcon size={12} />
         </button>
+        <button
+          ref={kebab}
+          className="pr-action pr-action-menu"
+          onClick={toggleMenu}
+          onMouseDown={(e) => e.preventDefault()}
+          title={t('action.menu')}
+          aria-label={t('action.menu')}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+        >
+          <KebabHorizontalIcon size={12} />
+        </button>
       </div>
-      {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} />}
+      {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} anchor={kebab} />}
     </div>
   )
 }

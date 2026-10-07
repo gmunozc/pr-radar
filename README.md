@@ -20,7 +20,8 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 - **To review** tab:
   - the status of each PR's checks;
   - whether the request was sent to you or to one of your teams;
-  - a **New commits** flag when the author pushed after your last review.
+  - a **New commits** flag when the author pushed after your last review;
+  - a ⋯ menu on each row (also on right-click) to approve, snooze, dismiss, copy the link or the branch name, open the detail or open GitHub.
 - **My PRs** tab:
   - where each PR stands (waiting, approved, changes requested, no reviewers);
   - who approved, who asked for changes and who is still pending;

@@ -20,7 +20,8 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **Pestaña Por revisar:**
   - el estado de los checks de cada PR;
   - si la petición es para ti o para uno de tus equipos;
-  - un aviso de **Nuevos commits** cuando el autor subió cambios después de tu última review.
+  - un aviso de **Nuevos commits** cuando el autor subió cambios después de tu última review;
+  - un menú ⋯ en cada fila (también con clic derecho) para aprobar, posponer, descartar, copiar el enlace o el nombre de la rama, abrir el detalle o abrir GitHub.
 - **Pestaña Mis PRs:**
   - en qué punto está cada PR (esperando, aprobado, cambios solicitados, sin reviewers);
   - quién aprobó, quién pidió cambios y quién falta por revisar;
