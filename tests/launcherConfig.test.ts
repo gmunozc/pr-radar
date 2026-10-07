@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeLaunchers, expandHome, parseLauncherConfig, placeholders } from '../src/main/launcherConfig'
+import { describeLaunchers, EXAMPLE_LAUNCHERS, expandHome, parseLauncherConfig, placeholders } from '../src/main/launcherConfig'
 import { launchersFor, launchTargetOf, type LauncherEntry } from '../src/shared/launchers'
 import { myPr, pr } from './fixtures'
 
@@ -154,5 +154,13 @@ describe('describeLaunchers', () => {
       worktreesDir: '/Users/me/.pr-radar/worktrees'
     })
     expect(describeLaunchers(parseLauncherConfig(null, HOME), '/x', false, HOME).actions).toEqual([])
+  })
+})
+
+describe('EXAMPLE_LAUNCHERS', () => {
+  it('is a valid file', () => {
+    const { config, errors } = parse(EXAMPLE_LAUNCHERS)
+    expect(errors).toEqual([])
+    expect(config?.actions.map((a) => a.id)).toEqual(['triage-review', 'code-review'])
   })
 })

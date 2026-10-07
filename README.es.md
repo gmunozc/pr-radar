@@ -41,6 +41,7 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **Aviso de versión nueva.** En macOS, **Instalar** descarga el dmg, lo comprueba contra el `SHA256SUMS.txt` de la Release y lo abre; en otros sistemas enlaza a la Release.
 - **Tamaño del panel** (compacto, normal, grande) en Ajustes → General.
 - **Detalle del PR** dentro del panel: pulsa un título para ver los checks, quién revisó, archivos, commits, comentarios y la descripción.
+- **Enviar a un agente** (macOS): clic derecho en un PR → Enviar a… abre una pestaña de terminal con tu agente sobre ese PR, en un git worktree de su último commit. Mira [Enviar a un agente](#enviar-a-un-agente-macos).
 - **Copiar diagnóstico:** un informe para adjuntar a un issue, sin tokens.
 
 ## Instalación
@@ -88,6 +89,36 @@ Si una organización usa **SAML SSO**, autoriza la app para ella; el panel avisa
 
 PR Radar consulta GitHub cada 30 segundos por defecto (mínimo 15). Cada consulta es una query de GraphQL que gasta unos 6 de los 5000 puntos por hora que permite GitHub.
 
+## Enviar a un agente (macOS)
+
+Clic derecho en un PR → **Enviar a…** y elige una acción: PR Radar abre una pestaña nueva de la terminal con tu agente ya trabajando en ese PR, por ejemplo `claude '/triage-review https://github.com/acme/app/pull/42'`. PR Radar solo lanza; tu agente, tus skills y tus reglas siguen donde están.
+
+Se configura en Ajustes → **Enviar a agente** → **Crear**, que escribe un `launchers.json` de ejemplo y lo abre:
+
+```json
+{
+  "terminal": { "kind": "warp" },
+  "agents": { "claude": "claude {prompt}" },
+  "worktreesDir": "~/.pr-radar/worktrees",
+  "repos": {
+    "acme/app": "~/code/app",
+    "acme/sub": { "path": "~/code/mono/sub", "agentDir": "~/code/mono" }
+  },
+  "actions": [
+    { "id": "triage-review", "label": "Revisar la review", "showOn": "mine", "agent": "claude", "prompt": "/triage-review {url}" },
+    { "id": "code-review", "label": "Code review", "showOn": "review", "prompt": "/code-review {url}", "workspace": "worktree" }
+  ]
+}
+```
+
+- **`terminal`:** `warp`, `warp-preview`, o `custom` con un `command` que ejecuta `/bin/sh` e incluye `{command}` (el `cd` más el agente, ya entrecomillado) y opcionalmente `{dir}`. Por ejemplo, Terminal.app: `osascript -e 'on run argv' -e 'tell application "Terminal" to do script (item 1 of argv)' -e 'end run' {command}`. Las apps abiertas desde el Finder tienen un `PATH` corto: usa rutas completas o `open -na <App> --args …`.
+- **`agents`:** un comando por agente. `{prompt}` (obligatorio) y `{workspace}` se sustituyen ya entrecomillados: no les pongas comillas.
+- **`repos`:** dónde está clonado cada repositorio. `agentDir` arranca el agente en otra carpeta (la raíz de un monorepo con su `CLAUDE.md`, por ejemplo) mientras el worktree es del repositorio; en ese caso añade `--add-dir {workspace}` al comando del agente. `remote` es `origin` por defecto.
+- **`actions`:** `showOn` es `mine`, `review`, `involved` o `all`. `prompt` puede usar `{url}`, `{number}`, `{repo}` y `{sha}`. El nombre de la rama y el título nunca están disponibles: los elige el autor del PR.
+- **`workspace`:** `worktree` (por defecto) crea un git worktree en el último commit del PR dentro de `worktreesDir`, y trae `pull/<n>/head` si el commit no está en local, así el agente lee el código del PR y tu carpeta de trabajo nunca se toca. Se reutiliza para el mismo commit; los viejos se borran con `git worktree remove`. `folder` abre el clon tal cual.
+
+Los errores del archivo aparecen en Ajustes; las acciones válidas siguen funcionando. **`launchers.json` ejecuta comandos en tu Mac:** si tu equipo comparte uno, revisa sus cambios como si fueran código.
+
 ## Privacidad y seguridad
 
 - **Sin telemetría.** La app solo se comunica con GitHub:
@@ -99,6 +130,7 @@ PR Radar consulta GitHub cada 30 segundos por defecto (mínimo 15). Cada consult
   - `settings.json`: tus ajustes.
   - `state.json`: qué PRs has visto, descartado o pospuesto, y los avisos que esperan al horario laboral.
   - `app.json`: lo que encontró la comprobación de versiones.
+  - `launchers.json`: tus acciones de "Enviar a…", si las configuraste.
   - `logs/`: el registro de actividad, sin tokens.
 - **Puedes revocar el acceso cuando quieras:**
   - la OAuth App, en [Authorized OAuth Apps](https://github.com/settings/applications);
