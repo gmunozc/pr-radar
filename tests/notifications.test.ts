@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { MyPrEvent } from '../src/main/diff'
-import { filterMyPrEvents, planToEvents, renderNotification as render, staleNotifications, type NotificationEvent } from '../src/main/notifications'
+import {
+  filterMyPrEvents,
+  planToEvents,
+  renderNotification as render,
+  restoredAction,
+  staleNotifications,
+  type NotificationEvent
+} from '../src/main/notifications'
 import { translator } from '../src/shared/i18n'
 import { DEFAULT_SETTINGS, type PullRequest } from '../src/shared/types'
 import * as fx from './fixtures'
@@ -287,5 +294,17 @@ describe('filterMyPrEvents', () => {
     expect(filterMyPrEvents(events, { notifyMyPrs: false, notifyKinds: DEFAULT_SETTINGS.notifyKinds })).toEqual([])
     const kinds = { ...DEFAULT_SETTINGS.notifyKinds, ciFailed: false, commented: false }
     expect(filterMyPrEvents(events, { notifyMyPrs: true, notifyKinds: kinds }).map((e) => e.kind)).toEqual(['my_pr_approved'])
+  })
+})
+
+describe('restoredAction', () => {
+  it('wires review ids to the PR with the snooze buttons, topic ids to the PR, and app ids to the panel', () => {
+    expect(restoredAction('PR_1', es)).toEqual({ action: { kind: 'open_pr', prId: 'PR_1' }, buttons: reviewButtons })
+    expect(restoredAction('ci-MY_1', es)).toEqual({ action: { kind: 'open_pr', prId: 'MY_1' } })
+    expect(restoredAction('merged-MY_1', es).action).toEqual({ kind: 'open_pr', prId: 'MY_1' })
+    expect(restoredAction('pr-radar-digest', es)).toEqual({
+      action: { kind: 'open_panel' },
+      buttons: [{ label: 'Abrir PR Radar', action: { kind: 'open_panel' } }]
+    })
   })
 })

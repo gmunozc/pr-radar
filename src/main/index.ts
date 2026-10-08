@@ -21,7 +21,7 @@ import {
 import { applyLanguage, currentLocale } from './i18n'
 import { isKnownCheckUrl, registerIpc } from './ipc'
 import { logger } from './log'
-import { deliverEvents, retire, retireAll } from './notifier'
+import { deliverEvents, reconnectHistory, retire, retireAll, type NotificationHandlers } from './notifier'
 import { Poller, probeIntervalFor } from './poller'
 import { Session, SessionExpiredError } from './session'
 import { normalizeSettings } from './settings'
@@ -99,14 +99,27 @@ function main(): void {
   panel.resize(settings.panelSize)
   const showPanel = () => panel.show(tray?.getBounds())
   const togglePanel = () => panel.toggle(tray?.getBounds())
-  // A click on an alert about one PR: GitHub, or the panel at that row (Settings), when it is still listed.
-  const openPr = (prId: string, url: string) => {
+  // A click on an alert about one PR: GitHub, or the panel at that row (Settings), when it is
+  // still listed. Notifications restored from a previous run carry no URL: the state has it.
+  const openPr = (prId: string, url?: string) => {
     const { prs, myPrs, involved } = engine.state
-    const listed = [...prs, ...myPrs, ...involved].some((p) => p.id === prId)
-    if (settings.notificationClick === 'panel' && listed) {
+    const pr = [...prs, ...myPrs, ...involved].find((p) => p.id === prId)
+    if (settings.notificationClick === 'panel' && pr) {
       showPanel()
       if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.focusPr, prId)
-    } else void shell.openExternal(url)
+      return
+    }
+    const target = url ?? pr?.url
+    if (target) void shell.openExternal(target)
+    else showPanel()
+  }
+  const handlers: NotificationHandlers = {
+    openPanel: showPanel,
+    openPr,
+    perform: (action) => {
+      if (action.kind === 'snooze') engine.snooze(action.prId, action.option)
+      else if (action.kind === 'dismiss') engine.dismiss(action.prId)
+    }
   }
 
   const publishAuth = (status: AuthStatus) => {
@@ -132,15 +145,7 @@ function main(): void {
         write: (state) => stateFile.write(state),
         remove: () => stateFile.remove()
       },
-      notify: (events) =>
-        deliverEvents(events, {
-          openPanel: showPanel,
-          openPr,
-          perform: (action) => {
-            if (action.kind === 'snooze') engine.snooze(action.prId, action.option)
-            else if (action.kind === 'dismiss') engine.dismiss(action.prId)
-          }
-        }),
+      notify: (events) => deliverEvents(events, handlers),
       retireNotifications: retire,
       clearNotifications: retireAll,
       publish: (state) => {
@@ -425,6 +430,9 @@ function main(): void {
       engine.setUpdate(null)
     }
   })
+
+  // Clicks on notifications left over from the previous run should still open their PR.
+  void reconnectHistory(handlers)
 
   powerMonitor.on('suspend', () => poller.stop())
   const wake = () => {

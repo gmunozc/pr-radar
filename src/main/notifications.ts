@@ -56,8 +56,9 @@ export type NotificationEvent =
 
 export type NotificationAction =
   | { kind: 'open_url'; url: string }
-  /** A page about one PR: GitHub, or the panel at that row, as the settings say. */
-  | { kind: 'open_pr'; prId: string; url: string }
+  /** A page about one PR: GitHub, or the panel at that row, as the settings say. The URL is
+   *  missing for notifications restored from a previous run; the handler looks it up. */
+  | { kind: 'open_pr'; prId: string; url?: string }
   | { kind: 'open_panel' }
   | { kind: 'snooze'; prId: string; option: SnoozeOption }
   | { kind: 'dismiss'; prId: string }
@@ -168,6 +169,18 @@ function reviewButtons(prId: string, t: Translate): RenderedNotification['button
 function staleLine(prs: PullRequest[], days: number, t: Translate): string {
   const list = prs.slice(0, 3).map((p) => `${p.repo}#${p.number}`).join(', ') + (prs.length > 3 ? '…' : '')
   return `${t('notif.staleCount', { count: prs.length })} ${t('notif.staleDays', { count: days })}: ${list}`
+}
+
+/**
+ * What a notification delivered by a previous run of the app does when clicked now: macOS keeps
+ * the notification but not its handlers, and the id says which PR or app notice it was about.
+ * Review requests and reminders get the buttons the system still shows for them.
+ */
+export function restoredAction(id: string, t: Translate): Pick<RenderedNotification, 'action' | 'buttons'> {
+  if (id.startsWith('pr-radar-')) return { action: openPanel, buttons: [{ label: t('notif.actionOpen'), action: openPanel }] }
+  const topic = /^(?:mine|ci|conflicts|comments|merged|closed)-(.+)$/.exec(id)
+  if (topic) return { action: { kind: 'open_pr', prId: topic[1] } }
+  return { action: { kind: 'open_pr', prId: id }, buttons: reviewButtons(id, t) }
 }
 
 /** Two check names at most; the notification is not the place for the whole list. */

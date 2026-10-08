@@ -2,7 +2,13 @@ import { nativeImage, net, Notification, shell, type NativeImage } from 'electro
 import type { NotifyResult } from '../shared/types'
 import { t } from './i18n'
 import { logger } from './log'
-import { renderNotification, type NotificationAction, type NotificationEvent, type RenderedNotification } from './notifications'
+import {
+  renderNotification,
+  restoredAction,
+  type NotificationAction,
+  type NotificationEvent,
+  type RenderedNotification
+} from './notifications'
 
 // Keep references so macOS click handlers survive garbage collection.
 const live = new Set<Notification>()
@@ -26,8 +32,9 @@ const BUTTONS_SUPPORTED = process.platform !== 'linux'
 
 export interface NotificationHandlers {
   openPanel(): void
-  /** A click on an alert about one PR; without it, the PR opens on GitHub. */
-  openPr?(prId: string, url: string): void
+  /** A click on an alert about one PR; without it, the PR opens on GitHub. The URL is
+   *  missing for notifications restored from a previous run. */
+  openPr?(prId: string, url?: string): void
   /** Runs a button's action (snooze or dismiss a review request). */
   perform?(action: NotificationAction): void
 }
@@ -51,21 +58,7 @@ export async function deliver(n: RenderedNotification, handlers: NotificationHan
     ...(buttons.length ? { actions: buttons.map((b) => ({ type: 'button' as const, text: b.label })) } : {})
   })
   live.add(notification)
-  const run = (action: NotificationAction) => {
-    if (action.kind === 'open_url') void shell.openExternal(action.url)
-    else if (action.kind === 'open_pr') {
-      if (h.openPr) h.openPr(action.prId, action.url)
-      else void shell.openExternal(action.url)
-    } else if (action.kind === 'open_panel') h.openPanel()
-    else h.perform?.(action)
-    live.delete(notification)
-  }
-  notification.on('click', () => run(n.action))
-  notification.on('action', (details) => {
-    const button = buttons[details.actionIndex]
-    if (button) run(button.action)
-  })
-  notification.on('close', () => live.delete(notification))
+  attach(notification, n.action, buttons, h)
 
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve({ ok: true }), CONFIRM_TIMEOUT_MS)
@@ -81,6 +74,56 @@ export async function deliver(n: RenderedNotification, handlers: NotificationHan
     })
     notification.show()
   })
+}
+
+/** Wires what a click or a button does; shared by fresh and restored notifications. */
+function attach(
+  notification: Notification,
+  action: NotificationAction,
+  buttons: NonNullable<RenderedNotification['buttons']>,
+  h: NotificationHandlers
+): void {
+  const run = (chosen: NotificationAction) => {
+    if (chosen.kind === 'open_url') void shell.openExternal(chosen.url)
+    else if (chosen.kind === 'open_pr') {
+      if (h.openPr) h.openPr(chosen.prId, chosen.url)
+      else if (chosen.url) void shell.openExternal(chosen.url)
+      else h.openPanel()
+    } else if (chosen.kind === 'open_panel') h.openPanel()
+    else h.perform?.(chosen)
+    live.delete(notification)
+  }
+  notification.on('click', () => run(action))
+  notification.on('action', (details) => {
+    const button = buttons[details.actionIndex]
+    if (button) run(button.action)
+  })
+  notification.on('close', () => live.delete(notification))
+}
+
+/**
+ * Notifications delivered by a previous run of the app: macOS keeps them in Notification Center
+ * but not their handlers, so a click would only activate the app. Wire them again from their ids.
+ * Unsigned development builds get an empty history.
+ */
+export async function reconnectHistory(h: NotificationHandlers): Promise<number> {
+  if (process.platform !== 'darwin') return 0
+  try {
+    let count = 0
+    for (const notification of await Notification.getHistory()) {
+      const id = notification.id
+      if (!id) continue
+      const restored = restoredAction(id, t)
+      attach(notification, restored.action, restored.buttons ?? [], h)
+      live.add(notification)
+      count++
+    }
+    if (count) logger.info('reconnected notifications', { count })
+    return count
+  } catch (err) {
+    logger.warn('could not read the notification history', err)
+    return 0
+  }
 }
 
 export function deliverEvents(events: NotificationEvent[], handlers: NotificationHandlers): void {
