@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { arrangePrs, tabFor } from '../src/renderer/arrange'
+import { arrangePrs, filterByQuery, matchesQuery, tabFor } from '../src/renderer/arrange'
 import { pr } from './fixtures'
 
 const a = pr('a', { createdAt: '2026-01-03T00:00:00Z', updatedAt: '2026-01-03T00:00:00Z', repo: 'acme/app' })
@@ -34,5 +34,27 @@ describe('tabFor', () => {
     expect(tabFor(state, 'm')).toBe('mine')
     expect(tabFor(state, 'i')).toBe('involved')
     expect(tabFor(state, 'gone')).toBeNull()
+  })
+})
+
+describe('matchesQuery', () => {
+  const sample = { title: 'Añadir filtros al CRM', repo: 'acme/web', number: 482, author: { login: 'José' }, branch: 'feat/filters' }
+
+  it('finds PRs by title, repository, number, author or branch, ignoring case and accents', () => {
+    expect(matchesQuery(sample, 'anadir')).toBe(true)
+    expect(matchesQuery(sample, 'ACME/WEB')).toBe(true)
+    expect(matchesQuery(sample, '#482')).toBe(true)
+    expect(matchesQuery(sample, '482')).toBe(true)
+    expect(matchesQuery(sample, 'jose')).toBe(true)
+    expect(matchesQuery(sample, 'feat/filters')).toBe(true)
+    expect(matchesQuery(sample, 'crm web')).toBe(true)
+    expect(matchesQuery(sample, 'billing')).toBe(false)
+    expect(matchesQuery({ ...sample, author: null }, 'jose')).toBe(false)
+  })
+
+  it('leaves the list alone without a query', () => {
+    const prs = [sample, { ...sample, number: 7, title: 'Other' }]
+    expect(filterByQuery(prs, '  ')).toBe(prs)
+    expect(filterByQuery(prs, 'other')).toEqual([prs[1]])
   })
 })

@@ -23,3 +23,26 @@ export function tabFor(
   if (state.involved.some((p) => p.id === prId)) return 'involved'
   return null
 }
+
+/** Lower case without accents, so "jose" finds "José". */
+const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+
+interface Searchable {
+  title: string
+  repo: string
+  number: number
+  author: { login: string } | null
+  branch: string
+}
+
+/** Whether a PR matches the text filter: title, repository, number (with or without #), author or branch. */
+export function matchesQuery(pr: Searchable, query: string): boolean {
+  const q = normalize(query.trim())
+  if (!q) return true
+  const haystack = [pr.title, pr.repo, `#${pr.number}`, pr.author ? `@${pr.author.login}` : '', pr.branch].map(normalize).join('\n')
+  return q.split(/\s+/).every((word) => haystack.includes(word))
+}
+
+export function filterByQuery<T extends Searchable>(prs: T[], query: string): T[] {
+  return query.trim() ? prs.filter((pr) => matchesQuery(pr, query)) : prs
+}

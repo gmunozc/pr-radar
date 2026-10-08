@@ -3,6 +3,7 @@ import type { AppState } from '../../shared/types'
 import { PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
+import { filterByQuery } from '../arrange'
 import { useSettings } from '../useSettings'
 import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
@@ -18,14 +19,17 @@ interface ListProps {
   /** A row to scroll to and focus (a notification click); cleared through `onFocused`. */
   focusPrId?: string | null
   onFocused?(): void
+  /** The ⌘F text filter. */
+  query?: string
 }
 
-export function InvolvedList({ state, onDetail, focusPrId, onFocused }: ListProps) {
+export function InvolvedList({ state, onDetail, focusPrId, onFocused, query = '' }: ListProps) {
   const listRef = useRef<HTMLElement>(null)
   useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
   const settings = useSettings()
   const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
+  const shown = filterByQuery(state.involved, query)
 
   if (state.status === 'loading' && state.involved.length === 0) {
     return (
@@ -53,7 +57,8 @@ export function InvolvedList({ state, onDetail, focusPrId, onFocused }: ListProp
   return (
     <>
       <main className="list" ref={listRef} onKeyDown={onListKeyDown}>
-        {state.involved.map((pr) => (
+        {shown.length === 0 && <div className="list-note">{t('search.empty', { query })}</div>}
+        {shown.map((pr) => (
           <PrItem
             key={pr.id}
             pr={pr}

@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef } from 'react'
 import type { AppState, ReviewFilter, ReviewSort } from '../../shared/types'
-import { arrangePrs } from '../arrange'
+import { arrangePrs, filterByQuery } from '../arrange'
 import { CheckCircleIcon, PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
@@ -36,9 +36,11 @@ interface ListProps {
   /** A row to scroll to and focus (a notification click); cleared through `onFocused`. */
   focusPrId?: string | null
   onFocused?(): void
+  /** The ⌘F text filter. */
+  query?: string
 }
 
-export function PrList({ state, onDetail, focusPrId, onFocused }: ListProps) {
+export function PrList({ state, onDetail, focusPrId, onFocused, query = '' }: ListProps) {
   const listRef = useRef<HTMLElement>(null)
   useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
@@ -49,7 +51,7 @@ export function PrList({ state, onDetail, focusPrId, onFocused }: ListProps) {
   const sort = settings?.reviewSort ?? 'newest'
   const staleDays = settings?.staleAfterDays ?? 0
   const orgs = useMemo(() => [...new Set(state.prs.map((pr) => pr.repo.split('/')[0]))].sort(), [state.prs])
-  const shown = useMemo(() => arrangePrs(state.prs, filter, org, sort), [state.prs, filter, org, sort])
+  const shown = useMemo(() => filterByQuery(arrangePrs(state.prs, filter, org, sort), query), [state.prs, filter, org, sort, query])
 
   if (state.status === 'loading' && state.prs.length === 0) {
     return (
@@ -147,7 +149,7 @@ export function PrList({ state, onDetail, focusPrId, onFocused }: ListProps) {
         </div>
       )}
       <main className="list" ref={listRef} onKeyDown={onListKeyDown}>
-        {shown.length === 0 && <div className="list-note">{t('filter.empty')}</div>}
+        {shown.length === 0 && <div className="list-note">{query ? t('search.empty', { query }) : t('filter.empty')}</div>}
         {shown.map((pr) => (
           <PrItem
             key={pr.id}
