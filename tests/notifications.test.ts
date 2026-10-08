@@ -211,13 +211,30 @@ describe('reminders, catch-up and digest notifications', () => {
   })
 
   it('builds the daily digest, with the caught-up alerts first', () => {
-    const digest = { kind: 'digest' as const, reviews: 3, oldestDays: 4, ready: 1, changes: 0, caughtUp: null }
+    const digest = { kind: 'digest' as const, reviews: 3, oldestDays: 4, ready: 1, changes: 0, stale: [], staleDays: 3, caughtUp: null }
     expect(render(digest, en)).toMatchObject({
       title: 'PR Radar · daily summary',
       body: '3 reviews pending (oldest: 4 days) · 1 PR ready to merge'
     })
     expect(render({ ...digest, oldestDays: 0, ready: 0, caughtUp: { ...none, reviews: 1 } }, es).body).toBe(
       'Mientras no estabas: 1 review nueva. 3 reviews pendientes'
+    )
+  })
+
+  it('reminds about stale reviews, listing three at most, alone or inside the digest', () => {
+    const digest = { kind: 'digest' as const, reviews: 3, oldestDays: 4, ready: 1, changes: 0, stale: [], staleDays: 3, caughtUp: null }
+    const prs = [pr(), pr({ id: 'PR_2', number: 13 }), pr({ id: 'PR_3', number: 14 }), pr({ id: 'PR_4', number: 15 })]
+    expect(render({ kind: 'stale_reviews', prs, days: 3 }, es)).toEqual({
+      id: 'pr-radar-stale',
+      title: 'Reviews estancadas',
+      body: '4 reviews llevan esperando más de 3 días: acme/app#12, acme/app#13, acme/app#14…',
+      action: { kind: 'open_panel' }
+    })
+    expect(render({ kind: 'stale_reviews', prs: prs.slice(0, 1), days: 1 }, en).body).toBe(
+      '1 review has been waiting more than 1 day: acme/app#12'
+    )
+    expect(render({ ...digest, stale: prs.slice(0, 2), staleDays: 3 }, es).body).toBe(
+      '3 reviews pendientes (la más antigua: 4 días) · 2 reviews llevan esperando más de 3 días: acme/app#12, acme/app#13 · 1 PR listo para merge'
     )
   })
 })

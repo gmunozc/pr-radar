@@ -302,7 +302,9 @@ export function SettingsView({ state }: { state: AppState }) {
             <div className="setting-label">{t('settings.digest')}</div>
             <div className="setting-hint">{t('settings.digestHint')}</div>
           </div>
-          {settings.digest && <TimeInput value={settings.digestTime} onCommit={(v) => void update({ digestTime: v })} />}
+          {(settings.digest || settings.staleAfterDays > 0) && (
+            <TimeInput value={settings.digestTime} onCommit={(v) => void update({ digestTime: v })} />
+          )}
           <input
             type="checkbox"
             className="switch"

@@ -530,12 +530,38 @@ describe('Engine daily digest', () => {
     await t.engine.poll()
     expect(t.events).toEqual([
       { kind: 'reviews_summary', count: 2 },
-      { kind: 'digest', reviews: 2, oldestDays: 3, ready: 0, changes: 0, caughtUp: null }
+      { kind: 'digest', reviews: 2, oldestDays: 3, ready: 0, changes: 0, stale: [res.prs[0]], staleDays: 3, caughtUp: null }
     ])
     t.events.length = 0
     t.setNow(at(5, '09:40'))
     await t.engine.poll()
     expect(t.events).toEqual([])
+  })
+
+  it('reminds every working day about reviews older than the threshold, on its own when the digest is off', async () => {
+    const created = (id: string, iso: string) => ({ ...pr(id), createdAt: iso })
+    const res: FetchResult = { ...result([]), prs: [created('a', '2026-10-01T10:00:00Z'), created('b', '2026-10-04T10:00:00Z')] }
+    const t = setup([res, res, res], { auth: fresh(), settings: { digest: false }, now: at(5, '09:31') })
+    await t.engine.poll()
+    expect(t.events).toEqual([{ kind: 'reviews_summary', count: 2 }, { kind: 'stale_reviews', prs: [res.prs[0]], days: 3 }])
+    t.events.length = 0
+    t.setNow(at(5, '10:00'))
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+    t.setNow(at(6, '09:31'))
+    await t.engine.poll()
+    expect(t.events).toEqual([{ kind: 'stale_reviews', prs: [res.prs[0]], days: 3 }])
+  })
+
+  it('leaves muted repositories out of the reminder and sends none with a threshold of 0', async () => {
+    const res: FetchResult = { ...result([]), prs: [{ ...pr('a'), createdAt: '2026-10-01T10:00:00Z' }] }
+    const muted = setup([res], { auth: fresh(), settings: { digest: false, muteRepos: ['acme/app'] }, now: at(5, '09:31') })
+    await muted.engine.poll()
+    expect(muted.events).toEqual([{ kind: 'reviews_summary', count: 1 }])
+    const off = setup([res], { auth: fresh(), settings: { digest: false, staleAfterDays: 0 }, now: at(5, '09:31') })
+    await off.engine.poll()
+    expect(off.events).toEqual([{ kind: 'reviews_summary', count: 1 }])
+    expect(off.stored).toMatchObject({ lastDigestDay: null })
   })
 
   it('skips the digest when nothing is pending, and waits for fresh data', async () => {

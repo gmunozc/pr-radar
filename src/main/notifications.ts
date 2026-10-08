@@ -34,9 +34,14 @@ export type NotificationEvent =
       oldestDays: number
       ready: number
       changes: number
+      /** Review requests that have waited `staleDays` days or more. */
+      stale: PullRequest[]
+      staleDays: number
       /** Alerts held back by quiet hours, folded into the digest. */
       caughtUp: CatchUp | null
     }
+  /** The daily reminder about stale review requests, when the digest is off. */
+  | { kind: 'stale_reviews'; prs: PullRequest[]; days: number }
   | { kind: 'review_requested'; pr: PullRequest }
   | { kind: 'reviews_summary'; count: number }
   | { kind: 'reviews_grouped'; prs: PullRequest[] }
@@ -151,6 +156,12 @@ function reviewButtons(prId: string, t: Translate): RenderedNotification['button
     { label: t('notif.actionSnoozeTomorrow'), action: { kind: 'snooze', prId, option: 'tomorrow' } },
     { label: t('notif.actionDismiss'), action: { kind: 'dismiss', prId } }
   ]
+}
+
+/** "2 reviews have been waiting more than 3 days: acme/app#12, acme/app#13…" */
+function staleLine(prs: PullRequest[], days: number, t: Translate): string {
+  const list = prs.slice(0, 3).map((p) => `${p.repo}#${p.number}`).join(', ') + (prs.length > 3 ? '…' : '')
+  return `${t('notif.staleCount', { count: prs.length })} ${t('notif.staleDays', { count: days })}: ${list}`
 }
 
 /** Two check names at most; the notification is not the place for the whole list. */
@@ -319,6 +330,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         const oldest = event.oldestDays >= 1 ? ` ${t('notif.digestOldest', { count: event.oldestDays })}` : ''
         lines.push(t('notif.digestReviews', { count: event.reviews }) + oldest)
       }
+      if (event.stale.length) lines.push(staleLine(event.stale, event.staleDays, t))
       if (event.ready) lines.push(t('notif.digestReady', { count: event.ready }))
       if (event.changes) lines.push(t('notif.digestChanges', { count: event.changes }))
       const caught = event.caughtUp ? catchUpParts(event.caughtUp, t) : []
@@ -327,6 +339,8 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         .join(' ')
       return { id: 'pr-radar-digest', title: t('notif.digestTitle'), body, action: openPanel }
     }
+    case 'stale_reviews':
+      return { id: 'pr-radar-stale', title: t('notif.staleTitle'), body: staleLine(event.prs, event.days, t), action: openPanel }
     case 'reviews_summary':
       return { title: 'PR Radar', body: t('notif.summary', { count: event.count }), action: openPanel }
     case 'reviews_grouped':

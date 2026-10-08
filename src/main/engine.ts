@@ -34,7 +34,7 @@ import type { Logger } from './log'
 import { applyMute } from './mute'
 import { capMyPrEvents, filterMyPrEvents, planToEvents, staleNotifications, type CatchUp, type NotificationEvent } from './notifications'
 import { SessionExpiredError, type ExpiryReason, type Session } from './session'
-import { dayKey, digestDue, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil } from './schedule'
+import { dailyDue, dayKey, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil } from './schedule'
 import type { SnoozeOption } from '../shared/types'
 import { emptyQueue, migrateState, type ArmedMerge, type PersistedState, type QueuedAlerts } from './state'
 
@@ -589,8 +589,9 @@ export class Engine {
     if (settings.notifications && !quiet) {
       if (this.persisted && queueHasItems(this.persisted.queued)) this.flushQueue(now)
       const fresh = this.lastSuccessAt !== null && nowMs - this.lastSuccessAt <= DIGEST_FRESHNESS_MS
-      if (this.persisted && this.deps.session.current && fresh && digestDue(now, settings, this.persisted.lastDigestDay)) {
-        this.sendDigest(now, null)
+      const wanted = settings.digest || settings.staleAfterDays > 0
+      if (this.persisted && this.deps.session.current && fresh && wanted && dailyDue(now, settings, this.persisted.lastDigestDay)) {
+        this.sendDaily(now, null)
       }
     }
     // Keep "alerts paused until …" in the header in sync.
@@ -835,22 +836,40 @@ export class Engine {
     if (!hasAny(counts)) return
     // Today's digest is (nearly) due: send one notification instead of two.
     if (this.deps.session.current && digestNear(now, this.deps.settings(), persisted.lastDigestDay)) {
-      this.sendDigest(now, counts)
+      this.sendDaily(now, counts)
       return
     }
     this.emit([{ kind: 'catch_up', counts }])
   }
 
-  private sendDigest(now: Date, caughtUp: CatchUp | null): void {
+  /** Review requests that have waited at least `staleAfterDays` days (0 turns the reminder off). */
+  private staleReviews(nowMs: number, settings: Settings): PullRequest[] {
+    if (settings.staleAfterDays <= 0) return []
+    const muted = new Set(settings.muteRepos)
+    return this.current.prs.filter(
+      (p) => !muted.has(p.repo) && Math.floor((nowMs - Date.parse(p.createdAt)) / DAY_MS) >= settings.staleAfterDays
+    )
+  }
+
+  /** The daily slot: the digest with the stale reviews inside, or only the stale reminder when the digest is off. */
+  private sendDaily(now: Date, caughtUp: CatchUp | null): void {
+    const settings = this.deps.settings()
     const prs = this.current.prs
+    const stale = this.staleReviews(now.getTime(), settings)
+    if (this.persisted) this.save({ ...this.persisted, lastDigestDay: dayKey(now) })
+    if (!settings.digest) {
+      if (stale.length) this.emit([{ kind: 'stale_reviews', prs: stale, days: settings.staleAfterDays }])
+      return
+    }
     const oldest = prs.reduce((min, p) => Math.min(min, Date.parse(p.createdAt)), Number.POSITIVE_INFINITY)
     const oldestDays = Number.isFinite(oldest) ? Math.floor((now.getTime() - oldest) / DAY_MS) : 0
     const ready = this.current.myPrs.filter((p) => p.readyToMerge).length
     const changes = this.current.myPrs.filter((p) => p.status === 'changes_requested').length
-    if (this.persisted) this.save({ ...this.persisted, lastDigestDay: dayKey(now) })
     const caught = caughtUp && hasAny(caughtUp) ? caughtUp : null
     if (!prs.length && !ready && !changes && !caught) return
-    this.emit([{ kind: 'digest', reviews: prs.length, oldestDays, ready, changes, caughtUp: caught }])
+    this.emit([
+      { kind: 'digest', reviews: prs.length, oldestDays, ready, changes, stale, staleDays: settings.staleAfterDays, caughtUp: caught }
+    ])
   }
 
   private save(state: PersistedState): void {

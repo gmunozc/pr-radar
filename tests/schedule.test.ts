@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   dayKey,
+  dailyDue,
   digestDue,
   digestNear,
   isQuiet,
@@ -91,5 +92,15 @@ describe('daily digest', () => {
 
   it('uses local calendar days', () => {
     expect(dayKey(at(MON, '23:59'))).toBe('2026-10-05')
+  })
+})
+
+describe('dailyDue', () => {
+  it('opens the daily slot even with the digest off, while digestDue still needs it on', () => {
+    const s = { quietHours: false, workStart: '09:00', workEnd: '18:00', workDays: [1, 2, 3, 4, 5], digest: false, digestTime: '09:30' }
+    expect(dailyDue(at(MON, '09:30'), s, null)).toBe(true)
+    expect(digestDue(at(MON, '09:30'), s, null)).toBe(false)
+    expect(dailyDue(at(MON, '09:30'), s, dayKey(at(MON, '08:00')))).toBe(false)
+    expect(dailyDue(at(SAT, '09:30'), s, null)).toBe(false)
   })
 })
