@@ -1,9 +1,10 @@
 import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { formatClock, formatDateTime, isTomorrow, timeAgo, weekdayName } from '../../shared/format'
-import { reviewMenuActions, type ReviewMenuAction } from '../../shared/prActions'
+import { isSharedMenuAction, reviewMenuActions, type ReviewMenuAction } from '../../shared/prActions'
 import type { PrAction, PullRequest, SnoozeOption } from '../../shared/types'
 import { CheckIcon, CopyIcon, KebabHorizontalIcon, XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
+import { sharedMenuItem } from '../rowMenu'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
 import { CiIcon } from './CiIcon'
@@ -48,6 +49,10 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
     } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
       e.preventDefault()
       setMenuOpen(true)
+    } else if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !window.getSelection()?.toString()) {
+      // ⌘C on a focused row copies its link; with text selected, the system copy wins.
+      e.preventDefault()
+      void copy(pr.url)
     }
   }
   const onContextMenu = (e: MouseEvent) => {
@@ -71,11 +76,15 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
       setError(t(`action.error.${result.code}`, { detail: result.detail ?? '' }))
     }
   }
-  const copy = async (text: string) => {
-    const { ok } = await window.prRadar.copyText(text)
-    if (!ok) return
+  const flashCopied = () => {
     setCopied(true)
     setTimeout(() => setCopied(false), COPIED_MS)
+  }
+  const copy = async (text: string) => {
+    if ((await window.prRadar.copyText(text)).ok) flashCopied()
+  }
+  const copyLink = async () => {
+    if ((await window.prRadar.copyLink({ title: pr.title, url: pr.url })).ok) flashCopied()
   }
 
   const now = Date.now()
@@ -87,6 +96,16 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
   const [owner, name] = pr.repo.split('/')
 
   const menuItem = (id: ReviewMenuAction): MenuItem => {
+    if (isSharedMenuAction(id)) {
+      return sharedMenuItem(id, {
+        pr,
+        t,
+        copy: (text) => void copy(text),
+        copyLink: () => void copyLink(),
+        open: (url) => void window.prRadar.openExternal(url),
+        onDetail
+      })
+    }
     switch (id) {
       case 'approve':
         return { id, label: t('action.approve'), disabled: busy, onSelect: () => setApproving(true) }
@@ -98,14 +117,6 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
         return { id, label: t('action.snoozePush'), onSelect: () => snooze('push') }
       case 'dismiss':
         return { id, label: t('action.dismiss'), onSelect: dismiss }
-      case 'copy_branch':
-        return { id, label: t('action.copyBranch'), onSelect: () => void copy(pr.branch) }
-      case 'copy_link':
-        return { id, label: t('action.copyLink'), onSelect: () => void copy(pr.url) }
-      case 'details':
-        return { id, label: t('action.details'), onSelect: () => onDetail?.(pr.id) }
-      case 'open':
-        return { id, label: t('action.open'), onSelect: open }
     }
   }
   const items = reviewMenuActions(pr, canWrite)
@@ -133,6 +144,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
       className="pr"
       role="button"
       tabIndex={0}
+      data-pr-id={pr.id}
       onClick={open}
       onKeyDown={onKeyDown}
       onContextMenu={onContextMenu}

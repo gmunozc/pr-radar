@@ -360,6 +360,8 @@ export interface PrRadarApi {
     detail(prId: string): Promise<PrDetail | null>
   }
   copyText(text: string): Promise<{ ok: boolean }>
+  /** Title and link to the clipboard: Markdown as plain text, an anchor as rich text. */
+  copyLink(link: { title: string; url: string }): Promise<{ ok: boolean }>
   /** Restarts the app (needed for Chromium's own UI language to change). */
   relaunch(): Promise<void>
   auth: {
@@ -416,6 +418,7 @@ export const IPC = {
   prAction: 'prs:action',
   prDetail: 'prs:detail',
   copyText: 'clipboard:copy',
+  copyLink: 'clipboard:copy-link',
   relaunch: 'app:relaunch',
   panelHide: 'panel:hide',
   settingsChanged: 'settings:update',

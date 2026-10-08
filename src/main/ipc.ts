@@ -33,6 +33,7 @@ export interface IpcContext {
   prAction(prId: string, action: PrAction): Promise<ActionResult>
   prDetail(prId: string): Promise<PrDetail | null>
   copyText(text: string): Promise<{ ok: boolean }>
+  copyLink(link: ClipboardLink): Promise<{ ok: boolean }>
   openCheck(url: string): Promise<void>
   relaunch(): void
   hasClientId(): boolean
@@ -56,6 +57,20 @@ export interface IpcContext {
   cancelInstall(): void
   openInstaller(): Promise<void>
   installState(): InstallState
+}
+
+/** What goes on the clipboard for "copy title and link": both flavours at once. */
+export interface ClipboardLink {
+  /** Markdown, for Notion, GitHub, Linear and plain editors. */
+  text: string
+  /** An anchor, for Slack, Mail and other rich-text targets. */
+  html: string
+}
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+export function linkClipboard(title: string, url: string): ClipboardLink {
+  return { text: `[${title}](${url})`, html: `<a href="${escapeHtml(url)}">${escapeHtml(title)}</a>` }
 }
 
 export function isAllowedExternalUrl(url: string): boolean {
@@ -116,6 +131,12 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.copyText, (_e, text: unknown) =>
     typeof text === 'string' && text.length <= MAX_COPY_LENGTH ? ctx.copyText(text) : { ok: false }
   )
+  ipcMain.handle(IPC.copyLink, (_e, link: unknown) => {
+    const l = (link && typeof link === 'object' ? link : {}) as { title?: unknown; url?: unknown }
+    const valid =
+      typeof l.title === 'string' && l.title.length <= MAX_COPY_LENGTH && typeof l.url === 'string' && isAllowedExternalUrl(l.url)
+    return valid ? ctx.copyLink(linkClipboard(l.title as string, l.url as string)) : { ok: false }
+  })
   ipcMain.handle(IPC.relaunch, () => ctx.relaunch())
   ipcMain.handle(IPC.openCheck, async (_e, url: unknown) => {
     if (typeof url === 'string') await ctx.openCheck(url)

@@ -1,5 +1,5 @@
 /** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
-import { app, clipboard, globalShortcut, net, Notification, powerMonitor, screen, session, shell, type DownloadItem } from 'electron'
+import { app, clipboard, ClipboardItem, globalShortcut, net, Notification, powerMonitor, screen, session, shell, type DownloadItem } from 'electron'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -281,6 +281,15 @@ function main(): void {
         return { ok: true }
       } catch (err) {
         logger.warn('could not copy to the clipboard', err)
+        return { ok: false }
+      }
+    },
+    copyLink: async ({ text, html }) => {
+      try {
+        await clipboard.write([new ClipboardItem({ 'text/plain': text, 'text/html': html })])
+        return { ok: true }
+      } catch (err) {
+        logger.warn('could not copy the link to the clipboard', err)
         return { ok: false }
       }
     },

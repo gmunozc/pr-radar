@@ -21,6 +21,7 @@ const api: PrRadarApi = {
     detail: (prId) => ipcRenderer.invoke(IPC.prDetail, prId)
   },
   copyText: (text) => ipcRenderer.invoke(IPC.copyText, text),
+  copyLink: (link) => ipcRenderer.invoke(IPC.copyLink, link),
   relaunch: () => ipcRenderer.invoke(IPC.relaunch),
   auth: {
     start: (method) => ipcRenderer.invoke(IPC.authStart, method),

@@ -1,6 +1,18 @@
 /** Which actions the panel offers on a PR. Pure, so the renderer's decisions can be unit tested. */
 import type { MyPullRequest, PullRequest } from './types'
 
+/** Entries every row ends with, in this order, after its own ones. */
+export type SharedMenuAction =
+  | 'copy_branch'
+  | 'copy_link'
+  | 'copy_title_link'
+  | 'details'
+  | 'mute_repo'
+  | 'unmute_repo'
+  | 'view_files'
+  | 'view_checks'
+  | 'open'
+
 export type MyPrMenuAction =
   | 'merge'
   | 'update_branch'
@@ -11,10 +23,43 @@ export type MyPrMenuAction =
   | 'arm_merge'
   | 'disarm_merge'
   | 'repo_settings'
-  | 'copy_branch'
-  | 'copy_link'
-  | 'details'
-  | 'open'
+  | SharedMenuAction
+
+export type ReviewMenuAction =
+  | 'approve'
+  | 'snooze_hour'
+  | 'snooze_tomorrow'
+  | 'snooze_push'
+  | 'dismiss'
+  | SharedMenuAction
+
+export interface MenuContext {
+  /** Whether alerts for the PR's repository are muted; absent when the row doesn't know (no toggle offered). */
+  muted?: boolean
+}
+
+const SHARED: readonly string[] = [
+  'copy_branch',
+  'copy_link',
+  'copy_title_link',
+  'details',
+  'mute_repo',
+  'unmute_repo',
+  'view_files',
+  'view_checks',
+  'open'
+]
+
+export const isSharedMenuAction = (id: string): id is SharedMenuAction => SHARED.includes(id)
+
+function sharedActions(pr: { branch: string }, ctx: MenuContext): SharedMenuAction[] {
+  const items: SharedMenuAction[] = []
+  if (pr.branch) items.push('copy_branch')
+  items.push('copy_link', 'copy_title_link', 'details')
+  if (ctx.muted !== undefined) items.push(ctx.muted ? 'unmute_repo' : 'mute_repo')
+  items.push('view_files', 'view_checks', 'open')
+  return items
+}
 
 /**
  * Menu entries for one of your PRs. Write actions need a session that can write and the
@@ -22,7 +67,7 @@ export type MyPrMenuAction =
  * A merge is offered whenever GitHub would accept one, approvals or not. When GitHub's
  * auto-merge can't be enabled, PR Radar offers to merge the PR itself once it is ready.
  */
-export function myPrMenuActions(pr: MyPullRequest, canWrite: boolean, armed = false): MyPrMenuAction[] {
+export function myPrMenuActions(pr: MyPullRequest, canWrite: boolean, armed = false, ctx: MenuContext = {}): MyPrMenuAction[] {
   const items: MyPrMenuAction[] = []
   if (canWrite) {
     if (pr.mergeable && pr.can.merge && pr.merge.methods.length > 0) items.push('merge')
@@ -39,33 +84,20 @@ export function myPrMenuActions(pr: MyPullRequest, canWrite: boolean, armed = fa
       if (!pr.can.enableAutoMerge && !pr.merge.autoMergeAllowed && pr.permission === 'ADMIN') items.push('repo_settings')
     }
   }
-  if (pr.branch) items.push('copy_branch')
-  items.push('copy_link', 'details', 'open')
+  items.push(...sharedActions(pr, ctx))
   return items
 }
-
-export type ReviewMenuAction =
-  | 'approve'
-  | 'snooze_hour'
-  | 'snooze_tomorrow'
-  | 'snooze_push'
-  | 'dismiss'
-  | 'copy_branch'
-  | 'copy_link'
-  | 'details'
-  | 'open'
 
 /**
  * Context-menu entries for a review request. GitHub doesn't let you approve your own PR; a PR
  * you merely take part in can be dismissed but not snoozed (its reminders would talk about a
  * review nobody asked for).
  */
-export function reviewMenuActions(pr: PullRequest, canWrite: boolean): ReviewMenuAction[] {
+export function reviewMenuActions(pr: PullRequest, canWrite: boolean, ctx: MenuContext = {}): ReviewMenuAction[] {
   const items: ReviewMenuAction[] = []
   if (canWrite && !pr.viewerDidAuthor) items.push('approve')
   if (pr.source.kind !== 'involved') items.push('snooze_hour', 'snooze_tomorrow', 'snooze_push')
   items.push('dismiss')
-  if (pr.branch) items.push('copy_branch')
-  items.push('copy_link', 'details', 'open')
+  items.push(...sharedActions(pr, ctx))
   return items
 }

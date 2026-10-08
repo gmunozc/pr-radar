@@ -2,11 +2,12 @@ import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } fr
 import { formatDateTime, timeAgo } from '../../shared/format'
 import type { Translate } from '../../shared/i18n'
 import type { MessageKey } from '../../shared/i18n/en'
-import { myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
+import { isSharedMenuAction, myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
 import type { AppState, MergeMethod, MyPullRequest, MyReviewStatus, PrAction } from '../../shared/types'
 import { CopyIcon, GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
 import { REVIEW_LOOK } from '../reviews'
+import { sharedMenuItem } from '../rowMenu'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
 import { CiIcon } from './CiIcon'
@@ -99,6 +100,10 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
     } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
       e.preventDefault()
       setMenuOpen(true)
+    } else if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !window.getSelection()?.toString()) {
+      // ⌘C on a focused row copies its link; with text selected, the system copy wins.
+      e.preventDefault()
+      void copy(pr.url)
     }
   }
   const toggleMenu = (e: MouseEvent) => {
@@ -116,15 +121,29 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
     if (result.ok) setConfirming(null)
     else setError(t(`action.error.${result.code}`, { detail: result.detail ?? '' }))
   }
-  const copy = async (text: string) => {
-    const { ok } = await window.prRadar.copyText(text)
-    if (!ok) return
+  const flashCopied = () => {
     setCopied(true)
     setTimeout(() => setCopied(false), COPIED_MS)
+  }
+  const copy = async (text: string) => {
+    if ((await window.prRadar.copyText(text)).ok) flashCopied()
+  }
+  const copyLink = async () => {
+    if ((await window.prRadar.copyLink({ title: pr.title, url: pr.url })).ok) flashCopied()
   }
   const confirmWith = (kind: Confirming['kind']) => setConfirming({ kind, method: pr.merge.defaultMethod })
 
   const menuItem = (id: MyPrMenuAction): MenuItem => {
+    if (isSharedMenuAction(id)) {
+      return sharedMenuItem(id, {
+        pr,
+        t,
+        copy: (text) => void copy(text),
+        copyLink: () => void copyLink(),
+        open: (url) => void window.prRadar.openExternal(url),
+        onDetail
+      })
+    }
     switch (id) {
       case 'merge':
         return { id, label: t('action.mergeNow'), disabled: busy, onSelect: () => confirmWith('merge') }
@@ -146,14 +165,6 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
           label: t('action.repoSettings'),
           onSelect: () => void window.prRadar.openExternal(`https://github.com/${pr.repo}/settings`)
         }
-      case 'copy_branch':
-        return { id, label: t('action.copyBranch'), onSelect: () => void copy(pr.branch) }
-      case 'copy_link':
-        return { id, label: t('action.copyLink'), onSelect: () => void copy(pr.url) }
-      case 'details':
-        return { id, label: t('action.details'), onSelect: () => onDetail?.(pr.id) }
-      case 'open':
-        return { id, label: t('action.open'), onSelect: open }
     }
   }
   const items = myPrMenuActions(pr, canWrite, armed !== undefined)
@@ -189,6 +200,7 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
       className="pr"
       role="button"
       tabIndex={0}
+      data-pr-id={pr.id}
       onClick={open}
       onKeyDown={onKeyDown}
       onContextMenu={onContextMenu}

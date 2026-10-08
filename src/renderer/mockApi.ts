@@ -355,6 +355,10 @@ export function createMockApi(): PrRadarApi {
       console.info('[mock] copied', text)
       return { ok: true }
     },
+    copyLink: async (link) => {
+      console.info('[mock] copied link', link)
+      return { ok: true }
+    },
     relaunch: async () => console.info('[mock] relaunch'),
     auth: {
       start: async () => {},

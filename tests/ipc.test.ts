@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 // ipc.ts imports electron for its handlers; only the pure helpers are tested here.
 vi.mock('electron', () => ({ app: {}, ipcMain: {}, shell: {}, Notification: class {} }))
 
-const { isAllowedExternalUrl, isKnownCheckUrl, parsePrAction } = await import('../src/main/ipc')
+const { isAllowedExternalUrl, isKnownCheckUrl, linkClipboard, parsePrAction } = await import('../src/main/ipc')
 const { pr, myPr } = await import('./fixtures')
 
 describe('isKnownCheckUrl', () => {
@@ -49,5 +49,14 @@ describe('isAllowedExternalUrl', () => {
     expect(isAllowedExternalUrl('https://github.com.evil.io/x')).toBe(false)
     expect(isAllowedExternalUrl('file:///etc/passwd')).toBe(false)
     expect(isAllowedExternalUrl('not a url')).toBe(false)
+  })
+})
+
+describe('linkClipboard', () => {
+  it('writes Markdown as plain text and an anchor as rich text, escaping HTML', () => {
+    expect(linkClipboard('Fix <b> & "quotes"', 'https://github.com/acme/app/pull/12')).toEqual({
+      text: '[Fix <b> & "quotes"](https://github.com/acme/app/pull/12)',
+      html: '<a href="https://github.com/acme/app/pull/12">Fix &lt;b&gt; &amp; &quot;quotes&quot;</a>'
+    })
   })
 })
