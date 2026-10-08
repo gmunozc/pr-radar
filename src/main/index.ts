@@ -1,5 +1,18 @@
 /** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
-import { app, clipboard, ClipboardItem, globalShortcut, net, Notification, powerMonitor, screen, session, shell, type DownloadItem } from 'electron'
+import {
+  app,
+  clipboard,
+  ClipboardItem,
+  dialog,
+  globalShortcut,
+  net,
+  Notification,
+  powerMonitor,
+  screen,
+  session,
+  shell,
+  type DownloadItem
+} from 'electron'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -18,7 +31,7 @@ import {
   fetchPullRequestDetail,
   fetchPullRequests
 } from './github'
-import { applyLanguage, currentLocale } from './i18n'
+import { applyLanguage, currentLocale, t } from './i18n'
 import { isKnownCheckUrl, registerIpc } from './ipc'
 import { logger } from './log'
 import { deliverEvents, reconnectHistory, retire, retireAll, type NotificationHandlers } from './notifier'
@@ -268,7 +281,22 @@ function main(): void {
         void poller.runNow()
       },
       downloadUpdate: () => void openRelease(updates?.available?.downloadUrl ?? updates?.available?.releaseUrl),
-      logout: () => engine.logout(),
+      logout: () => {
+        // No panel here to hold the confirmation: ask the way the OS does, in front of everything.
+        app.focus({ steal: true })
+        void dialog
+          .showMessageBox({
+            type: 'warning',
+            message: t('settings.logoutConfirm'),
+            detail: t('settings.logoutHint'),
+            buttons: [t('settings.logout'), t('action.cancel')],
+            defaultId: 1,
+            cancelId: 1
+          })
+          .then(({ response }) => {
+            if (response === 0) engine.logout()
+          })
+      },
       isLoggedIn: () => session.current !== null,
       extraMenu: faults
         ? () =>

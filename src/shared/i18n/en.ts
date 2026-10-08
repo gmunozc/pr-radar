@@ -373,6 +373,8 @@ export const en = {
   'settings.orgAccessHint': 'If PRs from an organization are missing, grant or request access for the app.',
   'settings.open': 'Open',
   'settings.account': 'GitHub account',
+  'settings.logoutConfirm': 'Sign out?',
+  'settings.logoutHint': 'Seen, dismissed and snoozed PRs are forgotten.',
   'settings.logout': 'Sign out',
   'settings.quitApp': 'Quit PR Radar',
   'settings.quit': 'Quit',

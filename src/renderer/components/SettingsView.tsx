@@ -13,6 +13,7 @@ import {
   type PanelSize,
   type Settings
 } from '../../shared/types'
+import { ConfirmRow } from './ConfirmRow'
 
 const PANEL_SIZES: PanelSize[] = ['compact', 'default', 'large']
 const KIND_LABEL: Record<NotifyKind, MessageKey> = {
@@ -127,6 +128,7 @@ export function SettingsView({ state }: { state: AppState }) {
   const [stale, setStale] = useState('')
   const [shortcutTaken, setShortcutTaken] = useState(false)
   const [testResult, setTestResult] = useState<NotifyResult | 'sending' | null>(null)
+  const [confirmLogout, setConfirmLogout] = useState(false)
   const [version, setVersion] = useState('')
   const [copied, setCopied] = useState(false)
   const [updateCheck, setUpdateCheck] = useState<'idle' | 'checking' | 'up_to_date' | 'available'>('idle')
@@ -506,10 +508,21 @@ export function SettingsView({ state }: { state: AppState }) {
               {t('settings.switchMethod')}
             </button>
           )}
-          <button className="btn btn-danger" onClick={() => void api.auth.logout()}>
+          <button className="btn btn-danger" onClick={() => setConfirmLogout(true)} aria-expanded={confirmLogout}>
             {t('settings.logout')}
           </button>
         </div>
+        {confirmLogout && (
+          <ConfirmRow
+            danger
+            message={t('settings.logoutConfirm')}
+            hint={t('settings.logoutHint')}
+            confirmLabel={t('settings.logout')}
+            cancelLabel={t('action.cancel')}
+            onConfirm={() => void api.auth.logout()}
+            onCancel={() => setConfirmLogout(false)}
+          />
+        )}
         <div className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.quitApp')}</div>

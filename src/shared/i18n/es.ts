@@ -371,6 +371,8 @@ export const es: Record<MessageKey, string> = {
   'settings.orgAccessHint': 'Si faltan PRs de una org, concede o solicita acceso a la app.',
   'settings.open': 'Abrir',
   'settings.account': 'Cuenta de GitHub',
+  'settings.logoutConfirm': '¿Cerrar sesión?',
+  'settings.logoutHint': 'Se olvidan los PRs vistos, descartados y pospuestos.',
   'settings.logout': 'Cerrar sesión',
   'settings.quitApp': 'Salir de PR Radar',
   'settings.quit': 'Salir',

@@ -954,6 +954,11 @@ code {
   padding: 6px 12px 14px;
 }
 
+/* The sign-out confirmation sits under the account row, not inside a PR row. */
+.settings .confirm-row {
+  margin: 0 0 10px;
+}
+
 .group {
   margin-top: 10px;
 }
