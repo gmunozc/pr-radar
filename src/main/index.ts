@@ -92,6 +92,15 @@ function main(): void {
   panel.resize(settings.panelSize)
   const showPanel = () => panel.show(tray?.getBounds())
   const togglePanel = () => panel.toggle(tray?.getBounds())
+  // A click on an alert about one PR: GitHub, or the panel at that row (Settings), when it is still listed.
+  const openPr = (prId: string, url: string) => {
+    const { prs, myPrs, involved } = engine.state
+    const listed = [...prs, ...myPrs, ...involved].some((p) => p.id === prId)
+    if (settings.notificationClick === 'panel' && listed) {
+      showPanel()
+      if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.focusPr, prId)
+    } else void shell.openExternal(url)
+  }
 
   const publishAuth = (status: AuthStatus) => {
     if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.authStatus, status)
@@ -117,6 +126,7 @@ function main(): void {
       notify: (events) =>
         deliverEvents(events, {
           openPanel: showPanel,
+          openPr,
           perform: (action) => {
             if (action.kind === 'snooze') engine.snooze(action.prId, action.option)
             else if (action.kind === 'dismiss') engine.dismiss(action.prId)

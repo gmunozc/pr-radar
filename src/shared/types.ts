@@ -282,6 +282,8 @@ export interface Settings {
   notifyMyPrs: boolean
   /** Which of those updates, when `notifyMyPrs` is on. */
   notifyKinds: Record<NotifyKind, boolean>
+  /** What clicking an alert about one PR does: open it on GitHub, or show the panel at that row. */
+  notificationClick: NotificationClick
   /** Only notify during working hours; alerts outside them arrive together afterwards. */
   quietHours: boolean
   /** "HH:MM", local time. */
@@ -316,6 +318,7 @@ export const DEFAULT_SETTINGS: Settings = {
   language: 'system',
   notifyMyPrs: true,
   notifyKinds: { approved: true, changes: true, ready: true, ciFailed: true, conflicts: true, commented: true },
+  notificationClick: 'github',
   quietHours: false,
   workStart: '09:00',
   workEnd: '19:00',
@@ -324,6 +327,8 @@ export const DEFAULT_SETTINGS: Settings = {
   digestTime: '09:30',
   checkUpdates: true
 }
+
+export type NotificationClick = 'github' | 'panel'
 
 /** Updates on your PRs that can be notified, in the order the settings list them. */
 export const NOTIFY_KINDS = ['approved', 'changes', 'commented', 'ready', 'ciFailed', 'conflicts'] as const
@@ -359,6 +364,8 @@ export interface PrRadarApi {
   onState(cb: (state: AppState) => void): () => void
   /** A poll or a change probe just confirmed the data is current (epoch ms). */
   onChecked(cb: (atMs: number) => void): () => void
+  /** A notification was clicked with "open the panel at that PR": show that row. */
+  onFocusPr(cb: (prId: string) => void): () => void
   refresh(): Promise<void>
   dismiss(prId: string): Promise<void>
   snooze(prId: string, option: SnoozeOption): Promise<void>
@@ -434,6 +441,7 @@ export const IPC = {
   copyLink: 'clipboard:copy-link',
   relaunch: 'app:relaunch',
   panelHide: 'panel:hide',
+  focusPr: 'panel:focus-pr',
   settingsChanged: 'settings:update',
   authStart: 'auth:start',
   authCancel: 'auth:cancel',

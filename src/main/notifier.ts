@@ -26,6 +26,8 @@ const BUTTONS_SUPPORTED = process.platform !== 'linux'
 
 export interface NotificationHandlers {
   openPanel(): void
+  /** A click on an alert about one PR; without it, the PR opens on GitHub. */
+  openPr?(prId: string, url: string): void
   /** Runs a button's action (snooze or dismiss a review request). */
   perform?(action: NotificationAction): void
 }
@@ -51,7 +53,10 @@ export async function deliver(n: RenderedNotification, handlers: NotificationHan
   live.add(notification)
   const run = (action: NotificationAction) => {
     if (action.kind === 'open_url') void shell.openExternal(action.url)
-    else if (action.kind === 'open_panel') h.openPanel()
+    else if (action.kind === 'open_pr') {
+      if (h.openPr) h.openPr(action.prId, action.url)
+      else void shell.openExternal(action.url)
+    } else if (action.kind === 'open_panel') h.openPanel()
     else h.perform?.(action)
     live.delete(notification)
   }

@@ -36,7 +36,7 @@ describe('renderNotification', () => {
       title: 'Nueva review solicitada',
       subtitle: 'acme/app#12 · @octo',
       body: 'Add feature',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' },
+      action: { kind: 'open_pr', prId: 'PR_1', url: 'https://github.com/acme/app/pull/12' },
       buttons: reviewButtons
     })
   })
@@ -96,7 +96,7 @@ describe('notifications about your PRs', () => {
       title: 'Aprobaron tu PR',
       subtitle: 'acme/app#12 · @ana, @bob',
       body: 'Add feature',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+      action: { kind: 'open_pr', prId: 'MY_1', url: 'https://github.com/acme/app/pull/12' }
     })
     expect(render({ kind: 'my_pr_changes_requested', pr: mine, by: ['ana'] }, en).title).toBe('Changes requested on your PR')
     expect(render({ kind: 'my_pr_ready', pr: mine }, en)).toMatchObject({ id: 'mine-MY_1', title: 'Ready to merge', subtitle: 'acme/app#12' })
@@ -118,7 +118,7 @@ describe('notifications about your PRs', () => {
       title: 'Fallan los checks de tu PR',
       subtitle: 'acme/app#12',
       body: 'Add feature · Fallando: Pytest shard 1/4, lint…',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12/checks' }
+      action: { kind: 'open_pr', prId: 'MY_1', url: 'https://github.com/acme/app/pull/12/checks' }
     })
     expect(render({ kind: 'my_pr_ci_failed', pr: mine, failing: [] }, en)).toMatchObject({ title: 'Checks failed on your PR', body: 'Add feature' })
     expect(render({ kind: 'my_pr_conflicts', pr: mine }, es)).toEqual({
@@ -127,7 +127,7 @@ describe('notifications about your PRs', () => {
       title: 'Tu PR tiene conflictos',
       subtitle: 'acme/app#12',
       body: 'Add feature · Conflictos con main',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+      action: { kind: 'open_pr', prId: 'MY_1', url: 'https://github.com/acme/app/pull/12' }
     })
     expect(render({ kind: 'my_pr_conflicts', pr: { ...mine, baseBranch: '' } }, en)).toMatchObject({ title: 'Your PR has conflicts', body: 'Add feature' })
   })
@@ -141,7 +141,7 @@ describe('notifications about your PRs', () => {
       subtitle: 'acme/app#12 · @ana',
       body: 'Add feature',
       imageUrl: avatar,
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+      action: { kind: 'open_pr', prId: 'MY_1', url: 'https://github.com/acme/app/pull/12' }
     })
     expect(render({ kind: 'my_pr_commented', pr: mine, by: ['ana'] }, en).title).toBe('New comments on your PR')
   })
@@ -153,7 +153,7 @@ describe('notifications about your PRs', () => {
       title: 'Mergeado (Squash)',
       subtitle: 'acme/app#12',
       body: 'Add feature',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+      action: { kind: 'open_pr', prId: 'MY_1', url: 'https://github.com/acme/app/pull/12' }
     })
     expect(render({ kind: 'merge_failed', pr: mine, code: 'not_mergeable' }, en)).toMatchObject({
       id: 'mine-MY_1',
@@ -190,7 +190,7 @@ describe('reminders, catch-up and digest notifications', () => {
       title: 'Recordatorio: review pendiente',
       subtitle: 'acme/app#12 · @octo',
       body: 'Add feature',
-      action: { kind: 'open_url' },
+      action: { kind: 'open_pr', prId: 'PR_1' },
       buttons: reviewButtons
     })
     const many = render({ kind: 'snooze_returned', prs: [pr(), pr()] }, en)

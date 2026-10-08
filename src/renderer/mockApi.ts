@@ -273,6 +273,13 @@ export function createMockApi(): PrRadarApi {
   setInterval(() => {
     for (const cb of checkedListeners) cb(Date.now())
   }, 5000)
+  const focusListeners = new Set<(prId: string) => void>()
+  // From the DevTools console: prRadarMock.focusPr('M2') plays a notification click.
+  ;(window as unknown as { prRadarMock?: { focusPr(prId: string): void } }).prRadarMock = {
+    focusPr: (prId) => {
+      for (const cb of focusListeners) cb(prId)
+    }
+  }
   const installListeners = new Set<(s: InstallState) => void>()
   const setInstall = (s: InstallState) => {
     install = s
@@ -335,6 +342,10 @@ export function createMockApi(): PrRadarApi {
     onChecked: (cb) => {
       checkedListeners.add(cb)
       return () => checkedListeners.delete(cb)
+    },
+    onFocusPr: (cb) => {
+      focusListeners.add(cb)
+      return () => focusListeners.delete(cb)
     },
     refresh: async () => {
       await sleep(400)

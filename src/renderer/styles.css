@@ -347,6 +347,20 @@ html[data-platform='darwin'] .tab-active {
   text-align: left;
 }
 
+/* The row a notification was about, right after the panel opened on it. */
+.pr-flash {
+  animation: pr-flash 1.5s ease-out;
+}
+
+@keyframes pr-flash {
+  from {
+    background: var(--direct-bg);
+  }
+  to {
+    background: transparent;
+  }
+}
+
 .pr:hover {
   background: var(--surface-hover);
 }

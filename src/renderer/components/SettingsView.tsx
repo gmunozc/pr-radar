@@ -6,6 +6,7 @@ import {
   MIN_POLL_INTERVAL_SEC,
   NOTIFY_KINDS,
   SHORTCUT_OPTIONS,
+  type NotificationClick,
   type NotifyKind,
   type AppState,
   type NotifyResult,
@@ -282,6 +283,20 @@ export function SettingsView({ state }: { state: AppState }) {
             ))}
           </div>
         )}
+        <label className="setting">
+          <div className="setting-text">
+            <div className="setting-label">{t('settings.notificationClick')}</div>
+            <div className="setting-hint">{t('settings.notificationClickHint')}</div>
+          </div>
+          <select
+            className="input select"
+            value={settings.notificationClick}
+            onChange={(e) => void update({ notificationClick: e.target.value as NotificationClick })}
+          >
+            <option value="github">{t('settings.notificationClick.github')}</option>
+            <option value="panel">{t('settings.notificationClick.panel')}</option>
+          </select>
+        </label>
         <label className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.digest')}</div>

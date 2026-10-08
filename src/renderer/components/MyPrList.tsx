@@ -1,14 +1,26 @@
+import { useRef } from 'react'
 import type { AppState } from '../../shared/types'
 import { PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
+import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
 import { MyPrItem } from './MyPrItem'
 
 const MY_PULLS_URL = 'https://github.com/pulls'
 
-export function MyPrList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
+interface ListProps {
+  state: AppState
+  onDetail(prId: string): void
+  /** A row to scroll to and focus (a notification click); cleared through `onFocused`. */
+  focusPrId?: string | null
+  onFocused?(): void
+}
+
+export function MyPrList({ state, onDetail, focusPrId, onFocused }: ListProps) {
+  const listRef = useRef<HTMLElement>(null)
+  useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
   const settings = useSettings()
   const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
@@ -33,7 +45,7 @@ export function MyPrList({ state, onDetail }: { state: AppState; onDetail(prId: 
 
   return (
     <>
-      <main className="list" onKeyDown={onListKeyDown}>
+      <main className="list" ref={listRef} onKeyDown={onListKeyDown}>
         {state.myPrs.map((pr) => (
           <MyPrItem
             key={pr.id}

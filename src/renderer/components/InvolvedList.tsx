@@ -1,8 +1,10 @@
+import { useRef } from 'react'
 import type { AppState } from '../../shared/types'
 import { PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
+import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
 import { PrItem } from './PrItem'
 import { RestoreHidden } from './PrList'
@@ -10,7 +12,17 @@ import { RestoreHidden } from './PrList'
 const MENTIONED_URL = 'https://github.com/pulls/mentioned'
 
 /** Open PRs you take part in (mentioned, assigned, commented) without a review request. */
-export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
+interface ListProps {
+  state: AppState
+  onDetail(prId: string): void
+  /** A row to scroll to and focus (a notification click); cleared through `onFocused`. */
+  focusPrId?: string | null
+  onFocused?(): void
+}
+
+export function InvolvedList({ state, onDetail, focusPrId, onFocused }: ListProps) {
+  const listRef = useRef<HTMLElement>(null)
+  useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
   const settings = useSettings()
   const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
@@ -40,7 +52,7 @@ export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(pr
 
   return (
     <>
-      <main className="list" onKeyDown={onListKeyDown}>
+      <main className="list" ref={listRef} onKeyDown={onListKeyDown}>
         {state.involved.map((pr) => (
           <PrItem
             key={pr.id}

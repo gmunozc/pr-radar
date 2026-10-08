@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef } from 'react'
 import type { AppState, ReviewFilter, ReviewSort } from '../../shared/types'
 import { arrangePrs } from '../arrange'
 import { CheckCircleIcon, PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
+import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
 import { PrItem } from './PrItem'
 import { Segmented } from './Segmented'
@@ -29,7 +30,17 @@ export function RestoreHidden({ dismissed, snoozed }: { dismissed: number; snooz
   )
 }
 
-export function PrList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
+interface ListProps {
+  state: AppState
+  onDetail(prId: string): void
+  /** A row to scroll to and focus (a notification click); cleared through `onFocused`. */
+  focusPrId?: string | null
+  onFocused?(): void
+}
+
+export function PrList({ state, onDetail, focusPrId, onFocused }: ListProps) {
+  const listRef = useRef<HTMLElement>(null)
+  useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
   const settings = useSettings()
   const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
@@ -135,7 +146,7 @@ export function PrList({ state, onDetail }: { state: AppState; onDetail(prId: st
           </select>
         </div>
       )}
-      <main className="list" onKeyDown={onListKeyDown}>
+      <main className="list" ref={listRef} onKeyDown={onListKeyDown}>
         {shown.length === 0 && <div className="list-note">{t('filter.empty')}</div>}
         {shown.map((pr) => (
           <PrItem

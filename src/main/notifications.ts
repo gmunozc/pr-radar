@@ -45,6 +45,8 @@ export type NotificationEvent =
 
 export type NotificationAction =
   | { kind: 'open_url'; url: string }
+  /** A page about one PR: GitHub, or the panel at that row, as the settings say. */
+  | { kind: 'open_pr'; prId: string; url: string }
   | { kind: 'open_panel' }
   | { kind: 'snooze'; prId: string; option: SnoozeOption }
   | { kind: 'dismiss'; prId: string }
@@ -200,7 +202,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         subtitle: where(pr, authorOf(pr)),
         body: pr.title,
         ...picture(pr.author?.avatarUrl),
-        action: { kind: 'open_url', url: pr.url },
+        action: { kind: 'open_pr', prId: pr.id, url: pr.url },
         buttons: reviewButtons(pr.id, t)
       }
     }
@@ -212,7 +214,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         subtitle: where(event.pr, event.by),
         body: event.pr.title,
         ...picture(reviewerAvatar(event.pr, event.by)),
-        action: { kind: 'open_url', url: event.pr.url }
+        action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
       }
     case 'my_pr_approved':
       return {
@@ -222,7 +224,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         subtitle: where(event.pr, event.by),
         body: event.pr.title,
         ...picture(reviewerAvatar(event.pr, event.by)),
-        action: { kind: 'open_url', url: event.pr.url }
+        action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
       }
     case 'my_pr_ready':
       return {
@@ -231,7 +233,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         title: t('notif.readyToMerge'),
         subtitle: where(event.pr),
         body: event.pr.autoMerge ? `${event.pr.title} · ${t('notif.readyAutoMerge')}` : event.pr.title,
-        action: { kind: 'open_url', url: event.pr.url }
+        action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
       }
     case 'my_pr_ci_failed': {
       const { pr, failing } = event
@@ -242,7 +244,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         subtitle: where(pr),
         body: failing.length ? `${pr.title} · ${t('notif.ciFailing', { names: failingList(failing) })}` : pr.title,
         // GitHub's own checks tab: the checks' detail pages may be on other sites.
-        action: { kind: 'open_url', url: `${pr.url}/checks` }
+        action: { kind: 'open_pr', prId: pr.id, url: `${pr.url}/checks` }
       }
     }
     case 'my_pr_commented':
@@ -253,7 +255,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         subtitle: where(event.pr, event.by),
         body: event.pr.title,
         ...picture(reviewerAvatar(event.pr, event.by)),
-        action: { kind: 'open_url', url: event.pr.url }
+        action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
       }
     case 'my_pr_conflicts': {
       const { pr } = event
@@ -263,7 +265,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         title: t('notif.conflicts'),
         subtitle: where(pr),
         body: pr.baseBranch ? `${pr.title} · ${t('notif.conflictsWith', { branch: pr.baseBranch })}` : pr.title,
-        action: { kind: 'open_url', url: pr.url }
+        action: { kind: 'open_pr', prId: pr.id, url: pr.url }
       }
     }
     case 'my_pr_merged':
@@ -273,7 +275,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         title: t('notif.merged', { method: t(`action.method.${event.method}`) }),
         subtitle: where(event.pr),
         body: event.pr.title,
-        action: { kind: 'open_url', url: event.pr.url }
+        action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
       }
     case 'merge_failed':
       return {
@@ -282,7 +284,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         title: t('notif.mergeFailed'),
         subtitle: where(event.pr),
         body: `${event.pr.title} · ${t(`action.error.${event.code}`, { detail: event.detail ?? '' })}`,
-        action: { kind: 'open_url', url: event.pr.url }
+        action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
       }
     case 'my_prs_grouped':
       return { title: 'PR Radar', body: t('notif.myPrsGrouped', { count: event.count }), action: openPanel }
@@ -298,7 +300,7 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         subtitle: where(pr, authorOf(pr)),
         body: pr.title,
         ...picture(pr.author?.avatarUrl),
-        action: { kind: 'open_url', url: pr.url },
+        action: { kind: 'open_pr', prId: pr.id, url: pr.url },
         buttons: reviewButtons(pr.id, t)
       }
     }

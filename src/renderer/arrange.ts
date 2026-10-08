@@ -12,3 +12,14 @@ export function arrangePrs(prs: PullRequest[], filter: ReviewFilter, org: string
   )
   return [...kept].sort(sort === 'oldest' ? byOldest : sort === 'updated' ? byUpdated : byNewest)
 }
+
+/** The tab that lists a PR, or null when it is in none (merged, closed, dismissed…). */
+export function tabFor(
+  state: { prs: Array<{ id: string }>; myPrs: Array<{ id: string }>; involved: Array<{ id: string }> },
+  prId: string
+): 'review' | 'mine' | 'involved' | null {
+  if (state.prs.some((p) => p.id === prId)) return 'review'
+  if (state.myPrs.some((p) => p.id === prId)) return 'mine'
+  if (state.involved.some((p) => p.id === prId)) return 'involved'
+  return null
+}

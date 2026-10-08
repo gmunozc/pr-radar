@@ -1,3 +1,4 @@
+import { tabFor } from './arrange'
 import { useCallback, useEffect, useState } from 'react'
 import type { AppState, AuthStatus } from '../shared/types'
 import { Header, type View } from './components/Header'
@@ -31,6 +32,10 @@ function Panel() {
   const [refreshing, setRefreshing] = useState(false)
   /** Last time a poll or a probe confirmed the data is current (fast mode). */
   const [checkedAt, setCheckedAt] = useState<number | null>(null)
+  /** A notification asked to show a PR: first find its tab, then let the list focus the row. */
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null)
+  const [focusPrId, setFocusPrId] = useState<string | null>(null)
+  const focused = useCallback(() => setFocusPrId(null), [])
   const settings = useSettings()
   const showInvolved = settings?.showInvolved ?? true
   const tabs: Tab[] = showInvolved ? ['review', 'mine', 'involved'] : ['review', 'mine']
@@ -53,12 +58,25 @@ function Panel() {
     })
     const offAuth = api.onAuthStatus(setAuth)
     const offChecked = api.onChecked(setCheckedAt)
+    const offFocus = api.onFocusPr(setPendingFocus)
     return () => {
       offState()
       offAuth()
       offChecked()
+      offFocus()
     }
   }, [])
+
+  useEffect(() => {
+    if (!pendingFocus || !state) return
+    const target = tabFor(state, pendingFocus)
+    if (target) {
+      setView('list')
+      setTab(target)
+      setFocusPrId(pendingFocus)
+    }
+    setPendingFocus(null)
+  }, [pendingFocus, state])
 
   useEffect(() => {
     if (state?.status === 'logged_out') {
@@ -143,11 +161,11 @@ function Panel() {
             counts={{ review: state.prs.length, mine: state.myPrs.length, involved: state.involved.length }}
           />
           {tab === 'review' ? (
-            <PrList state={state} onDetail={openDetail} />
+            <PrList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} />
           ) : tab === 'mine' ? (
-            <MyPrList state={state} onDetail={openDetail} />
+            <MyPrList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} />
           ) : (
-            <InvolvedList state={state} onDetail={openDetail} />
+            <InvolvedList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} />
           )}
         </>
       )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { arrangePrs } from '../src/renderer/arrange'
+import { arrangePrs, tabFor } from '../src/renderer/arrange'
 import { pr } from './fixtures'
 
 const a = pr('a', { createdAt: '2026-01-03T00:00:00Z', updatedAt: '2026-01-03T00:00:00Z', repo: 'acme/app' })
@@ -24,5 +24,15 @@ describe('arrangePrs', () => {
     const input = [a, b, c]
     arrangePrs(input, 'all', null, 'oldest')
     expect(input.map((p) => p.id)).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('tabFor', () => {
+  it('names the tab that lists a PR', () => {
+    const state = { prs: [{ id: 'a' }], myPrs: [{ id: 'm' }], involved: [{ id: 'i' }] }
+    expect(tabFor(state, 'a')).toBe('review')
+    expect(tabFor(state, 'm')).toBe('mine')
+    expect(tabFor(state, 'i')).toBe('involved')
+    expect(tabFor(state, 'gone')).toBeNull()
   })
 })
