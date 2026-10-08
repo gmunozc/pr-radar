@@ -20,7 +20,7 @@ export function moveFocus(container: HTMLElement, delta: 1 | -1 | 'first' | 'las
 /** Arrow keys and Home/End on a list; typing in inputs and open menus are left alone. */
 export function onListKeyDown(e: KeyboardEvent<HTMLElement>): void {
   const target = e.target as HTMLElement
-  if (target.closest('input, select, textarea, [role="menu"], .confirm-row, .snooze-row')) return
+  if (target.closest('input, select, textarea, [role="menu"], .confirm-row')) return
   const moves: Record<string, 1 | -1 | 'first' | 'last'> = { ArrowDown: 1, ArrowUp: -1, Home: 'first', End: 'last' }
   const move = moves[e.key]
   if (!move) return

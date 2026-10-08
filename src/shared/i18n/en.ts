@@ -75,7 +75,6 @@ export const en = {
   'mine.emptySub': 'Your PRs and who still has to review them will show up here.',
   'mine.viewAll': 'View my PRs on GitHub',
   'warning.filters_truncated': "Some exclusions did not fit in GitHub's search and were ignored.",
-  'pr.snoozePush': 'Until new commits',
   'pr.stale.one': 'Waiting for {count} day',
   'pr.stale.other': 'Waiting for {count} days',
   'filter.label': 'Filter',
@@ -233,8 +232,6 @@ export const en = {
   'authError.unknown': 'GitHub error: {detail}',
 
   // Snooze, quiet hours and digest
-  'pr.snooze': 'Snooze',
-  'pr.snoozeHour': 'In 1 hour',
   'pr.snoozeTomorrow': 'Tomorrow {time}',
   'pr.snoozeDay': '{day} {time}',
   'list.snoozed.one': '{count} snoozed',

@@ -556,13 +556,6 @@ html[data-platform='darwin'] .tab-active {
   outline: none;
 }
 
-.snooze-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 7px;
-  color: var(--text-muted);
-}
 
 .btn-small {
   padding: 2px 9px;

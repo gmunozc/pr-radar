@@ -72,7 +72,6 @@ export const es: Record<MessageKey, string> = {
   'mine.emptySub': 'Aquí verás tus PRs y quién falta por revisarlos.',
   'mine.viewAll': 'Ver mis PRs en GitHub',
   'warning.filters_truncated': 'Algunas exclusiones no cupieron en la búsqueda de GitHub y se ignoraron.',
-  'pr.snoozePush': 'Hasta nuevos commits',
   'pr.stale.one': 'Lleva {count} día esperando',
   'pr.stale.other': 'Lleva {count} días esperando',
   'filter.label': 'Filtro',
@@ -231,8 +230,6 @@ export const es: Record<MessageKey, string> = {
   'authError.unknown': 'Error de GitHub: {detail}',
 
   // Snooze, quiet hours and digest
-  'pr.snooze': 'Posponer',
-  'pr.snoozeHour': 'En 1 hora',
   'pr.snoozeTomorrow': 'Mañana {time}',
   'pr.snoozeDay': '{day} {time}',
   'list.snoozed.one': '{count} pospuesto',

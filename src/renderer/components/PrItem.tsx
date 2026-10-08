@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } fr
 import { formatClock, formatDateTime, isTomorrow, timeAgo, weekdayName } from '../../shared/format'
 import { reviewMenuActions, type ReviewMenuAction } from '../../shared/prActions'
 import type { PrAction, PullRequest, SnoozeOption } from '../../shared/types'
-import { CheckIcon, ClockIcon, KebabHorizontalIcon, XIcon } from '../icons'
+import { CheckIcon, CopyIcon, KebabHorizontalIcon, XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
@@ -27,7 +27,6 @@ interface Props {
 export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onDetail }: Props) {
   const t = useT()
   const locale = useLocale()
-  const [snoozing, setSnoozing] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [approving, setApproving] = useState(false)
   const [checksOpen, setChecksOpen] = useState(false)
@@ -60,7 +59,6 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
     e.stopPropagation()
     setMenuOpen((o) => !o)
   }
-  const stop = (e: MouseEvent) => e.stopPropagation()
   const dismiss = () => void window.prRadar.dismiss(pr.id)
   const snooze = (option: SnoozeOption) => void window.prRadar.snooze(pr.id, option)
   const approve = async () => {
@@ -118,7 +116,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
     e.stopPropagation()
     onDetail(pr.id)
   }
-  const actionsOpen = snoozing || menuOpen || approving || busy
+  const actionsOpen = menuOpen || approving || busy
 
   const sourceChip =
     pr.source.kind === 'direct' ? (
@@ -181,20 +179,6 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
           {pr.author && <span className="pr-author">@{pr.author.login}</span>}
         </div>
         {checksOpen && <ChecksRow checks={pr.checks} total={pr.checksTotal} />}
-        {snoozing && (
-          <div className="snooze-row" onClick={stop}>
-            <ClockIcon size={12} />
-            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={() => snooze('hour')}>
-              {t('pr.snoozeHour')}
-            </button>
-            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={() => snooze('tomorrow')}>
-              {tomorrowLabel}
-            </button>
-            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={() => snooze('push')}>
-              {t('pr.snoozePush')}
-            </button>
-          </div>
-        )}
         {approving && (
           <ConfirmRow
             message={t('action.approveConfirm', { number: pr.number, author: pr.author?.login ?? '' })}
@@ -242,21 +226,18 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
             {busy ? <span className="spinner spinner-sm" /> : <CheckIcon size={12} />}
           </button>
         )}
-        {snoozable && (
-          <button
-            className="pr-action"
-            onClick={(e) => {
-              e.stopPropagation()
-              setSnoozing(!snoozing)
-            }}
-            onMouseDown={(e) => e.preventDefault()}
-            title={t('pr.snooze')}
-            aria-label={t('pr.snooze')}
-            aria-expanded={snoozing}
-          >
-            <ClockIcon size={12} />
-          </button>
-        )}
+        <button
+          className="pr-action"
+          onClick={(e) => {
+            e.stopPropagation()
+            void copy(pr.url)
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+          title={t('action.copyLink')}
+          aria-label={t('action.copyLink')}
+        >
+          <CopyIcon size={12} />
+        </button>
         <button
           className="pr-action pr-action-dismiss"
           onClick={(e) => {
