@@ -917,6 +917,63 @@ export async function fetchFirstUnresolvedThread(token: string, id: string, fetc
   return null
 }
 
+export interface PrRef {
+  id: string
+  number: number
+  title: string
+  url: string
+  repo: string
+}
+
+/** What became of one of your PRs that left the list; `by` is null when GitHub doesn't say who. */
+export type PrOutcome = { state: 'open' } | { state: 'merged' | 'closed'; pr: PrRef; by: string | null }
+
+const PR_OUTCOME_QUERY = /* GraphQL */ `
+  query PullRequestOutcome($id: ID!) {
+    node(id: $id) {
+      ... on PullRequest {
+        id
+        number
+        title
+        url
+        repository { nameWithOwner }
+        state
+        mergedBy { login }
+        timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
+          nodes { ... on ClosedEvent { actor { login } } }
+        }
+      }
+    }
+  }
+`
+
+interface RawOutcomeResponse {
+  data?: {
+    node?: {
+      id: string
+      number: number
+      title: string
+      url: string
+      repository: { nameWithOwner: string }
+      state: 'OPEN' | 'CLOSED' | 'MERGED'
+      mergedBy?: { login: string } | null
+      timelineItems?: { nodes: Array<{ actor?: { login: string } | null } | null> } | null
+    } | null
+  } | null
+  errors?: Array<{ message: string }>
+}
+
+/** Whether a PR that left your list was merged or closed, and by whom; one point. */
+export async function fetchPrOutcome(token: string, id: string, fetchFn: FetchFn = fetch): Promise<PrOutcome | null> {
+  const { body } = await graphqlRequest<RawOutcomeResponse>(token, PR_OUTCOME_QUERY, { id }, fetchFn)
+  const node = body.data?.node
+  if (!node) return null
+  if (node.state === 'OPEN') return { state: 'open' }
+  const pr: PrRef = { id: node.id, number: node.number, title: node.title, url: node.url, repo: node.repository.nameWithOwner }
+  if (node.state === 'MERGED') return { state: 'merged', pr, by: node.mergedBy?.login ?? null }
+  return { state: 'closed', pr, by: node.timelineItems?.nodes?.[0]?.actor?.login ?? null }
+}
+
 /** Repository/organization permissions PR Radar's GitHub App needs (all read-only). */
 export const REQUIRED_APP_PERMISSIONS = ['pull_requests', 'checks', 'statuses'] as const
 

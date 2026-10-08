@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DeviceFlowError, type TokenSet } from '../src/main/deviceFlow'
 import { Engine, type EngineDeps } from '../src/main/engine'
-import { GithubError, type FetchResult, type InstallationInfo } from '../src/main/github'
+import { GithubError, type FetchResult, type InstallationInfo, type PrOutcome } from '../src/main/github'
 import type { Logger } from '../src/main/log'
 import type { NotificationEvent } from '../src/main/notifications'
 import { Session, type StoredAuth } from '../src/main/session'
@@ -53,6 +53,8 @@ interface Options {
   actions?: (pr: ActionTarget, action: PrAction) => Promise<ActionResult>
   /** What each change probe returns, in order. */
   fingerprints?: Array<string | Error>
+  /** What became of PRs that left the list, by id. */
+  outcomes?: Record<string, PrOutcome | Error>
 }
 
 function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
@@ -102,6 +104,12 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
   const checked = vi.fn()
   const fetchDetail = vi.fn(async (_token: string, prId: string) => ({ body: `about ${prId}`, changedFiles: 1, commits: 2, comments: 3 }))
   const fetchThread = vi.fn(async (_token: string, prId: string) => (prId === 'm1' ? 'https://github.com/acme/app/pull/1#discussion_r1' : null))
+  const fetchPrOutcome = vi.fn(async (_token: string, prId: string): Promise<PrOutcome | null> => {
+    const outcome = opts.outcomes?.[prId]
+    if (outcome === undefined) throw new Error(`unexpected outcome lookup for ${prId}`)
+    if (outcome instanceof Error) throw outcome
+    return outcome
+  })
   const deps: EngineDeps = {
     now: () => clock,
     fetchInstallations,
@@ -113,6 +121,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     requestPoll,
     fetchDetail,
     fetchThread,
+    fetchPrOutcome,
     stateStore: { read: () => stored, write: (s) => (stored = s), remove: () => (stored = null) },
     notify: (e) => events.push(...e),
     checked,
@@ -140,6 +149,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     checked,
     fetchDetail,
     fetchThread,
+    fetchPrOutcome,
     refresh,
     onSessionEnded,
     session,
@@ -489,6 +499,7 @@ describe('Engine quiet hours', () => {
           commented: 0,
           merged: 0,
           mergeFailed: 0,
+          closed: 0,
           sessionExpired: false
         }
       }
@@ -1030,5 +1041,51 @@ describe('Engine review threads', () => {
     await t.engine.poll()
     await t.engine.loadThread('m1')
     expect(t.fetchThread).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Engine and PRs of yours that left', () => {
+  const ref = (id: string) => ({ id, number: 1, title: `PR ${id}`, url: `https://github.com/acme/app/pull/${id}`, repo: 'acme/app' })
+  const listed = (ids: string[]) => result([], 'me', [], ids.map((id) => myPr(id)))
+
+  it('reports merges and closes by others, never your own, at most five per poll', async () => {
+    const outcomes: Record<string, PrOutcome | Error> = {
+      m1: { state: 'merged', pr: ref('m1'), by: 'me' },
+      m2: { state: 'merged', pr: ref('m2'), by: 'ana' },
+      m3: { state: 'closed', pr: ref('m3'), by: 'bob' },
+      m4: { state: 'open' },
+      m5: new Error('boom')
+    }
+    const t = setup([listed(['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7']), result([])], { outcomes })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.fetchPrOutcome).toHaveBeenCalledTimes(5)
+    expect(t.events).toEqual([
+      { kind: 'my_pr_merged_by', pr: ref('m2'), by: 'ana' },
+      { kind: 'my_pr_closed_by', pr: ref('m3'), by: 'bob' }
+    ])
+  })
+
+  it('holds them back in quiet hours and counts them in the catch-up, and skips the lookups when the kind is off', async () => {
+    const outcomes: Record<string, PrOutcome> = { m1: { state: 'closed', pr: ref('m1'), by: 'ana' } }
+    const quiet = setup([listed(['m1']), result([])], {
+      outcomes,
+      auth: fresh(),
+      settings: { quietHours: true, digest: false },
+      now: at(5, '07:00')
+    })
+    await quiet.engine.poll()
+    await quiet.engine.poll()
+    expect(quiet.events).toEqual([])
+    expect(quiet.stored).toMatchObject({ queued: { closed: ['m1'] } })
+    quiet.setNow(at(5, '09:00'))
+    quiet.engine.tick()
+    expect(quiet.events).toEqual([{ kind: 'catch_up', counts: expect.objectContaining({ closed: 1 }) }])
+
+    const off = setup([listed(['m1']), result([])], { outcomes, settings: { notifyKinds: { ...DEFAULT_SETTINGS.notifyKinds, merged: false } } })
+    await off.engine.poll()
+    await off.engine.poll()
+    expect(off.fetchPrOutcome).not.toHaveBeenCalled()
+    expect(off.events).toEqual([])
   })
 })

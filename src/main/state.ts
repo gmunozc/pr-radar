@@ -47,6 +47,8 @@ export interface QueuedAlerts {
   commented: string[]
   merged: string[]
   mergeFailed: string[]
+  /** Your PRs closed without merging by someone else. */
+  closed: string[]
   sessionExpired: boolean
 }
 
@@ -61,6 +63,7 @@ export const emptyQueue = (): QueuedAlerts => ({
   commented: [],
   merged: [],
   mergeFailed: [],
+  closed: [],
   sessionExpired: false
 })
 
@@ -77,6 +80,7 @@ function queue(v: unknown): QueuedAlerts {
     commented: stringArray(r.commented),
     merged: stringArray(r.merged),
     mergeFailed: stringArray(r.mergeFailed),
+    closed: stringArray(r.closed),
     sessionExpired: r.sessionExpired === true
   }
 }

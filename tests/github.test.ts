@@ -9,6 +9,7 @@ import {
   ciFromRollup,
   fetchFingerprint,
   fetchFirstUnresolvedThread,
+  fetchPrOutcome,
   fetchPullRequests,
   GithubError,
   GRAPHQL_URL,
@@ -700,5 +701,34 @@ describe('fetchFirstUnresolvedThread', () => {
     await expect(fetchFirstUnresolvedThread('tok', 'PR_1', vi.fn().mockResolvedValue(mixed))).resolves.toBe('https://x/2')
     await expect(fetchFirstUnresolvedThread('tok', 'PR_1', vi.fn().mockResolvedValue(threads([thread(true, 'https://x/1')])))).resolves.toBeNull()
     await expect(fetchFirstUnresolvedThread('tok', 'PR_x', vi.fn().mockResolvedValue(jsonResponse({ data: { node: null } })))).resolves.toBeNull()
+  })
+})
+
+describe('fetchPrOutcome', () => {
+  const node = (over: Record<string, unknown>) =>
+    jsonResponse({
+      data: {
+        node: {
+          id: 'M1',
+          number: 7,
+          title: 'Done',
+          url: 'https://github.com/acme/app/pull/7',
+          repository: { nameWithOwner: 'acme/app' },
+          state: 'OPEN',
+          mergedBy: null,
+          timelineItems: { nodes: [] },
+          ...over
+        }
+      }
+    })
+  const ref = { id: 'M1', number: 7, title: 'Done', url: 'https://github.com/acme/app/pull/7', repo: 'acme/app' }
+
+  it('tells merged from closed and open, naming who did it', async () => {
+    const merged = vi.fn().mockResolvedValue(node({ state: 'MERGED', mergedBy: { login: 'ana' } }))
+    await expect(fetchPrOutcome('tok', 'M1', merged)).resolves.toEqual({ state: 'merged', pr: ref, by: 'ana' })
+    const closed = vi.fn().mockResolvedValue(node({ state: 'CLOSED', timelineItems: { nodes: [{ actor: { login: 'bob' } }] } }))
+    await expect(fetchPrOutcome('tok', 'M1', closed)).resolves.toEqual({ state: 'closed', pr: ref, by: 'bob' })
+    await expect(fetchPrOutcome('tok', 'M1', vi.fn().mockResolvedValue(node({})))).resolves.toEqual({ state: 'open' })
+    await expect(fetchPrOutcome('tok', 'M1', vi.fn().mockResolvedValue(jsonResponse({ data: { node: null } })))).resolves.toBeNull()
   })
 })

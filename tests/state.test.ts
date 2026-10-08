@@ -22,6 +22,7 @@ describe('migrateState', () => {
         commented: [],
         merged: [],
         mergeFailed: [],
+        closed: [],
         sessionExpired: false
       },
       lastDigestDay: null

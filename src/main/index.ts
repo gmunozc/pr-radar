@@ -10,7 +10,14 @@ import { debugMenu, FaultInjector } from './debug'
 import { refreshAccessToken } from './deviceFlow'
 import { buildDiagnostics } from './diagnostics'
 import { Engine } from './engine'
-import { fetchFingerprint, fetchFirstUnresolvedThread, fetchInstallations, fetchPullRequestDetail, fetchPullRequests } from './github'
+import {
+  fetchFingerprint,
+  fetchFirstUnresolvedThread,
+  fetchInstallations,
+  fetchPrOutcome,
+  fetchPullRequestDetail,
+  fetchPullRequests
+} from './github'
 import { applyLanguage, currentLocale } from './i18n'
 import { isKnownCheckUrl, registerIpc } from './ipc'
 import { logger } from './log'
@@ -119,6 +126,7 @@ function main(): void {
       requestPoll: () => void poller.runNow(),
       fetchDetail: (token, prId) => fetchPullRequestDetail(token, prId),
       fetchThread: (token, prId) => fetchFirstUnresolvedThread(token, prId),
+      fetchPrOutcome: (token, prId) => fetchPrOutcome(token, prId),
       stateStore: {
         read: () => stateFile.read(),
         write: (state) => stateFile.write(state),

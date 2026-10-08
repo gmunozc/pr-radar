@@ -37,3 +37,17 @@ describe('applyMute', () => {
     expect(applyMute(merged, [])).toBe(merged)
   })
 })
+
+describe('applyMute and PRs that left', () => {
+  it('drops merges and closes by others in muted repositories', () => {
+    const ref = (repo: string) => ({ id: 'x', number: 1, title: 't', url: 'u', repo })
+    const input = alerts({
+      outcomes: [
+        { kind: 'merged', pr: ref('acme/app'), by: 'ana' },
+        { kind: 'closed', pr: ref('other/repo'), by: 'bob' }
+      ]
+    })
+    expect(applyMute(input, ['acme/app']).outcomes).toEqual([{ kind: 'closed', pr: ref('other/repo'), by: 'bob' }])
+    expect(applyMute(alerts(), ['acme/app']).outcomes).toBeUndefined()
+  })
+})

@@ -180,6 +180,7 @@ describe('reminders, catch-up and digest notifications', () => {
     commented: 0,
     merged: 0,
     mergeFailed: 0,
+    closed: 0,
     sessionExpired: false
   }
 
@@ -236,6 +237,24 @@ describe('reminders, catch-up and digest notifications', () => {
     expect(render({ ...digest, stale: prs.slice(0, 2), staleDays: 3 }, es).body).toBe(
       '3 reviews pendientes (la más antigua: 4 días) · 2 reviews llevan esperando más de 3 días: acme/app#12, acme/app#13 · 1 PR listo para merge'
     )
+  })
+
+  it('reports PRs merged or closed by someone else under their own ids', () => {
+    const ref = { id: 'MY_1', number: 12, title: 'Add feature', url: 'https://github.com/acme/app/pull/12', repo: 'acme/app' }
+    expect(render({ kind: 'my_pr_merged_by', pr: ref, by: 'ana' }, es)).toEqual({
+      id: 'merged-MY_1',
+      groupId: 'acme/app',
+      title: 'Mergearon tu PR',
+      subtitle: 'acme/app#12 · @ana',
+      body: 'Add feature',
+      action: { kind: 'open_url', url: ref.url }
+    })
+    expect(render({ kind: 'my_pr_closed_by', pr: ref, by: null }, en)).toMatchObject({
+      id: 'closed-MY_1',
+      title: 'Your PR was closed without merging',
+      subtitle: 'acme/app#12'
+    })
+    expect(render({ kind: 'catch_up', counts: { ...none, closed: 2 } }, es).body).toBe('2 PRs cerrados sin mergear')
   })
 })
 

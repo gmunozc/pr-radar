@@ -19,6 +19,7 @@ import type {
   Warning
 } from '../shared/types'
 import type { ActionTarget, RemoteAction } from './actions'
+import type { PrOutcome, PrRef } from './github'
 import {
   applyHidden,
   diffMyPrs,
@@ -27,6 +28,7 @@ import {
   type HiddenPrs,
   type HiddenResult,
   type MyPrEvent,
+  type MyPrSnapshot,
   type NotificationPlan
 } from './diff'
 import { GithubError, installationWarnings, type FetchResult, type InstallationInfo } from './github'
@@ -63,6 +65,8 @@ export interface EngineDeps {
   fetchDetail?(token: string, prId: string): Promise<PrDetail | null>
   /** The first unresolved review thread of one of your PRs, on demand. */
   fetchThread?(token: string, prId: string): Promise<string | null>
+  /** What became of one of your PRs that left the list (merged, closed, still open). */
+  fetchPrOutcome?(token: string, prId: string): Promise<PrOutcome | null>
   stateStore: StateStore
   notify(events: NotificationEvent[]): void
   /** The data was just confirmed current: a full poll, or a probe that compared fingerprints. */
@@ -92,7 +96,16 @@ export const INSTALLATION_RECHECK_EMPTY_MS = 5 * 60_000
  * the same head: absorbs UNKNOWN→CLEAN flips and pushes still in flight.
  */
 export const READY_POLLS_BEFORE_MERGE = 2
+/** PRs that left the list and are looked up per poll; the snapshot forgets the rest. */
+export const MAX_OUTCOME_LOOKUPS = 5
 const DAY_MS = 24 * 3_600_000
+
+/** One of your PRs that someone else merged or closed. */
+export interface Outcome {
+  kind: 'merged' | 'closed'
+  pr: PrRef
+  by: string | null
+}
 
 export interface ProbeResult {
   /** `changed` asks for a full poll now; `failed` pauses probes (GitHub said when, if `retryAt`). */
@@ -118,12 +131,24 @@ export interface Alerts {
   mine: MyPrEvent[]
   merged?: MergeDone[]
   mergeFailed?: MergeFailure[]
+  /** Your PRs merged or closed by someone else since the last poll. */
+  outcomes?: Outcome[]
   sessionExpired?: boolean
 }
 
 const hasAny = (c: CatchUp) =>
-  c.reviews + c.reminders + c.approved + c.changes + c.ready + c.ciFailed + c.conflicts + c.commented + c.merged + c.mergeFailed > 0 ||
-  c.sessionExpired
+  c.reviews +
+    c.reminders +
+    c.approved +
+    c.changes +
+    c.ready +
+    c.ciFailed +
+    c.conflicts +
+    c.commented +
+    c.merged +
+    c.mergeFailed +
+    c.closed >
+    0 || c.sessionExpired
 const snoozedCount = (h: Pick<HiddenResult, 'snoozed' | 'snoozedUntilPush'>) =>
   Object.keys(h.snoozed).length + Object.keys(h.snoozedUntilPush).length
 const queueHasItems = (q: QueuedAlerts) =>
@@ -136,7 +161,8 @@ const queueHasItems = (q: QueuedAlerts) =>
     q.conflicts.length +
     q.commented.length +
     q.merged.length +
-    q.mergeFailed.length >
+    q.mergeFailed.length +
+    q.closed.length >
     0 || q.sessionExpired
 
 export function loggedOutState(authNotice: AuthNotice | null = null, locale: Locale = 'en'): AppState {
@@ -242,6 +268,7 @@ export class Engine {
       const stale = staleNotifications(stored?.seenIds ?? [], result.prs, stored?.myPrs, result.myPrs)
       if (stale.length) this.deps.retireNotifications?.(stale)
       const armed = await this.fireArmedMerges(stored?.mergeWhenReady ?? {}, result.myPrs)
+      const outcomes = await this.lookupOutcomes(stored?.myPrs, result, settings)
       this.save({
         v: 2,
         login: result.viewer.login,
@@ -277,7 +304,8 @@ export class Engine {
         returned: hidden.returned,
         mine: mine.events,
         merged: armed.merged,
-        mergeFailed: armed.failed
+        mergeFailed: armed.failed,
+        outcomes
       })
       this.tick()
     } catch (err) {
@@ -471,6 +499,40 @@ export class Engine {
     }
     if (merged.length) this.deps.requestPoll?.()
     return { remaining, merged, failed }
+  }
+
+  /**
+   * Your PRs that left the list since the last poll: merged or closed by someone else is news;
+   * merged by you (on GitHub, or by PR Radar) or merely filtered out is not. A truncated list
+   * loses PRs without closing them, so nothing is looked up then.
+   */
+  private async lookupOutcomes(
+    prev: Record<string, MyPrSnapshot> | undefined,
+    result: FetchResult,
+    settings: Settings
+  ): Promise<Outcome[]> {
+    const fetchPrOutcome = this.deps.fetchPrOutcome
+    if (!prev || !fetchPrOutcome || !settings.notifications || !settings.notifyMyPrs || !settings.notifyKinds.merged) return []
+    if (result.warnings.some((w) => w.code === 'truncated_mine')) return []
+    const current = new Set(result.myPrs.map((p) => p.id))
+    const gone = Object.keys(prev)
+      .filter((id) => !current.has(id))
+      .slice(0, MAX_OUTCOME_LOOKUPS)
+    const viewer = result.viewer.login.toLowerCase()
+    const found = await Promise.all(
+      gone.map(async (id): Promise<Outcome | null> => {
+        try {
+          const outcome = await this.withToken((token) => fetchPrOutcome(token, id))
+          if (!outcome || outcome.state === 'open' || outcome.by?.toLowerCase() === viewer) return null
+          return { kind: outcome.state, pr: outcome.pr, by: outcome.by }
+        } catch (err) {
+          if (err instanceof SessionExpiredError) throw err
+          this.deps.log.warn('could not look up a PR that left the list', { id, err })
+          return null
+        }
+      })
+    )
+    return found.filter((o): o is Outcome => o !== null)
   }
 
   private armedView(): AppState['armedMerges'] {
@@ -768,6 +830,7 @@ export class Engine {
     // Merges the user armed are always reported, whatever the "updates on my PRs" setting.
     const merged = alerts.merged ?? []
     const mergeFailed = alerts.mergeFailed ?? []
+    const outcomes = alerts.outcomes ?? []
     const reviewEvents = planToEvents(alerts.reviewPlan)
     if (
       !reviewEvents.length &&
@@ -775,6 +838,7 @@ export class Engine {
       !mine.length &&
       !merged.length &&
       !mergeFailed.length &&
+      !outcomes.length &&
       !alerts.sessionExpired
     ) {
       return
@@ -796,8 +860,9 @@ export class Engine {
           ciFailed: [...new Set([...q.ciFailed, ...ids('my_pr_ci_failed')])],
           conflicts: [...new Set([...q.conflicts, ...ids('my_pr_conflicts')])],
           commented: [...new Set([...q.commented, ...ids('my_pr_commented')])],
-          merged: [...new Set([...q.merged, ...merged.map((m) => m.pr.id)])],
+          merged: [...new Set([...q.merged, ...merged.map((m) => m.pr.id), ...outcomes.filter((o) => o.kind === 'merged').map((o) => o.pr.id)])],
           mergeFailed: [...new Set([...q.mergeFailed, ...mergeFailed.map((m) => m.pr.id)])],
+          closed: [...new Set([...q.closed, ...outcomes.filter((o) => o.kind === 'closed').map((o) => o.pr.id)])],
           sessionExpired: q.sessionExpired || alerts.sessionExpired === true
         }
       })
@@ -809,6 +874,7 @@ export class Engine {
     events.push(...capMyPrEvents(mine))
     for (const m of merged) events.push({ kind: 'my_pr_merged', pr: m.pr, method: m.method })
     for (const f of mergeFailed) events.push({ kind: 'merge_failed', pr: f.pr, code: f.code, detail: f.detail })
+    for (const o of outcomes) events.push({ kind: o.kind === 'merged' ? 'my_pr_merged_by' : 'my_pr_closed_by', pr: o.pr, by: o.by })
     if (alerts.sessionExpired) events.push({ kind: 'session_expired' })
     this.emit(events)
   }
@@ -830,6 +896,7 @@ export class Engine {
       commented: q.commented.filter((id) => mine.get(id)?.reviews.some((r) => r.state === 'COMMENTED')).length,
       merged: q.merged.length,
       mergeFailed: q.mergeFailed.length,
+      closed: q.closed.length,
       sessionExpired: q.sessionExpired
     }
     this.save({ ...persisted, queued: emptyQueue() })

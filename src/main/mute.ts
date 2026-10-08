@@ -20,6 +20,7 @@ export function applyMute(alerts: Alerts, repos: readonly string[]): Alerts {
     ...alerts,
     reviewPlan,
     returned: keep(alerts.returned),
-    mine: alerts.mine.filter((e) => !muted.has(e.pr.repo))
+    mine: alerts.mine.filter((e) => !muted.has(e.pr.repo)),
+    ...(alerts.outcomes ? { outcomes: alerts.outcomes.filter((o) => !muted.has(o.pr.repo)) } : {})
   }
 }

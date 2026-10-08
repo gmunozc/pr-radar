@@ -2,6 +2,7 @@
 import type { Translate } from '../shared/i18n'
 import type { ActionErrorCode, MergeMethod, MyPullRequest, NotifyKind, PullRequest, Settings, SnoozeOption } from '../shared/types'
 import type { MyPrEvent, MyPrSnapshot, NotificationPlan } from './diff'
+import type { PrRef } from './github'
 
 /** What happened while quiet hours held notifications back. */
 export interface CatchUp {
@@ -15,6 +16,8 @@ export interface CatchUp {
   commented: number
   merged: number
   mergeFailed: number
+  /** Your PRs closed without merging by someone else. */
+  closed: number
   sessionExpired: boolean
 }
 
@@ -23,6 +26,9 @@ export type NotificationEvent =
   /** PR Radar merged a PR the user had armed. */
   | { kind: 'my_pr_merged'; pr: MyPullRequest; method: MergeMethod }
   | { kind: 'merge_failed'; pr: MyPullRequest; code: ActionErrorCode; detail?: string }
+  /** One of your PRs left the list because someone else merged or closed it. */
+  | { kind: 'my_pr_merged_by'; pr: PrRef; by: string | null }
+  | { kind: 'my_pr_closed_by'; pr: PrRef; by: string | null }
   | { kind: 'my_prs_grouped'; count: number }
   | { kind: 'snooze_returned'; prs: PullRequest[] }
   | { kind: 'update_available'; version: string; releaseUrl: string }
@@ -191,6 +197,7 @@ export function catchUpParts(c: CatchUp, t: Translate): string[] {
   if (c.conflicts) parts.push(t('notif.catchUpConflicts', { count: c.conflicts }))
   if (c.merged) parts.push(t('notif.catchUpMerged', { count: c.merged }))
   if (c.mergeFailed) parts.push(t('notif.catchUpMergeFailed', { count: c.mergeFailed }))
+  if (c.closed) parts.push(t('notif.catchUpClosed', { count: c.closed }))
   if (c.sessionExpired) parts.push(t('notif.catchUpSession'))
   return parts
 }
@@ -297,6 +304,18 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         body: `${event.pr.title} · ${t(`action.error.${event.code}`, { detail: event.detail ?? '' })}`,
         action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
       }
+    case 'my_pr_merged_by':
+    case 'my_pr_closed_by': {
+      const merged = event.kind === 'my_pr_merged_by'
+      return {
+        id: `${merged ? 'merged' : 'closed'}-${event.pr.id}`,
+        groupId: event.pr.repo,
+        title: t(merged ? 'notif.mergedBy' : 'notif.closedBy'),
+        subtitle: where(event.pr, event.by ? [event.by] : []),
+        body: event.pr.title,
+        action: { kind: 'open_url', url: event.pr.url }
+      }
+    }
     case 'my_prs_grouped':
       return { title: 'PR Radar', body: t('notif.myPrsGrouped', { count: event.count }), action: openPanel }
     case 'snooze_returned': {

@@ -21,7 +21,8 @@ const KIND_LABEL: Record<NotifyKind, MessageKey> = {
   commented: 'settings.notify.commented',
   ready: 'settings.notify.ready',
   ciFailed: 'settings.notify.ciFailed',
-  conflicts: 'settings.notify.conflicts'
+  conflicts: 'settings.notify.conflicts',
+  merged: 'settings.notify.merged'
 }
 const MAC_KEYS: Record<string, string> = { CommandOrControl: '⌘', Control: '⌃', Alt: '⌥', Shift: '⇧' }
 const PC_KEYS: Record<string, string> = { CommandOrControl: 'Ctrl', Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift' }

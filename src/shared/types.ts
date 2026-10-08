@@ -324,7 +324,7 @@ export const DEFAULT_SETTINGS: Settings = {
   clientId: '',
   language: 'system',
   notifyMyPrs: true,
-  notifyKinds: { approved: true, changes: true, ready: true, ciFailed: true, conflicts: true, commented: true },
+  notifyKinds: { approved: true, changes: true, ready: true, ciFailed: true, conflicts: true, commented: true, merged: true },
   notificationClick: 'github',
   quietHours: false,
   workStart: '09:00',
@@ -338,7 +338,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export type NotificationClick = 'github' | 'panel'
 
 /** Updates on your PRs that can be notified, in the order the settings list them. */
-export const NOTIFY_KINDS = ['approved', 'changes', 'commented', 'ready', 'ciFailed', 'conflicts'] as const
+export const NOTIFY_KINDS = ['approved', 'changes', 'commented', 'ready', 'ciFailed', 'conflicts', 'merged'] as const
 export type NotifyKind = (typeof NOTIFY_KINDS)[number]
 
 export const MIN_POLL_INTERVAL_SEC = 15
