@@ -16,12 +16,12 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **Contador en la barra de menú** con los pull requests que esperan tu review. El icono se atenúa si no hay conexión con GitHub y muestra un punto cuando tienes que volver a conectar.
 - **Notificaciones nativas:**
   - cuando te piden una review nueva, o te la vuelven a pedir después de que el autor subiera commits nuevos, con botones para posponerla o descartarla;
-  - cuando aprueban un PR tuyo, te piden cambios, queda listo para merge, fallan sus checks o tiene conflictos.
+  - cuando aprueban un PR tuyo, te piden cambios, comentan, queda listo para merge, fallan sus checks o tiene conflictos; en Ajustes eliges cuáles.
 - **Pestaña Por revisar:**
   - el estado de los checks de cada PR;
   - si la petición es para ti o para uno de tus equipos;
   - un aviso de **Nuevos commits** cuando el autor subió cambios después de tu última review;
-  - un menú ⋯ en cada fila (también con clic derecho) para aprobar, posponer, descartar, copiar el enlace o el nombre de la rama, abrir el detalle o abrir GitHub.
+  - un botón de copiar enlace y un menú ⋯ en cada fila (también con clic derecho) para aprobar, posponer, descartar, copiar el enlace, el título con el enlace o el nombre de la rama, silenciar el repositorio, abrir el detalle, los cambios, los checks o GitHub.
 - **Pestaña Mis PRs:**
   - en qué punto está cada PR (esperando, aprobado, cambios solicitados, sin reviewers);
   - quién aprobó, quién pidió cambios, quién solo comentó y quién falta por revisar;
@@ -31,17 +31,18 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **Aprobar** una review desde el panel (sesiones con la OAuth App, nunca un PR tuyo), con un comentario opcional.
 - **Descartar o posponer** una review ("en 1 hora", "mañana 9:00", "hasta nuevos commits"). Un PR pospuesto vuelve con un recordatorio, y uno descartado vuelve si te piden review de nuevo.
 - **Filtros y orden** en la lista de reviews (directas o de equipo, organización; más nuevas, más antiguas o actualizadas hace poco), **etiquetas** con sus colores, y las reviews que llevan más días de los que quieres, resaltadas.
-- **Menos ruido:** oculta los PRs de Dependabot, Renovate y GitHub Actions, o de los repositorios y autores que elijas.
+- **Menos ruido:** oculta los PRs de Dependabot, Renovate y GitHub Actions, o de los repositorios y autores que elijas; silencia repositorios que quieres seguir viendo pero sin avisos.
+- **Búsqueda** con ⌘F en las tres pestañas: título, repositorio, número, autor o rama.
 - **Mergear cuando esté listo:** donde el auto-merge de GitHub no está disponible, PR Radar puede mergear un PR tuyo por su cuenta cuando GitHub lo da por mergeable (dos consultas seguidas, checks en verde, con el último commit que vio). Sigue armado si vuelves a subir cambios; cualquier fallo lo desarma y te avisa.
 - **Qué bloquea un PR:** pulsa el icono de los checks para ver cada uno y abrir su página; tus PRs muestran los hilos sin resolver y las aprobaciones requeridas ("1/2").
 - **Pestaña Participo:** PRs donde te mencionaron, te asignaron o comentaste sin que te pidieran review (se puede desactivar en Ajustes).
-- **Teclado:** las flechas recorren los PRs, Enter abre, clic derecho o Shift+F10 muestra el menú, Escape cierra el panel, ⌘R actualiza, ⌘1/⌘2/⌘3 cambian de pestaña y ⌘, abre Ajustes. Un atajo global (Ajustes → General) abre el panel desde cualquier app.
+- **Teclado:** las flechas recorren los PRs, Enter abre, ⌘C copia el enlace, clic derecho o Shift+F10 muestra el menú, ⌘F busca, Escape cierra el panel, ⌘R actualiza, ⌘1/⌘2/⌘3 cambian de pestaña y ⌘, abre Ajustes. Un atajo global (Ajustes → General) abre el panel desde cualquier app.
 - **Horario laboral (opcional):** fuera de él, los avisos esperan y llegan juntos en un solo resumen "Mientras no estabas".
 - **Resumen diario** con lo pendiente, en días laborables y a la hora que elijas.
 - **En inglés y en español**, según el idioma del sistema o lo que elijas en Ajustes.
 - **Aviso de versión nueva.** En macOS, **Instalar** descarga el dmg, lo comprueba contra el `SHA256SUMS.txt` de la Release y lo abre; en otros sistemas enlaza a la Release.
 - **Tamaño del panel** (compacto, normal, grande) en Ajustes → General.
-- **Detalle del PR** dentro del panel: pulsa un título para ver los checks, quién revisó, archivos, commits, comentarios y la descripción.
+- **Detalle del PR** dentro del panel: pulsa un título para ver los checks, quién revisó, archivos, commits, comentarios y la descripción con su formato Markdown.
 - **Copiar diagnóstico:** un informe para adjuntar a un issue, sin tokens.
 
 ## Instalación
@@ -81,7 +82,9 @@ Si una organización usa **SAML SSO**, autoriza la app para ella; el panel avisa
 - **La primera vez:** un solo resumen en lugar de un aviso por PR.
 - **Reviews nuevas:** hasta tres avisos individuales; si son más, se agrupan en uno.
 - **Botones:** las reviews y los recordatorios llevan **Posponer 1 h**, **Hasta mañana** y **Descartar**. En macOS, pasa el ratón por encima del aviso y abre **Opciones**.
-- **Tus PRs:** "aprobado", "cambios solicitados", "listo para merge" y "fallan los checks" (estos dos una vez por cada push), y "conflictos". Se desactivan en Ajustes → **Novedades en mis PRs**.
+- **Tus PRs:** "aprobado", "cambios solicitados", "comentarios nuevos", "listo para merge" y "fallan los checks" (estos dos una vez por cada push), y "conflictos". Se desactivan, todos o uno a uno, en Ajustes → **Novedades en mis PRs**.
+- **Repositorios silenciados** (en Ajustes o desde el menú de la fila): siguen en las listas pero no avisan; los merges que PR Radar hizo por ti sí se avisan.
+- **Al pulsar un aviso** sobre un PR se abre en GitHub; en Ajustes → **Al pulsar un aviso** puedes elegir que se abra el panel en esa fila.
 - **PRs pospuestos:** vuelven con un recordatorio.
 - **Centro de notificaciones:** los avisos se apilan por repositorio y muestran el avatar de quien actuó. Desaparecen solos cuando el PR se revisa, se mergea, se descarta o se pospone, cuando sus checks vuelven a estar en verde o se resuelven sus conflictos, y al cerrar sesión.
 - **Horario laboral:** fuera de él, los avisos esperan, y al empezar la jornada llega uno solo, "Mientras no estabas". Si el resumen diario toca dentro de la hora siguiente, se fusionan.

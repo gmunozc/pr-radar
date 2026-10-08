@@ -26,10 +26,11 @@ CI runs both on every push and pull request.
 src/main/          main process
   engine.ts        polling and change probes, new-PR detection, dismiss/snooze, quiet hours, digest (no Electron imports)
   github.ts        GraphQL query and mapping; deviceFlow.ts / session.ts: sign-in and token renewal
-  diff.ts          pure "what changed" logic; schedule.ts: calendar rules; notifications.ts: texts
+  diff.ts          pure "what changed" logic; schedule.ts: calendar rules; notifications.ts: texts; mute.ts: muted repositories
   index.ts         composition root: wires the engine to Electron (tray, panel, IPC, timers)
 src/preload/       typed bridge exposed to the panel as window.prRadar
-src/renderer/      the panel (React)
+src/renderer/      the panel (React); its pure parts live beside it: arrange.ts (filters, search), markdown.ts (description
+                   parser), rowMenu.ts (shared menu entries), muteRepos.ts
 src/shared/        types and i18n dictionaries shared by both sides
 tests/             vitest unit tests (run with TZ=UTC)
 ```
