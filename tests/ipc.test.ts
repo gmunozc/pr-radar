@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 // ipc.ts imports electron for its handlers; only the pure helpers are tested here.
 vi.mock('electron', () => ({ app: {}, ipcMain: {}, shell: {}, Notification: class {} }))
 
-const { isAllowedExternalUrl, isKnownCheckUrl, linkClipboard, parsePrAction } = await import('../src/main/ipc')
+const { isAllowedExternalUrl, isKnownCheckUrl, isWebUrl, linkClipboard, parsePrAction } = await import('../src/main/ipc')
 const { pr, myPr } = await import('./fixtures')
 
 describe('isKnownCheckUrl', () => {
@@ -58,5 +58,15 @@ describe('linkClipboard', () => {
       text: '[Fix <b> & "quotes"](https://github.com/acme/app/pull/12)',
       html: '<a href="https://github.com/acme/app/pull/12">Fix &lt;b&gt; &amp; &quot;quotes&quot;</a>'
     })
+  })
+})
+
+describe('isWebUrl', () => {
+  it('accepts http(s) anywhere on the web and nothing else', () => {
+    expect(isWebUrl('https://example.com/spec')).toBe(true)
+    expect(isWebUrl('http://intranet/wiki')).toBe(true)
+    expect(isWebUrl('file:///etc/passwd')).toBe(false)
+    expect(isWebUrl('javascript:alert(1)')).toBe(false)
+    expect(isWebUrl('not a url')).toBe(false)
   })
 })

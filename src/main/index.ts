@@ -306,6 +306,7 @@ function main(): void {
         return { ok: false }
       }
     },
+    openLink: (url) => shell.openExternal(url),
     openCheck: async (url) => {
       if (isKnownCheckUrl(engine.state, url)) await shell.openExternal(url)
       else logger.warn('refused to open an unknown check URL', { url })

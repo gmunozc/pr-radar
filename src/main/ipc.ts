@@ -35,6 +35,8 @@ export interface IpcContext {
   copyText(text: string): Promise<{ ok: boolean }>
   copyLink(link: ClipboardLink): Promise<{ ok: boolean }>
   openCheck(url: string): Promise<void>
+  /** A link the user clicked in a PR description: any http(s) site. */
+  openLink(url: string): Promise<void>
   relaunch(): void
   hasClientId(): boolean
   authMethods(): { available: Record<AuthMethod, boolean>; preferred: AuthMethod }
@@ -71,6 +73,16 @@ const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
 
 export function linkClipboard(title: string, url: string): ClipboardLink {
   return { text: `[${title}](${url})`, html: `<a href="${escapeHtml(url)}">${escapeHtml(title)}</a>` }
+}
+
+/** http(s) only: links in PR descriptions may point anywhere on the web, but not at files or apps. */
+export function isWebUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' || u.protocol === 'http:'
+  } catch {
+    return false
+  }
 }
 
 export function isAllowedExternalUrl(url: string): boolean {
@@ -138,6 +150,9 @@ export function registerIpc(ctx: IpcContext): void {
     return valid ? ctx.copyLink(linkClipboard(l.title as string, l.url as string)) : { ok: false }
   })
   ipcMain.handle(IPC.relaunch, () => ctx.relaunch())
+  ipcMain.handle(IPC.openLink, async (_e, url: unknown) => {
+    if (typeof url === 'string' && isWebUrl(url)) await ctx.openLink(url)
+  })
   ipcMain.handle(IPC.openCheck, async (_e, url: unknown) => {
     if (typeof url === 'string') await ctx.openCheck(url)
   })

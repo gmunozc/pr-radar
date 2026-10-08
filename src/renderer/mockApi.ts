@@ -361,10 +361,30 @@ export function createMockApi(): PrRadarApi {
         await sleep(500)
         if (prId === 'R4') return { body: '', changedFiles: 2, commits: 1, comments: 0 }
         return {
-          body:
-            'Adds server-side filtering to /search so the web client stops downloading the whole result set.\n\n' +
-            '- New `filters` query parameter (repo, author, label)\n- Index on (repo_id, created_at)\n- Backfill script for existing rows\n\n' +
-            'Closes #470.',
+          body: [
+            '## What it does',
+            '',
+            'Adds **server-side filtering** to `/search` so the web client stops downloading the whole result set.',
+            '',
+            '- New `filters` query parameter (repo, author, label)',
+            '  - Validated with the same schema as the API',
+            '- Index on (repo_id, created_at)',
+            '- [x] Backfill script for existing rows',
+            '- [ ] Document the parameter in the README',
+            '',
+            '> Depends on acme/core#1530 (merge core first).',
+            '',
+            '| List | Extra columns |',
+            '| --- | --- |',
+            '| Companies | owners, dates |',
+            '| Orders | amounts, margins |',
+            '',
+            '```ts',
+            "const columns = useTableColumns('companies')",
+            '```',
+            '',
+            'Closes #470. Reviewed with @ana, spec at https://example.com/spec.'
+          ].join('\n'),
           changedFiles: 14,
           commits: 6,
           comments: 9
@@ -405,6 +425,7 @@ export function createMockApi(): PrRadarApi {
     },
     openExternal: async (url) => console.info('[mock] open', url),
     openCheck: async (url) => console.info('[mock] open check', url),
+    openLink: async (url) => console.info('[mock] open link', url),
     testNotification: async () => ({ ok: true }),
     openNotificationSettings: async () => {},
     appInfo: async () => ({ version: 'dev', packaged: false }),

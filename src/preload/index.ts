@@ -42,6 +42,7 @@ const api: PrRadarApi = {
   onSettings: (cb) => subscribe<Settings & { openAtLogin: boolean }>(IPC.settingsChanged, cb),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
   openCheck: (url) => ipcRenderer.invoke(IPC.openCheck, url),
+  openLink: (url) => ipcRenderer.invoke(IPC.openLink, url),
   testNotification: () => ipcRenderer.invoke(IPC.testNotification),
   openNotificationSettings: () => ipcRenderer.invoke(IPC.openNotificationSettings),
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),

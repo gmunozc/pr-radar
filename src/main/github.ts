@@ -853,7 +853,7 @@ const PR_DETAIL_QUERY = /* GraphQL */ `
   query PullRequestDetail($id: ID!) {
     node(id: $id) {
       ... on PullRequest {
-        bodyText
+        body
         changedFiles
         totalCommentsCount
         commits { totalCount }
@@ -864,7 +864,7 @@ const PR_DETAIL_QUERY = /* GraphQL */ `
 
 interface RawDetailResponse {
   data?: {
-    node?: { bodyText?: string | null; changedFiles?: number; totalCommentsCount?: number | null; commits?: { totalCount: number } } | null
+    node?: { body?: string | null; changedFiles?: number; totalCommentsCount?: number | null; commits?: { totalCount: number } } | null
   } | null
   errors?: Array<{ message: string }>
 }
@@ -875,7 +875,7 @@ export async function fetchPullRequestDetail(token: string, id: string, fetchFn:
   const node = body.data?.node
   if (!node) return null
   return {
-    body: (node.bodyText ?? '').trim(),
+    body: (node.body ?? '').trim(),
     changedFiles: node.changedFiles ?? 0,
     commits: node.commits?.totalCount ?? 0,
     comments: node.totalCommentsCount ?? 0

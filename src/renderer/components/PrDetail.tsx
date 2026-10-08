@@ -5,6 +5,7 @@ import { REVIEW_LOOK } from '../reviews'
 import { useSettings } from '../useSettings'
 import { muteProps } from '../muteRepos'
 import { ChecksRow } from './ChecksRow'
+import { Markdown } from './Markdown'
 import { MyPrItem } from './MyPrItem'
 import { PrItem } from './PrItem'
 
@@ -110,7 +111,7 @@ export function PrDetail({ state, prId, onGone }: Props) {
               <span>{t('detail.commits', { count: detail.commits })}</span>
               <span>{t('detail.comments', { count: detail.comments })}</span>
             </div>
-            {detail.body ? <div className="detail-body">{detail.body}</div> : <div className="detail-muted">{t('detail.noBody')}</div>}
+            {detail.body ? <Markdown source={detail.body} repo={pr.repo} /> : <div className="detail-muted">{t('detail.noBody')}</div>}
           </>
         )}
       </section>

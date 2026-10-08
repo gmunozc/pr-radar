@@ -158,7 +158,7 @@ export type PanelSize = 'compact' | 'default' | 'large'
 
 /** What the detail view loads on demand (one extra query per PR, cached per head commit). */
 export interface PrDetail {
-  /** The description as plain text ('' when empty). */
+  /** The description as Markdown ('' when empty). */
   body: string
   changedFiles: number
   commits: number
@@ -402,6 +402,8 @@ export interface PrRadarApi {
   /** Settings changed (from the panel or the tray menu). */
   onSettings(cb: (settings: Settings & { openAtLogin: boolean }) => void): () => void
   openExternal(url: string): Promise<void>
+  /** Opens an http(s) link from a PR description, whatever the host. */
+  openLink(url: string): Promise<void>
   /** Opens a check's details page; only URLs present in the current state are allowed. */
   openCheck(url: string): Promise<void>
   testNotification(): Promise<NotifyResult>
@@ -455,6 +457,7 @@ export const IPC = {
   settingsSet: 'settings:set',
   openExternal: 'shell:open-external',
   openCheck: 'shell:open-check',
+  openLink: 'shell:open-link',
   testNotification: 'notify:test',
   openNotificationSettings: 'notify:open-settings',
   appInfo: 'app:info',

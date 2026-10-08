@@ -563,7 +563,7 @@ describe('graphqlRequest', () => {
 describe('fetchPullRequestDetail', () => {
   it('maps the description and counts, and reports a missing PR as null', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse({ data: { node: { bodyText: ' Hello ', changedFiles: 3, totalCommentsCount: 2, commits: { totalCount: 4 } } } })
+      jsonResponse({ data: { node: { body: ' Hello ', changedFiles: 3, totalCommentsCount: 2, commits: { totalCount: 4 } } } })
     )
     await expect(fetchPullRequestDetail('tok', 'PR_1', fetchFn)).resolves.toEqual({ body: 'Hello', changedFiles: 3, commits: 4, comments: 2 })
     expect(JSON.parse(fetchFn.mock.calls[0][1].body).variables).toEqual({ id: 'PR_1' })
