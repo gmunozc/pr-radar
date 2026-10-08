@@ -1,7 +1,7 @@
 {
   "name": "pr-radar",
   "productName": "PR Radar",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "description": "Menu bar app that notifies you about GitHub pull requests waiting for your review",
   "main": "./out/main/index.js",
   "author": "gmunozc",
