@@ -68,6 +68,8 @@ describe('exclusions and list settings', () => {
       reviewSort: 'oldest'
     })
     expect(sanitizeSettingsPatch({ staleAfterDays: -2, reviewFilter: 'mine', reviewSort: 'random' })).toEqual({ staleAfterDays: 0 })
+    expect(sanitizeSettingsPatch({ mineFilter: 'ready', mineSort: 'updated' })).toEqual({ mineFilter: 'ready', mineSort: 'updated' })
+    expect(sanitizeSettingsPatch({ mineFilter: 'mine', mineSort: 'random' })).toEqual({})
   })
 })
 

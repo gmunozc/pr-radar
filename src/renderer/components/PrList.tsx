@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import type { AppState, ReviewFilter, ReviewSort } from '../../shared/types'
 import { arrangePrs, filterByQuery } from '../arrange'
 import { CheckCircleIcon, PullRequestIcon } from '../icons'
@@ -38,20 +38,27 @@ interface ListProps {
   onFocused?(): void
   /** The ⌘F text filter. */
   query?: string
+  /** The organization filter, kept by App so it survives tab switches. */
+  org?: string | null
+  onOrg?(org: string | null): void
 }
 
-export function PrList({ state, onDetail, focusPrId, onFocused, query = '' }: ListProps) {
+export function PrList({ state, onDetail, focusPrId, onFocused, query = '', org = null, onOrg }: ListProps) {
   const listRef = useRef<HTMLElement>(null)
   useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
   const settings = useSettings()
   const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
-  const [org, setOrg] = useState<string | null>(null)
   const filter = settings?.reviewFilter ?? 'all'
   const sort = settings?.reviewSort ?? 'newest'
   const staleDays = settings?.staleAfterDays ?? 0
   const orgs = useMemo(() => [...new Set(state.prs.map((pr) => pr.repo.split('/')[0]))].sort(), [state.prs])
-  const shown = useMemo(() => filterByQuery(arrangePrs(state.prs, filter, org, sort), query), [state.prs, filter, org, sort, query])
+  // An organization chosen on another tab may not exist here: then it filters nothing.
+  const activeOrg = org && orgs.includes(org) ? org : null
+  const shown = useMemo(
+    () => filterByQuery(arrangePrs(state.prs, filter, activeOrg, sort), query),
+    [state.prs, filter, activeOrg, sort, query]
+  )
 
   if (state.status === 'loading' && state.prs.length === 0) {
     return (
@@ -122,8 +129,8 @@ export function PrList({ state, onDetail, focusPrId, onFocused, query = '' }: Li
           {orgs.length > 1 && (
             <select
               className="input select filter-select"
-              value={org ?? ''}
-              onChange={(e) => setOrg(e.target.value || null)}
+              value={activeOrg ?? ''}
+              onChange={(e) => onOrg?.(e.target.value || null)}
               aria-label={t('filter.label')}
             >
               <option value="">{t('filter.allOrgs')}</option>

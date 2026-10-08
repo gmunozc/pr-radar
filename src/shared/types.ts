@@ -184,6 +184,9 @@ export interface Viewer {
 export type SnoozeOption = 'hour' | 'tomorrow' | 'push'
 
 export type ReviewFilter = 'all' | 'direct' | 'team'
+/** Your PRs: all, ready to merge, waiting for a review, or with changes requested. */
+export const MINE_FILTERS = ['all', 'ready', 'waiting', 'changes'] as const
+export type MyPrFilter = (typeof MINE_FILTERS)[number]
 export type ReviewSort = 'newest' | 'oldest' | 'updated'
 
 export type AppStatus = 'logged_out' | 'loading' | 'ready' | 'error'
@@ -268,6 +271,8 @@ export interface Settings {
   staleAfterDays: number
   reviewFilter: ReviewFilter
   reviewSort: ReviewSort
+  mineFilter: MyPrFilter
+  mineSort: ReviewSort
   /** Third tab with PRs you take part in; costs a little more per poll. */
   showInvolved: boolean
   /** Electron accelerator that opens the panel from anywhere; '' for none (see SHORTCUT_OPTIONS). */
@@ -309,6 +314,8 @@ export const DEFAULT_SETTINGS: Settings = {
   staleAfterDays: 3,
   reviewFilter: 'all',
   reviewSort: 'newest',
+  mineFilter: 'all',
+  mineSort: 'newest',
   showInvolved: true,
   shortcut: '',
   panelSize: 'default',

@@ -1,4 +1,13 @@
-import { DEFAULT_SETTINGS, FAST_POLL_OPTIONS, MIN_POLL_INTERVAL_SEC, NOTIFY_KINDS, SHORTCUT_OPTIONS, type Settings } from '../shared/types'
+import {
+  DEFAULT_SETTINGS,
+  FAST_POLL_OPTIONS,
+  MIN_POLL_INTERVAL_SEC,
+  MINE_FILTERS,
+  NOTIFY_KINDS,
+  SHORTCUT_OPTIONS,
+  type MyPrFilter,
+  type Settings
+} from '../shared/types'
 
 export type SettingsPatch = Partial<Settings> & { openAtLogin?: boolean }
 
@@ -60,6 +69,8 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (muted) out.muteRepos = muted
   if (p.reviewFilter === 'all' || p.reviewFilter === 'direct' || p.reviewFilter === 'team') out.reviewFilter = p.reviewFilter
   if (p.reviewSort === 'newest' || p.reviewSort === 'oldest' || p.reviewSort === 'updated') out.reviewSort = p.reviewSort
+  if (typeof p.mineFilter === 'string' && (MINE_FILTERS as readonly string[]).includes(p.mineFilter)) out.mineFilter = p.mineFilter as MyPrFilter
+  if (p.mineSort === 'newest' || p.mineSort === 'oldest' || p.mineSort === 'updated') out.mineSort = p.mineSort
   if (typeof p.shortcut === 'string' && (SHORTCUT_OPTIONS as readonly string[]).includes(p.shortcut)) out.shortcut = p.shortcut
   if (p.panelSize === 'compact' || p.panelSize === 'default' || p.panelSize === 'large') out.panelSize = p.panelSize
   if (p.notificationClick === 'github' || p.notificationClick === 'panel') out.notificationClick = p.notificationClick

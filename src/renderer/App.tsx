@@ -37,6 +37,8 @@ function Panel() {
   const [pendingFocus, setPendingFocus] = useState<string | null>(null)
   const [focusPrId, setFocusPrId] = useState<string | null>(null)
   const focused = useCallback(() => setFocusPrId(null), [])
+  /** The organization filter, shared by the review and mine lists so it survives tab switches. */
+  const [org, setOrg] = useState<string | null>(null)
   /** The ⌘F text filter, shared by the three tabs. */
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -91,6 +93,7 @@ function Panel() {
     if (state?.status === 'logged_out') {
       setView('list')
       setTab('review')
+      setOrg(null)
     }
   }, [state?.status])
 
@@ -174,9 +177,9 @@ function Panel() {
           />
           {(searchOpen || query) && <SearchRow value={query} onChange={setQuery} onClose={closeSearch} focusToken={searchFocus} />}
           {tab === 'review' ? (
-            <PrList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} query={query} />
+            <PrList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} query={query} org={org} onOrg={setOrg} />
           ) : tab === 'mine' ? (
-            <MyPrList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} query={query} />
+            <MyPrList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} query={query} org={org} onOrg={setOrg} />
           ) : (
             <InvolvedList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} query={query} />
           )}
