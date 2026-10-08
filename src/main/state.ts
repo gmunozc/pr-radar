@@ -44,8 +44,11 @@ export interface QueuedAlerts {
   ready: string[]
   ciFailed: string[]
   conflicts: string[]
+  commented: string[]
   merged: string[]
   mergeFailed: string[]
+  /** Your PRs closed without merging by someone else. */
+  closed: string[]
   sessionExpired: boolean
 }
 
@@ -57,8 +60,10 @@ export const emptyQueue = (): QueuedAlerts => ({
   ready: [],
   ciFailed: [],
   conflicts: [],
+  commented: [],
   merged: [],
   mergeFailed: [],
+  closed: [],
   sessionExpired: false
 })
 
@@ -72,8 +77,10 @@ function queue(v: unknown): QueuedAlerts {
     ready: stringArray(r.ready),
     ciFailed: stringArray(r.ciFailed),
     conflicts: stringArray(r.conflicts),
+    commented: stringArray(r.commented),
     merged: stringArray(r.merged),
     mergeFailed: stringArray(r.mergeFailed),
+    closed: stringArray(r.closed),
     sessionExpired: r.sessionExpired === true
   }
 }
@@ -119,7 +126,8 @@ function snapshot(v: unknown): Record<string, MyPrSnapshot> | undefined {
       ...(typeof r.readyNotifiedOid === 'string' ? { readyNotifiedOid: r.readyNotifiedOid } : {}),
       ...(typeof r.ci === 'string' && CI_STATES.includes(r.ci) ? { ci: r.ci as CiState } : {}),
       ...(typeof r.ciFailedOid === 'string' ? { ciFailedOid: r.ciFailedOid } : {}),
-      ...(typeof r.conflicts === 'boolean' ? { conflicts: r.conflicts } : {})
+      ...(typeof r.conflicts === 'boolean' ? { conflicts: r.conflicts } : {}),
+      ...(Array.isArray(r.commented) ? { commented: stringArray(r.commented) } : {})
     }
   }
   return out

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { DeviceFlowError, type TokenSet } from '../src/main/deviceFlow'
 import { Engine, type EngineDeps } from '../src/main/engine'
-import { GithubError, type FetchResult, type InstallationInfo } from '../src/main/github'
+import { GithubError, type FetchResult, type InstallationInfo, type PrOutcome } from '../src/main/github'
 import type { Logger } from '../src/main/log'
 import type { NotificationEvent } from '../src/main/notifications'
 import { Session, type StoredAuth } from '../src/main/session'
@@ -51,6 +51,10 @@ interface Options {
   installations?: Array<InstallationInfo[] | Error>
   /** Fake GitHub writes; defaults to success. */
   actions?: (pr: ActionTarget, action: PrAction) => Promise<ActionResult>
+  /** What each change probe returns, in order. */
+  fingerprints?: Array<string | Error>
+  /** What became of PRs that left the list, by id. */
+  outcomes?: Record<string, PrOutcome | Error>
 }
 
 function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
@@ -88,20 +92,39 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     opts.actions ? opts.actions(target, action) : { ok: true }
   )
   const requestPoll = vi.fn()
+  const fingerprintQueue = [...(opts.fingerprints ?? [])]
+  const fetchFingerprint = vi.fn(async () => {
+    const next = fingerprintQueue.shift()
+    if (next === undefined) throw new Error('unexpected probe')
+    if (next instanceof Error) throw next
+    return next
+  })
   const retireNotifications = vi.fn()
   const clearNotifications = vi.fn()
+  const checked = vi.fn()
   const fetchDetail = vi.fn(async (_token: string, prId: string) => ({ body: `about ${prId}`, changedFiles: 1, commits: 2, comments: 3 }))
+  const fetchThread = vi.fn(async (_token: string, prId: string) => (prId === 'm1' ? 'https://github.com/acme/app/pull/1#discussion_r1' : null))
+  const fetchPrOutcome = vi.fn(async (_token: string, prId: string): Promise<PrOutcome | null> => {
+    const outcome = opts.outcomes?.[prId]
+    if (outcome === undefined) throw new Error(`unexpected outcome lookup for ${prId}`)
+    if (outcome instanceof Error) throw outcome
+    return outcome
+  })
   const deps: EngineDeps = {
     now: () => clock,
     fetchInstallations,
     settings: () => settings,
     session,
     fetchPullRequests,
+    fetchFingerprint,
     runPrAction,
     requestPoll,
     fetchDetail,
+    fetchThread,
+    fetchPrOutcome,
     stateStore: { read: () => stored, write: (s) => (stored = s), remove: () => (stored = null) },
     notify: (e) => events.push(...e),
+    checked,
     retireNotifications,
     clearNotifications,
     publish: (s) => published.push(s),
@@ -118,11 +141,15 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     events,
     published,
     fetchPullRequests,
+    fetchFingerprint,
     runPrAction,
     requestPoll,
     retireNotifications,
     clearNotifications,
+    checked,
     fetchDetail,
+    fetchThread,
+    fetchPrOutcome,
     refresh,
     onSessionEnded,
     session,
@@ -469,8 +496,10 @@ describe('Engine quiet hours', () => {
           ready: 0,
           ciFailed: 0,
           conflicts: 0,
+          commented: 0,
           merged: 0,
           mergeFailed: 0,
+          closed: 0,
           sessionExpired: false
         }
       }
@@ -512,12 +541,38 @@ describe('Engine daily digest', () => {
     await t.engine.poll()
     expect(t.events).toEqual([
       { kind: 'reviews_summary', count: 2 },
-      { kind: 'digest', reviews: 2, oldestDays: 3, ready: 0, changes: 0, caughtUp: null }
+      { kind: 'digest', reviews: 2, oldestDays: 3, ready: 0, changes: 0, stale: [res.prs[0]], staleDays: 3, caughtUp: null }
     ])
     t.events.length = 0
     t.setNow(at(5, '09:40'))
     await t.engine.poll()
     expect(t.events).toEqual([])
+  })
+
+  it('reminds every working day about reviews older than the threshold, on its own when the digest is off', async () => {
+    const created = (id: string, iso: string) => ({ ...pr(id), createdAt: iso })
+    const res: FetchResult = { ...result([]), prs: [created('a', '2026-10-01T10:00:00Z'), created('b', '2026-10-04T10:00:00Z')] }
+    const t = setup([res, res, res], { auth: fresh(), settings: { digest: false }, now: at(5, '09:31') })
+    await t.engine.poll()
+    expect(t.events).toEqual([{ kind: 'reviews_summary', count: 2 }, { kind: 'stale_reviews', prs: [res.prs[0]], days: 3 }])
+    t.events.length = 0
+    t.setNow(at(5, '10:00'))
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+    t.setNow(at(6, '09:31'))
+    await t.engine.poll()
+    expect(t.events).toEqual([{ kind: 'stale_reviews', prs: [res.prs[0]], days: 3 }])
+  })
+
+  it('leaves muted repositories out of the reminder and sends none with a threshold of 0', async () => {
+    const res: FetchResult = { ...result([]), prs: [{ ...pr('a'), createdAt: '2026-10-01T10:00:00Z' }] }
+    const muted = setup([res], { auth: fresh(), settings: { digest: false, muteRepos: ['acme/app'] }, now: at(5, '09:31') })
+    await muted.engine.poll()
+    expect(muted.events).toEqual([{ kind: 'reviews_summary', count: 1 }])
+    const off = setup([res], { auth: fresh(), settings: { digest: false, staleAfterDays: 0 }, now: at(5, '09:31') })
+    await off.engine.poll()
+    expect(off.events).toEqual([{ kind: 'reviews_summary', count: 1 }])
+    expect(off.stored).toMatchObject({ lastDigestDay: null })
   })
 
   it('skips the digest when nothing is pending, and waits for fresh data', async () => {
@@ -827,7 +882,7 @@ describe('Engine and delivered notifications', () => {
     await t.engine.poll()
     expect(t.retireNotifications).not.toHaveBeenCalled()
     await t.engine.poll()
-    expect(t.retireNotifications).toHaveBeenCalledWith(['a', 'ci-m1', 'mine-m2', 'ci-m2', 'conflicts-m2'])
+    expect(t.retireNotifications).toHaveBeenCalledWith(['a', 'ci-m1', 'mine-m2', 'ci-m2', 'conflicts-m2', 'comments-m2'])
   })
 
   it('retires the notification of a PR you dismiss or snooze, and all of them on sign-out', async () => {
@@ -864,5 +919,173 @@ describe('Engine and delivered notifications', () => {
     t.setNow(at(5, '09:00'))
     t.engine.tick()
     expect(t.events).toEqual([{ kind: 'catch_up', counts: expect.objectContaining({ ciFailed: 1, conflicts: 1 }) }])
+  })
+})
+
+describe('Engine change probes', () => {
+  it('skips until the first poll, takes a baseline, then reports changes', async () => {
+    const t = setup([result(['a'])], { fingerprints: ['f1', 'f1', 'f2', 'f2'] })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'skipped' })
+    await t.engine.poll()
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'same' })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'same' })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'changed' })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'same' })
+    expect(t.fetchFingerprint).toHaveBeenCalledTimes(4)
+    expect(t.fetchFingerprint).toHaveBeenCalledWith('gho_old', expect.objectContaining({ includeTeams: true }))
+  })
+
+  it('starts over when the searches change, and reports rate limits and failures without touching the state', async () => {
+    const fingerprints = ['f1', 'f2', new GithubError('rate_limited', 'slow down', NOW + 60_000), new GithubError('network', 'down')]
+    const t = setup([result(['a'])], { fingerprints })
+    await t.engine.poll()
+    await t.engine.probe()
+    t.engine.filtersChanged()
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'same' })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'failed', retryAt: NOW + 60_000 })
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'failed', retryAt: undefined })
+    expect(t.engine.state).toMatchObject({ status: 'ready', error: null, connection: 'ok' })
+  })
+
+  it('skips while the last poll failed, and signs out when the token turns out revoked', async () => {
+    const t = setup([result(['a']), new GithubError('network', 'down'), result(['a'])], {
+      fingerprints: [new GithubError('unauthorized', 'x'), new GithubError('unauthorized', 'x')]
+    })
+    await t.engine.poll()
+    await t.engine.poll()
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'skipped' })
+    await t.engine.poll()
+    await expect(t.engine.probe()).resolves.toEqual({ outcome: 'failed' })
+    expect(t.engine.state).toMatchObject({ status: 'logged_out', authNotice: 'session_expired' })
+    expect(t.onSessionEnded).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Engine freshness', () => {
+  it('reports when the data was confirmed current: after a poll and after a probe, never after a failure', async () => {
+    const t = setup([result(['a'])], { fingerprints: ['f1', 'f1', new GithubError('network', 'down')] })
+    await t.engine.poll()
+    expect(t.checked).toHaveBeenCalledTimes(1)
+    expect(t.checked).toHaveBeenLastCalledWith(NOW)
+    await t.engine.probe()
+    await t.engine.probe()
+    expect(t.checked).toHaveBeenCalledTimes(3)
+    await t.engine.probe()
+    expect(t.checked).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('Engine and updates on your PRs', () => {
+  it('holds new comments back in quiet hours and counts them in the catch-up', async () => {
+    const commented = myPr('m1', { reviews: [{ login: 'ana', avatarUrl: '', state: 'COMMENTED' }] })
+    const t = setup([result([], 'me', [], [myPr('m1')]), result([], 'me', [], [commented])], {
+      auth: fresh(),
+      settings: { quietHours: true, digest: false },
+      now: at(5, '07:00')
+    })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+    expect(t.stored).toMatchObject({ queued: { commented: ['m1'] } })
+    t.setNow(at(5, '09:00'))
+    t.engine.tick()
+    expect(t.events).toEqual([{ kind: 'catch_up', counts: expect.objectContaining({ commented: 1 }) }])
+  })
+
+  it('drops the kinds of updates turned off in the settings', async () => {
+    const approved = myPr('m1', { status: 'approved', reviews: [{ login: 'ana', avatarUrl: '', state: 'APPROVED' }] })
+    const t = setup([result([], 'me', [], [myPr('m1')]), result([], 'me', [], [approved])], {
+      settings: { notifyKinds: { ...DEFAULT_SETTINGS.notifyKinds, approved: false } }
+    })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+  })
+})
+
+describe('Engine and muted repositories', () => {
+  const polls = () => [
+    result(['a']),
+    result(['a', 'b']),
+    result(['a', 'b'], 'me', [], [myPr('m1')]),
+    result(['a', 'b'], 'me', [], [myPr('m1', { status: 'approved', reviews: [{ login: 'ana', avatarUrl: '', state: 'APPROVED' }] })])
+  ]
+
+  it('says nothing about a muted repository, and everything about the others', async () => {
+    const muted = setup(polls(), { settings: { muteRepos: ['acme/app'] } })
+    await muted.engine.poll()
+    muted.events.length = 0
+    for (let i = 0; i < 3; i++) await muted.engine.poll()
+    expect(muted.events).toEqual([])
+
+    const loud = setup(polls(), { settings: { muteRepos: ['other/repo'] } })
+    await loud.engine.poll()
+    loud.events.length = 0
+    for (let i = 0; i < 3; i++) await loud.engine.poll()
+    expect(loud.events.map((e) => e.kind)).toEqual(['review_requested', 'my_pr_approved'])
+  })
+})
+
+describe('Engine review threads', () => {
+  it('loads the first unresolved thread of your PRs, cached until the count or the update changes, and ignores other PRs', async () => {
+    const t = setup([
+      result(['a'], 'me', [], [myPr('m1', { unresolvedThreads: 2 })]),
+      result(['a'], 'me', [], [myPr('m1', { unresolvedThreads: 1 })])
+    ])
+    await t.engine.poll()
+    await expect(t.engine.loadThread('a')).resolves.toBeNull()
+    expect(t.fetchThread).not.toHaveBeenCalled()
+    await expect(t.engine.loadThread('m1')).resolves.toBe('https://github.com/acme/app/pull/1#discussion_r1')
+    await t.engine.loadThread('m1')
+    expect(t.fetchThread).toHaveBeenCalledTimes(1)
+    await t.engine.poll()
+    await t.engine.loadThread('m1')
+    expect(t.fetchThread).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Engine and PRs of yours that left', () => {
+  const ref = (id: string) => ({ id, number: 1, title: `PR ${id}`, url: `https://github.com/acme/app/pull/${id}`, repo: 'acme/app' })
+  const listed = (ids: string[]) => result([], 'me', [], ids.map((id) => myPr(id)))
+
+  it('reports merges and closes by others, never your own, at most five per poll', async () => {
+    const outcomes: Record<string, PrOutcome | Error> = {
+      m1: { state: 'merged', pr: ref('m1'), by: 'me' },
+      m2: { state: 'merged', pr: ref('m2'), by: 'ana' },
+      m3: { state: 'closed', pr: ref('m3'), by: 'bob' },
+      m4: { state: 'open' },
+      m5: new Error('boom')
+    }
+    const t = setup([listed(['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7']), result([])], { outcomes })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.fetchPrOutcome).toHaveBeenCalledTimes(5)
+    expect(t.events).toEqual([
+      { kind: 'my_pr_merged_by', pr: ref('m2'), by: 'ana' },
+      { kind: 'my_pr_closed_by', pr: ref('m3'), by: 'bob' }
+    ])
+  })
+
+  it('holds them back in quiet hours and counts them in the catch-up, and skips the lookups when the kind is off', async () => {
+    const outcomes: Record<string, PrOutcome> = { m1: { state: 'closed', pr: ref('m1'), by: 'ana' } }
+    const quiet = setup([listed(['m1']), result([])], {
+      outcomes,
+      auth: fresh(),
+      settings: { quietHours: true, digest: false },
+      now: at(5, '07:00')
+    })
+    await quiet.engine.poll()
+    await quiet.engine.poll()
+    expect(quiet.events).toEqual([])
+    expect(quiet.stored).toMatchObject({ queued: { closed: ['m1'] } })
+    quiet.setNow(at(5, '09:00'))
+    quiet.engine.tick()
+    expect(quiet.events).toEqual([{ kind: 'catch_up', counts: expect.objectContaining({ closed: 1 }) }])
+
+    const off = setup([listed(['m1']), result([])], { outcomes, settings: { notifyKinds: { ...DEFAULT_SETTINGS.notifyKinds, merged: false } } })
+    await off.engine.poll()
+    await off.engine.poll()
+    expect(off.fetchPrOutcome).not.toHaveBeenCalled()
+    expect(off.events).toEqual([])
   })
 })

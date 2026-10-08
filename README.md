@@ -13,34 +13,38 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 
 ## Features
 
-- **Menu bar count** of the pull requests waiting for your review. The icon dims when GitHub can't be reached and shows a badge when you need to sign in again.
+- **Menu bar count** of the pull requests waiting for your review, and a mark when one of your PRs is ready to merge. The icon dims when GitHub can't be reached and shows a badge when you need to sign in again.
 - **Native notifications:**
   - a new review request, or a review requested again after the author pushed new commits, with buttons to snooze or dismiss it;
-  - one of your PRs is approved, gets changes requested, becomes ready to merge, fails its checks or gets merge conflicts.
+  - one of your PRs is approved, gets changes requested, gets new comments, becomes ready to merge, fails its checks, gets merge conflicts, or is merged or closed by someone else; pick which in Settings;
+  - a daily reminder of the review requests that have waited longer than you like.
 - **To review** tab:
   - the status of each PR's checks;
   - whether the request was sent to you or to one of your teams;
-  - a **New commits** flag when the author pushed after your last review.
+  - a **New commits** flag when the author pushed after your last review;
+  - a copy-link button and a ⋯ menu on each row (also on right-click) to approve, snooze, dismiss, copy the link, the title with the link or the branch name, mute the repository, open the detail, the changes, the checks or GitHub.
 - **My PRs** tab:
   - where each PR stands (waiting, approved, changes requested, no reviewers);
-  - who approved, who asked for changes and who is still pending;
+  - who approved, who asked for changes, who only commented and who is still pending;
   - **Ready to merge**, or what's blocking it (conflicts, out of date, blocked);
   - an **Auto-merge** chip when GitHub will merge it on its own.
 - **Act on your PRs** from the panel (OAuth App sessions): merge now with the repository's merge method, update the branch when it's behind, turn GitHub's auto-merge on or off, ask reviewers again after they requested changes, copy the branch name or the link.
 - **Approve** a review request from the panel (OAuth App sessions, never your own PR), with an optional comment.
 - **Dismiss or snooze** a review request ("in 1 hour", "tomorrow 9:00", "until new commits"). A snoozed PR comes back with a reminder, and a dismissed one comes back if your review is requested again.
-- **Filters and sorting** in the review list (direct or team requests, organization; newest, oldest or recently updated), **labels** in their colours, and requests that have waited longer than you like highlighted.
-- **Less noise:** hide PRs from Dependabot, Renovate and GitHub Actions, or from repositories and authors you choose.
+- **Filters and sorting** in the review list (direct or team requests, organization; newest, oldest or recently updated) and in My PRs (all, ready to merge, waiting, changes requested), **labels** in their colours, and requests that have waited longer than you like highlighted.
+- **Less noise:** hide PRs from Dependabot, Renovate and GitHub Actions, or from repositories and authors you choose; mute repositories that should stay listed but never notify.
+- **Search** with ⌘F in the three tabs: title, repository, number, author or branch.
 - **Merge when ready:** where GitHub's auto-merge is not available, PR Radar can merge one of your PRs itself once GitHub reports it mergeable (twice in a row, checks green, with the head commit it last saw). It stays armed if you push again; any failure disarms it and you are told.
-- **What is blocking a PR:** click the checks icon to see each check and open its details page; your PRs show unresolved review threads and "1/2" required approvals.
+- **What is blocking a PR:** click the checks icon to see each check and open its details page; your PRs show unresolved review threads (the chip opens the first one on GitHub) and "1/2" required approvals.
 - **Involved tab:** PRs where you were mentioned, assigned or commented without a review request (can be turned off in Settings).
-- **Keyboard:** arrows move between PRs, Enter opens, right-click or Shift+F10 shows the menu, Escape closes the panel, ⌘R refreshes, ⌘1/⌘2/⌘3 switch tabs, ⌘, opens Settings. A global shortcut (Settings → General) opens the panel from any app.
+- **Keyboard:** arrows move between PRs, Enter opens, ⌘C copies the link, A approves, S snoozes for an hour, T until tomorrow, D dismisses, M opens the menu (right-click or Shift+F10 too), ⌘F searches, Escape closes the panel, ⌘R refreshes, ⌘1/⌘2/⌘3 switch tabs, ⌘, opens Settings. A global shortcut (Settings → General) opens the panel from any app.
 - **Working hours (optional):** outside them, notifications wait and arrive together as one "While you were away" summary.
-- **Daily summary** of what's pending, on working days at the time you choose.
+- **Daily summary** of what's pending, on working days at the time you choose, with the review requests that have waited too long; with the summary off, that reminder still arrives on its own.
+- **Copy the list** as Markdown from the footer of each tab: the PRs shown, with their links, authors or status and age, ready for a stand-up or a Slack message.
 - **English and Spanish**, following the system language or your choice in Settings.
 - **New version notice.** On macOS, **Install** downloads the dmg, checks it against the release's `SHA256SUMS.txt` and opens it; elsewhere it links to the release.
 - **Panel size** (compact, default, large) in Settings → General.
-- **PR details** inside the panel: click a title to see the checks, who reviewed, files, commits, comments and the description.
+- **PR details** inside the panel: click a title to see the checks, who reviewed, files, commits, comments and the description, rendered from Markdown.
 - **Send to an agent** (macOS): right-click a PR → Send to… opens Claude Code on that PR in a Warp tab, with a skill or prompt you pick in Settings and the PR's code in a git worktree. See [Send to an agent](#send-to-an-agent-macos).
 - **Copy diagnostics:** a report you can attach to an issue, with tokens removed.
 
@@ -86,13 +90,15 @@ If an organization uses **SAML SSO**, authorize the app for it; the panel tells 
 - **First run:** a single summary instead of one notification per PR.
 - **New review requests:** up to three individual notifications; more than that become one grouped notification.
 - **Buttons:** review requests and reminders carry **Snooze 1 h**, **Until tomorrow** and **Dismiss**. On macOS, hover over the notification and open **Options**.
-- **Your PRs:** "approved", "changes requested", "ready to merge" and "checks failed" (the last two once per push), and "conflicts". Turn them off in Settings → **Updates on my PRs**.
+- **Your PRs:** "approved", "changes requested", "new comments", "ready to merge" and "checks failed" (the last two once per push), "conflicts", and "merged" or "closed" when someone else did it (merges PR Radar made for you are reported in any case; the ones you make yourself on GitHub are not). Turn them off, all or one by one, in Settings → **Updates on my PRs**.
+- **Muted repositories** (Settings, or the row's menu) stay in the lists but never notify; merges PR Radar did for you are still reported.
+- **A click** on an alert about a PR opens it on GitHub; Settings → **When you click an alert** can open the panel at that row instead.
 - **Snoozed PRs** come back with a reminder.
-- **Notification Center:** notifications are stacked per repository and show the avatar of whoever acted. They are removed on their own once the PR is reviewed, merged, dismissed or snoozed, when its checks are green again or its conflicts are solved, and when you sign out.
+- **Notification Center:** notifications are stacked per repository and show the avatar of whoever acted. They are removed on their own once the PR is reviewed, merged, dismissed or snoozed, when its checks are green again or its conflicts are solved, and when you sign out. The ones left from a previous run still work after a relaunch.
 - **Working hours:** outside them, notifications are held, and one "While you were away" notification arrives when your day starts. If the daily summary is due within the hour, the two are merged.
-- **Daily summary:** at most once a day, and skipped when nothing is pending.
+- **Daily summary:** at most once a day, and skipped when nothing is pending. The reminder of review requests that have waited longer than the days set in Settings shares its slot: inside the summary when it's on, on its own otherwise.
 
-PR Radar checks GitHub every 30 seconds by default (minimum 15). Each check is one GraphQL query that costs about 6 points of GitHub's 5,000-points-per-hour limit.
+**Fast mode** (on by default) sends a cheap change probe every 5 seconds (2 rate-limit points) and runs the full check (about 6 points) as soon as something changed, and every 2 minutes regardless: roughly 2,000 of GitHub's 5,000 points per hour, and a notification within a few seconds of the event. On battery, probes run every 10 seconds; they pause after 10 minutes without using the computer. With fast mode off, PR Radar runs the full check every 30 seconds by default (minimum 15), about 720 points per hour.
 
 ## Send to an agent (macOS)
 

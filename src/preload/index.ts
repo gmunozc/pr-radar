@@ -12,6 +12,8 @@ const api: PrRadarApi = {
   platform: process.platform,
   getState: () => ipcRenderer.invoke(IPC.getState),
   onState: (cb) => subscribe<AppState>(IPC.state, cb),
+  onChecked: (cb) => subscribe<number>(IPC.checked, cb),
+  onFocusPr: (cb) => subscribe<string>(IPC.focusPr, cb),
   refresh: () => ipcRenderer.invoke(IPC.refresh),
   dismiss: (prId) => ipcRenderer.invoke(IPC.dismiss, prId),
   snooze: (prId, option) => ipcRenderer.invoke(IPC.snooze, prId, option),
@@ -19,9 +21,11 @@ const api: PrRadarApi = {
   hidePanel: () => ipcRenderer.invoke(IPC.panelHide),
   prs: {
     action: (prId, action) => ipcRenderer.invoke(IPC.prAction, prId, action),
-    detail: (prId) => ipcRenderer.invoke(IPC.prDetail, prId)
+    detail: (prId) => ipcRenderer.invoke(IPC.prDetail, prId),
+    thread: (prId) => ipcRenderer.invoke(IPC.prThread, prId)
   },
   copyText: (text) => ipcRenderer.invoke(IPC.copyText, text),
+  copyLink: (link) => ipcRenderer.invoke(IPC.copyLink, link),
   relaunch: () => ipcRenderer.invoke(IPC.relaunch),
   auth: {
     start: (method) => ipcRenderer.invoke(IPC.authStart, method),
@@ -40,6 +44,7 @@ const api: PrRadarApi = {
   onSettings: (cb) => subscribe<Settings & { openAtLogin: boolean }>(IPC.settingsChanged, cb),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
   openCheck: (url) => ipcRenderer.invoke(IPC.openCheck, url),
+  openLink: (url) => ipcRenderer.invoke(IPC.openLink, url),
   testNotification: () => ipcRenderer.invoke(IPC.testNotification),
   openNotificationSettings: () => ipcRenderer.invoke(IPC.openNotificationSettings),
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),

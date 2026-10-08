@@ -116,6 +116,19 @@ describe('diffMyPrs', () => {
     expect(diffMyPrs({ a: { status: 'waiting' } }, [mine('a', { ci: 'failure' })]).events).toEqual([])
   })
 
+  it('reports new comment reviews once per commenter, taking older snapshots as the baseline', () => {
+    const review = (login: string, state: 'COMMENTED' | 'APPROVED') => ({ login, avatarUrl: '', state })
+    const base = diffMyPrs(undefined, [mine('a', { reviews: [review('ana', 'COMMENTED')] })]).snapshot
+    expect(base.a.commented).toEqual(['ana'])
+    const r = diffMyPrs(base, [mine('a', { reviews: [review('ana', 'COMMENTED'), review('bob', 'COMMENTED')] })])
+    expect(r.events).toEqual([{ kind: 'my_pr_commented', pr: expect.objectContaining({ id: 'a' }), by: ['bob'] }])
+    expect(diffMyPrs(r.snapshot, [mine('a', { reviews: [review('ana', 'COMMENTED'), review('bob', 'COMMENTED')] })]).events).toEqual([])
+    // Someone who commented and then approved is an approval, not a comment.
+    const approved = diffMyPrs(r.snapshot, [mine('a', { status: 'approved', reviews: [review('bob', 'APPROVED')] })])
+    expect(approved.events.map((e) => e.kind)).toEqual(['my_pr_approved'])
+    expect(diffMyPrs({ a: { status: 'waiting' } }, [mine('a', { reviews: [review('ana', 'COMMENTED')] })]).events).toEqual([])
+  })
+
   it('reports new merge conflicts alongside review news, once', () => {
     const base = diffMyPrs(undefined, [mine('a')]).snapshot
     const r = diffMyPrs(base, [mine('a', { conflicts: true, status: 'approved' })])

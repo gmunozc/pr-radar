@@ -18,8 +18,8 @@ import { sanitizeSettingsPatch, type SettingsPatch } from './settings'
 
 type SettingsView = Settings & { openAtLogin: boolean }
 
-/** Longest text the panel may put on the clipboard (branch names, links). */
-export const MAX_COPY_LENGTH = 500
+/** Longest text the panel may put on the clipboard: branch names, links, a whole list of PRs. */
+export const MAX_COPY_LENGTH = 20_000
 const MAX_REVIEW_BODY = 2000
 const MAX_ID_LENGTH = 100
 const MERGE_METHODS: readonly string[] = ['MERGE', 'SQUASH', 'REBASE']
@@ -34,8 +34,12 @@ export interface IpcContext {
   hidePanel(): void
   prAction(prId: string, action: PrAction): Promise<ActionResult>
   prDetail(prId: string): Promise<PrDetail | null>
+  prThread(prId: string): Promise<string | null>
   copyText(text: string): Promise<{ ok: boolean }>
+  copyLink(link: ClipboardLink): Promise<{ ok: boolean }>
   openCheck(url: string): Promise<void>
+  /** A link the user clicked in a PR description: any http(s) site. */
+  openLink(url: string): Promise<void>
   relaunch(): void
   hasClientId(): boolean
   authMethods(): { available: Record<AuthMethod, boolean>; preferred: AuthMethod }
@@ -66,6 +70,30 @@ export interface IpcContext {
   launch(prId: string, actionId: string): Promise<LaunchResult>
   openLaunchersFile(): Promise<void>
   openWorktrees(): Promise<void>
+}
+
+/** What goes on the clipboard for "copy title and link": both flavours at once. */
+export interface ClipboardLink {
+  /** Markdown, for Notion, GitHub, Linear and plain editors. */
+  text: string
+  /** An anchor, for Slack, Mail and other rich-text targets. */
+  html: string
+}
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+export function linkClipboard(title: string, url: string): ClipboardLink {
+  return { text: `[${title}](${url})`, html: `<a href="${escapeHtml(url)}">${escapeHtml(title)}</a>` }
+}
+
+/** http(s) only: links in PR descriptions may point anywhere on the web, but not at files or apps. */
+export function isWebUrl(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' || u.protocol === 'http:'
+  } catch {
+    return false
+  }
 }
 
 export function isAllowedExternalUrl(url: string): boolean {
@@ -123,10 +151,20 @@ export function registerIpc(ctx: IpcContext): void {
     return ctx.prAction(prId, parsed)
   })
   ipcMain.handle(IPC.prDetail, (_e, prId: unknown) => (typeof prId === 'string' ? ctx.prDetail(prId) : null))
+  ipcMain.handle(IPC.prThread, (_e, prId: unknown) => (typeof prId === 'string' ? ctx.prThread(prId) : null))
   ipcMain.handle(IPC.copyText, (_e, text: unknown) =>
     typeof text === 'string' && text.length <= MAX_COPY_LENGTH ? ctx.copyText(text) : { ok: false }
   )
+  ipcMain.handle(IPC.copyLink, (_e, link: unknown) => {
+    const l = (link && typeof link === 'object' ? link : {}) as { title?: unknown; url?: unknown }
+    const valid =
+      typeof l.title === 'string' && l.title.length <= MAX_COPY_LENGTH && typeof l.url === 'string' && isAllowedExternalUrl(l.url)
+    return valid ? ctx.copyLink(linkClipboard(l.title as string, l.url as string)) : { ok: false }
+  })
   ipcMain.handle(IPC.relaunch, () => ctx.relaunch())
+  ipcMain.handle(IPC.openLink, async (_e, url: unknown) => {
+    if (typeof url === 'string' && isWebUrl(url)) await ctx.openLink(url)
+  })
   ipcMain.handle(IPC.openCheck, async (_e, url: unknown) => {
     if (typeof url === 'string') await ctx.openCheck(url)
   })

@@ -1,17 +1,36 @@
+import { useRef } from 'react'
 import type { AppState } from '../../shared/types'
 import { PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
+import { filterByQuery } from '../arrange'
 import { useSettings } from '../useSettings'
+import { useFocusRow } from '../focusRow'
+import { muteProps } from '../muteRepos'
+import { CopyListButton } from './CopyListButton'
 import { PrItem } from './PrItem'
 import { RestoreHidden } from './PrList'
 
 const MENTIONED_URL = 'https://github.com/pulls/mentioned'
 
 /** Open PRs you take part in (mentioned, assigned, commented) without a review request. */
-export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
+interface ListProps {
+  state: AppState
+  onDetail(prId: string): void
+  /** A row to scroll to and focus (a notification click); cleared through `onFocused`. */
+  focusPrId?: string | null
+  onFocused?(): void
+  /** The ⌘F text filter. */
+  query?: string
+}
+
+export function InvolvedList({ state, onDetail, focusPrId, onFocused, query = '' }: ListProps) {
+  const listRef = useRef<HTMLElement>(null)
+  useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
   const settings = useSettings()
+  const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
+  const shown = filterByQuery(state.involved, query)
 
   if (state.status === 'loading' && state.involved.length === 0) {
     return (
@@ -38,8 +57,9 @@ export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(pr
 
   return (
     <>
-      <main className="list" onKeyDown={onListKeyDown}>
-        {state.involved.map((pr) => (
+      <main className="list" ref={listRef} onKeyDown={onListKeyDown}>
+        {shown.length === 0 && <div className="list-note">{t('search.empty', { query })}</div>}
+        {shown.map((pr) => (
           <PrItem
             key={pr.id}
             pr={pr}
@@ -48,6 +68,7 @@ export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(pr
             pending={state.pendingActions[pr.id]}
             staleDays={settings?.staleAfterDays ?? 0}
             onDetail={onDetail}
+            {...muteProps(settings, pr.repo, saveMuted)}
           />
         ))}
       </main>
@@ -55,6 +76,7 @@ export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(pr
         <button className="link" onClick={() => void window.prRadar.openExternal(MENTIONED_URL)}>
           {t('involved.viewAll')}
         </button>
+        <CopyListButton prs={shown} />
         {state.dismissedCount + state.snoozedCount > 0 && (
           <RestoreHidden dismissed={state.dismissedCount} snoozed={state.snoozedCount} />
         )}

@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import type { AppState, ReviewFilter, ReviewSort } from '../../shared/types'
-import { arrangePrs } from '../arrange'
+import { arrangePrs, filterByQuery } from '../arrange'
 import { CheckCircleIcon, PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
+import { useFocusRow } from '../focusRow'
+import { muteProps } from '../muteRepos'
+import { CopyListButton } from './CopyListButton'
 import { PrItem } from './PrItem'
 import { Segmented } from './Segmented'
 
@@ -28,15 +31,35 @@ export function RestoreHidden({ dismissed, snoozed }: { dismissed: number; snooz
   )
 }
 
-export function PrList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
+interface ListProps {
+  state: AppState
+  onDetail(prId: string): void
+  /** A row to scroll to and focus (a notification click); cleared through `onFocused`. */
+  focusPrId?: string | null
+  onFocused?(): void
+  /** The ⌘F text filter. */
+  query?: string
+  /** The organization filter, kept by App so it survives tab switches. */
+  org?: string | null
+  onOrg?(org: string | null): void
+}
+
+export function PrList({ state, onDetail, focusPrId, onFocused, query = '', org = null, onOrg }: ListProps) {
+  const listRef = useRef<HTMLElement>(null)
+  useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
   const settings = useSettings()
-  const [org, setOrg] = useState<string | null>(null)
+  const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
   const filter = settings?.reviewFilter ?? 'all'
   const sort = settings?.reviewSort ?? 'newest'
   const staleDays = settings?.staleAfterDays ?? 0
   const orgs = useMemo(() => [...new Set(state.prs.map((pr) => pr.repo.split('/')[0]))].sort(), [state.prs])
-  const shown = useMemo(() => arrangePrs(state.prs, filter, org, sort), [state.prs, filter, org, sort])
+  // An organization chosen on another tab may not exist here: then it filters nothing.
+  const activeOrg = org && orgs.includes(org) ? org : null
+  const shown = useMemo(
+    () => filterByQuery(arrangePrs(state.prs, filter, activeOrg, sort), query),
+    [state.prs, filter, activeOrg, sort, query]
+  )
 
   if (state.status === 'loading' && state.prs.length === 0) {
     return (
@@ -107,8 +130,8 @@ export function PrList({ state, onDetail }: { state: AppState; onDetail(prId: st
           {orgs.length > 1 && (
             <select
               className="input select filter-select"
-              value={org ?? ''}
-              onChange={(e) => setOrg(e.target.value || null)}
+              value={activeOrg ?? ''}
+              onChange={(e) => onOrg?.(e.target.value || null)}
               aria-label={t('filter.label')}
             >
               <option value="">{t('filter.allOrgs')}</option>
@@ -133,8 +156,8 @@ export function PrList({ state, onDetail }: { state: AppState; onDetail(prId: st
           </select>
         </div>
       )}
-      <main className="list" onKeyDown={onListKeyDown}>
-        {shown.length === 0 && <div className="list-note">{t('filter.empty')}</div>}
+      <main className="list" ref={listRef} onKeyDown={onListKeyDown}>
+        {shown.length === 0 && <div className="list-note">{query ? t('search.empty', { query }) : t('filter.empty')}</div>}
         {shown.map((pr) => (
           <PrItem
             key={pr.id}
@@ -144,6 +167,7 @@ export function PrList({ state, onDetail }: { state: AppState; onDetail(prId: st
             pending={state.pendingActions[pr.id]}
             staleDays={staleDays}
             onDetail={onDetail}
+            {...muteProps(settings, pr.repo, saveMuted)}
           />
         ))}
       </main>
@@ -151,6 +175,7 @@ export function PrList({ state, onDetail }: { state: AppState; onDetail(prId: st
         <button className="link" onClick={() => void window.prRadar.openExternal(REVIEW_REQUESTED_URL)}>
           {t('list.viewAll')}
         </button>
+        <CopyListButton prs={shown} />
         {state.dismissedCount + state.snoozedCount > 0 && (
           <RestoreHidden dismissed={state.dismissedCount} snoozed={state.snoozedCount} />
         )}

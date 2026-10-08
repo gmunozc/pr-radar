@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type {
   CheckInfo,
   CheckState,
@@ -24,6 +25,29 @@ import type {
 
 export const GRAPHQL_URL = 'https://api.github.com/graphql'
 export const PAGE_SIZE = 50
+
+/**
+ * The cheap "did anything change?" document, 2 rate-limit points against ~6 for the full one:
+ * the same searches with just the fields a change would show in. See probeFingerprint.
+ */
+export const PROBE_QUERY = /* GraphQL */ `
+  fragment ProbeFields on PullRequest {
+    id
+    updatedAt
+    headRefOid
+    isDraft
+    reviewDecision
+    mergeable
+    mergeStateStatus
+    commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  }
+
+  query PullRequestsProbe($requested: String!, $mine: String!, $involved: String!, $first: Int!, $withInvolved: Boolean!) {
+    requested: search(query: $requested, type: ISSUE, first: $first) { issueCount nodes { ...ProbeFields } }
+    mine: search(query: $mine, type: ISSUE, first: $first) { issueCount nodes { ...ProbeFields } }
+    involved: search(query: $involved, type: ISSUE, first: $first) @include(if: $withInvolved) { issueCount nodes { ...ProbeFields } }
+  }
+`
 
 // Both lists come from a single query (~2 rate-limit points).
 export const PULL_REQUESTS_QUERY = /* GraphQL */ `
@@ -132,6 +156,16 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
                 __typename
                 ... on User { login avatarUrl }
                 ... on Team { slug }
+              }
+            }
+          }
+          latestReviews(first: 20) {
+            nodes {
+              state
+              author {
+                login
+                avatarUrl
+                ... on User { id }
               }
             }
           }
@@ -248,9 +282,15 @@ interface RawMyPr extends RawPr {
   repository: RawPr['repository'] & RawRepoMerge
   baseRef?: { branchProtectionRule: { requiredApprovingReviewCount: number | null } | null } | null
   reviewThreads?: { totalCount: number; nodes: Array<{ isResolved: boolean } | null> } | null
-  latestOpinionatedReviews: {
-    nodes: Array<{ state: ReviewState; author: { id?: string; login: string; avatarUrl: string } | null }>
-  }
+  /** Latest review per user, comments included. */
+  latestReviews?: { nodes: RawReview[] } | null
+  /** Latest approval or change request per user, which stands even if they commented later. */
+  latestOpinionatedReviews: { nodes: RawReview[] }
+}
+
+interface RawReview {
+  state: ReviewState
+  author: { id?: string; login: string; avatarUrl: string } | null
 }
 
 interface RawSearch<T> {
@@ -341,7 +381,32 @@ export function myReviewStatus(
   // REVIEW_REQUIRED: branch protection still needs approvals.
   if (decision === 'REVIEW_REQUIRED') return reviewStates.length > 0 ? 'waiting' : 'no_reviewers'
   if (reviewStates.includes('APPROVED')) return 'approved'
-  return 'no_reviewers'
+  // Comments or a dismissed decision without an approval: someone is looking, nobody has decided.
+  return reviewStates.length > 0 ? 'waiting' : 'no_reviewers'
+}
+
+/** Review states worth showing: decisions, comments, and dismissed decisions (the person did review). */
+const SHOWN_REVIEW_STATES: readonly ReviewState[] = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED']
+
+/**
+ * One entry per reviewer. A standing decision (latest approval or change request) wins over a
+ * later comment, the way GitHub's review decision does; comment-only and dismissed reviews come
+ * from `latestReviews`. Your own comment reviews on your own PR are not reviews.
+ */
+export function mergeReviews(n: Pick<RawMyPr, 'latestReviews' | 'latestOpinionatedReviews'>, viewerLogin: string): MyPullRequest['reviews'] {
+  const out = new Map<string, MyPullRequest['reviews'][number]>()
+  const add = (r: RawReview, states: readonly ReviewState[]) => {
+    if (!r.author || r.author.login === viewerLogin || !states.includes(r.state) || out.has(r.author.login)) return
+    out.set(r.author.login, {
+      login: r.author.login,
+      avatarUrl: r.author.avatarUrl,
+      state: r.state,
+      ...(r.author.id ? { id: r.author.id } : {})
+    })
+  }
+  for (const r of n.latestOpinionatedReviews?.nodes ?? []) add(r, ['APPROVED', 'CHANGES_REQUESTED'])
+  for (const r of n.latestReviews?.nodes ?? []) add(r, SHOWN_REVIEW_STATES)
+  return [...out.values()]
 }
 
 export function ciFromRollup(state: string | null | undefined): CiState {
@@ -501,18 +566,11 @@ function toReviewer(r: RawReviewer | null): Reviewer | null {
   return null
 }
 
-function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boolean }): MyPullRequest {
+function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boolean }, viewerLogin: string): MyPullRequest {
   const pendingReviewers = (n.reviewRequests?.nodes ?? [])
     .map((x) => toReviewer(x.requestedReviewer))
     .filter((r): r is Reviewer => r !== null)
-  const reviews = n.latestOpinionatedReviews.nodes
-    .filter((r) => r.author)
-    .map((r) => ({
-      login: r.author!.login,
-      avatarUrl: r.author!.avatarUrl,
-      state: r.state,
-      ...(r.author!.id ? { id: r.author!.id } : {})
-    }))
+  const reviews = mergeReviews(n, viewerLogin)
   const base = baseFields(n, readable.ci)
   const status = myReviewStatus(
     n.reviewDecision,
@@ -575,7 +633,8 @@ const TOLERATED_FIELDS = new Set([
   'viewerCanEnableAutoMerge',
   'viewerCanDisableAutoMerge',
   'viewerDidAuthor',
-  'labels'
+  'labels',
+  'latestReviews'
 ])
 
 /** Fields GitHub refused to return (e.g. a GitHub App without Checks permission). */
@@ -609,7 +668,7 @@ export function mapResponse(body: RawResponse): FetchResult {
     .sort(newestFirst)
   const myPrs: MyPullRequest[] = data.mine.nodes
     .filter(isPr)
-    .map((n) => toMyPr(n, readable))
+    .map((n) => toMyPr(n, readable, viewer.login))
     .sort(newestFirst)
   const involved: PullRequest[] = (data.involved?.nodes ?? [])
     .filter(isPr)
@@ -630,13 +689,15 @@ export function mapResponse(body: RawResponse): FetchResult {
     const saml = otherErrors.some((e) => /SAML/i.test(e.message))
     warnings.push(saml ? { code: 'saml' } : { code: 'partial', params: { detail: otherErrors[0].message } })
   }
-  if (data.requested.issueCount > data.requested.nodes.length) {
+  // GitHub's search count can exceed the results it returns for a poll or two (right after a
+  // merge, say): only a real page overflow is worth a banner.
+  if (data.requested.issueCount > PAGE_SIZE) {
     warnings.push({ code: 'truncated_requested', params: { shown: prs.length, total: data.requested.issueCount } })
   }
-  if (data.mine.issueCount > data.mine.nodes.length) {
+  if (data.mine.issueCount > PAGE_SIZE) {
     warnings.push({ code: 'truncated_mine', params: { shown: myPrs.length, total: data.mine.issueCount } })
   }
-  if (data.involved && data.involved.issueCount > data.involved.nodes.length) {
+  if (data.involved && data.involved.issueCount > PAGE_SIZE) {
     warnings.push({ code: 'truncated_involved', params: { shown: involved.length, total: data.involved.issueCount } })
   }
   return { viewer, prs, myPrs, involved, warnings }
@@ -699,6 +760,68 @@ export async function graphqlRequest<T>(
   return { body, response: res }
 }
 
+interface RawProbePr {
+  id: string
+  updatedAt: string
+  headRefOid: string
+  isDraft: boolean
+  reviewDecision: string | null
+  mergeable: string
+  mergeStateStatus: string
+  commits: { nodes: Array<{ commit: { statusCheckRollup: { state: string } | null } }> }
+}
+
+export interface RawProbeResponse {
+  data?: { requested: RawSearch<RawProbePr>; mine: RawSearch<RawProbePr>; involved?: RawSearch<RawProbePr> } | null
+  errors?: Array<{ message: string }>
+}
+
+/**
+ * A digest of everything a change would show in: which PRs there are and, for each, when it
+ * was last updated, its head commit, draft state, review decision, merge state and the state
+ * of its checks. Independent of the order GitHub returns results in.
+ */
+export function probeFingerprint(data: NonNullable<RawProbeResponse['data']>): string {
+  const lines: string[] = []
+  const lists = [
+    ['requested', data.requested],
+    ['mine', data.mine],
+    ['involved', data.involved]
+  ] as const
+  for (const [name, list] of lists) {
+    if (!list) continue
+    lines.push(`${name}:${list.issueCount}`)
+    const rows = list.nodes
+      .filter((pr): pr is RawProbePr => Boolean(pr && pr.id))
+      .map((pr) => {
+        const rollup = pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state ?? 'none'
+        return [pr.id, pr.updatedAt, pr.headRefOid, pr.isDraft, pr.reviewDecision ?? 'none', pr.mergeable, pr.mergeStateStatus, rollup].join('|')
+      })
+      .sort()
+    lines.push(...rows)
+  }
+  return createHash('sha256').update(lines.join('\n')).digest('hex').slice(0, 16)
+}
+
+/** Runs the probe (PROBE_QUERY). GraphQL errors without data are failures; partial data is fine. */
+export async function fetchFingerprint(token: string, settings: SearchSettings, fetchFn: FetchFn = fetch): Promise<string> {
+  const queries = searchQueries(settings)
+  const { body } = await graphqlRequest<RawProbeResponse>(
+    token,
+    PROBE_QUERY,
+    {
+      requested: queries.requested,
+      mine: queries.mine,
+      involved: queries.involved,
+      first: PAGE_SIZE,
+      withInvolved: settings.showInvolved ?? true
+    },
+    fetchFn
+  )
+  if (!body.data) throw new GithubError('unknown', body.errors?.[0]?.message ?? 'GitHub returned no data')
+  return probeFingerprint(body.data)
+}
+
 export async function fetchPullRequests(
   token: string,
   settings: SearchSettings,
@@ -730,7 +853,7 @@ const PR_DETAIL_QUERY = /* GraphQL */ `
   query PullRequestDetail($id: ID!) {
     node(id: $id) {
       ... on PullRequest {
-        bodyText
+        body
         changedFiles
         totalCommentsCount
         commits { totalCount }
@@ -741,7 +864,7 @@ const PR_DETAIL_QUERY = /* GraphQL */ `
 
 interface RawDetailResponse {
   data?: {
-    node?: { bodyText?: string | null; changedFiles?: number; totalCommentsCount?: number | null; commits?: { totalCount: number } } | null
+    node?: { body?: string | null; changedFiles?: number; totalCommentsCount?: number | null; commits?: { totalCount: number } } | null
   } | null
   errors?: Array<{ message: string }>
 }
@@ -752,11 +875,103 @@ export async function fetchPullRequestDetail(token: string, id: string, fetchFn:
   const node = body.data?.node
   if (!node) return null
   return {
-    body: (node.bodyText ?? '').trim(),
+    body: (node.body ?? '').trim(),
     changedFiles: node.changedFiles ?? 0,
     commits: node.commits?.totalCount ?? 0,
     comments: node.totalCommentsCount ?? 0
   }
+}
+
+// Asked for on demand: inside the main query it would cost 25 points more per poll.
+const PR_THREADS_QUERY = /* GraphQL */ `
+  query PullRequestThreads($id: ID!) {
+    node(id: $id) {
+      ... on PullRequest {
+        reviewThreads(first: 50) {
+          nodes {
+            isResolved
+            comments(first: 1) { nodes { url } }
+          }
+        }
+      }
+    }
+  }
+`
+
+interface RawThreadsResponse {
+  data?: {
+    node?: {
+      reviewThreads?: { nodes: Array<{ isResolved: boolean; comments?: { nodes: Array<{ url: string } | null> } | null } | null> } | null
+    } | null
+  } | null
+  errors?: Array<{ message: string }>
+}
+
+/** Where the first unresolved review thread of a PR is (the "n unresolved threads" chip); one point. */
+export async function fetchFirstUnresolvedThread(token: string, id: string, fetchFn: FetchFn = fetch): Promise<string | null> {
+  const { body } = await graphqlRequest<RawThreadsResponse>(token, PR_THREADS_QUERY, { id }, fetchFn)
+  for (const thread of body.data?.node?.reviewThreads?.nodes ?? []) {
+    const url = thread && !thread.isResolved ? thread.comments?.nodes?.[0]?.url : undefined
+    if (url) return url
+  }
+  return null
+}
+
+export interface PrRef {
+  id: string
+  number: number
+  title: string
+  url: string
+  repo: string
+}
+
+/** What became of one of your PRs that left the list; `by` is null when GitHub doesn't say who. */
+export type PrOutcome = { state: 'open' } | { state: 'merged' | 'closed'; pr: PrRef; by: string | null }
+
+const PR_OUTCOME_QUERY = /* GraphQL */ `
+  query PullRequestOutcome($id: ID!) {
+    node(id: $id) {
+      ... on PullRequest {
+        id
+        number
+        title
+        url
+        repository { nameWithOwner }
+        state
+        mergedBy { login }
+        timelineItems(last: 1, itemTypes: [CLOSED_EVENT]) {
+          nodes { ... on ClosedEvent { actor { login } } }
+        }
+      }
+    }
+  }
+`
+
+interface RawOutcomeResponse {
+  data?: {
+    node?: {
+      id: string
+      number: number
+      title: string
+      url: string
+      repository: { nameWithOwner: string }
+      state: 'OPEN' | 'CLOSED' | 'MERGED'
+      mergedBy?: { login: string } | null
+      timelineItems?: { nodes: Array<{ actor?: { login: string } | null } | null> } | null
+    } | null
+  } | null
+  errors?: Array<{ message: string }>
+}
+
+/** Whether a PR that left your list was merged or closed, and by whom; one point. */
+export async function fetchPrOutcome(token: string, id: string, fetchFn: FetchFn = fetch): Promise<PrOutcome | null> {
+  const { body } = await graphqlRequest<RawOutcomeResponse>(token, PR_OUTCOME_QUERY, { id }, fetchFn)
+  const node = body.data?.node
+  if (!node) return null
+  if (node.state === 'OPEN') return { state: 'open' }
+  const pr: PrRef = { id: node.id, number: node.number, title: node.title, url: node.url, repo: node.repository.nameWithOwner }
+  if (node.state === 'MERGED') return { state: 'merged', pr, by: node.mergedBy?.login ?? null }
+  return { state: 'closed', pr, by: node.timelineItems?.nodes?.[0]?.actor?.login ?? null }
 }
 
 /** Repository/organization permissions PR Radar's GitHub App needs (all read-only). */

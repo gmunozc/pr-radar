@@ -1,9 +1,10 @@
-import { useCallback, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { formatClock, formatDateTime, isTomorrow, timeAgo, weekdayName } from '../../shared/format'
-import { reviewMenuActions, type ReviewMenuAction } from '../../shared/prActions'
+import { isSharedMenuAction, MENU_KEY, quickKeyHint, REVIEW_QUICK_KEYS, reviewMenuActions, type ReviewMenuAction } from '../../shared/prActions'
 import type { PrAction, PullRequest, SnoozeOption } from '../../shared/types'
-import { CheckIcon, ClockIcon, XIcon } from '../icons'
+import { CheckIcon, CopyIcon, KebabHorizontalIcon, XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
+import { sharedMenuItem } from '../rowMenu'
 import { useSendTo, withSendTo } from '../useLaunchers'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
@@ -24,18 +25,21 @@ interface Props {
   staleDays: number
   /** Opens the detail view (title click, menu); absent inside the detail view itself. */
   onDetail?(prId: string): void
+  /** Whether the repository's alerts are muted; absent until the settings are known. */
+  muted?: boolean
+  onMute?(muted: boolean): void
 }
 
-export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onDetail }: Props) {
+export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onDetail, muted, onMute }: Props) {
   const t = useT()
   const locale = useLocale()
-  const [snoozing, setSnoozing] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [approving, setApproving] = useState(false)
   const [checksOpen, setChecksOpen] = useState(false)
   const [comment, setComment] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const kebab = useRef<HTMLButtonElement>(null)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const sendTo = useSendTo(pr)
   const busy = pending !== undefined
@@ -51,6 +55,25 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
     } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
       e.preventDefault()
       setMenuOpen(true)
+    } else if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !window.getSelection()?.toString()) {
+      // ⌘C on a focused row copies its link; with text selected, the system copy wins.
+      e.preventDefault()
+      void copy(pr.url)
+    } else if (e.target === e.currentTarget && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Single letters on the row itself, never while typing in a field inside it. The menu
+      // entries decide what is allowed (approve, snooze, dismiss), so nothing is duplicated.
+      const key = e.key.toLowerCase()
+      if (key === MENU_KEY) {
+        e.preventDefault()
+        setMenuOpen(true)
+        return
+      }
+      const action = REVIEW_QUICK_KEYS[key]
+      const item = action ? items.find((i) => i.id === action) : undefined
+      if (item && !item.disabled) {
+        e.preventDefault()
+        item.onSelect?.()
+      }
     }
   }
   const onContextMenu = (e: MouseEvent) => {
@@ -58,7 +81,10 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
     e.stopPropagation()
     setMenuOpen(true)
   }
-  const stop = (e: MouseEvent) => e.stopPropagation()
+  const toggleMenu = (e: MouseEvent) => {
+    e.stopPropagation()
+    setMenuOpen((o) => !o)
+  }
   const dismiss = () => void window.prRadar.dismiss(pr.id)
   const snooze = (option: SnoozeOption) => void window.prRadar.snooze(pr.id, option)
   const approve = async () => {
@@ -71,11 +97,15 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
       setError(t(`action.error.${result.code}`, { detail: result.detail ?? '' }))
     }
   }
-  const copy = async (text: string) => {
-    const { ok } = await window.prRadar.copyText(text)
-    if (!ok) return
+  const flashCopied = () => {
     setCopied(true)
     setTimeout(() => setCopied(false), COPIED_MS)
+  }
+  const copy = async (text: string) => {
+    if ((await window.prRadar.copyText(text)).ok) flashCopied()
+  }
+  const copyLink = async () => {
+    if ((await window.prRadar.copyLink({ title: pr.title, url: pr.url })).ok) flashCopied()
   }
 
   const now = Date.now()
@@ -87,29 +117,37 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
   const [owner, name] = pr.repo.split('/')
 
   const menuItem = (id: ReviewMenuAction): MenuItem => {
+    if (isSharedMenuAction(id)) {
+      return sharedMenuItem(id, {
+        pr,
+        t,
+        copy: (text) => void copy(text),
+        copyLink: () => void copyLink(),
+        open: (url) => void window.prRadar.openExternal(url),
+        onDetail,
+        setMuted: onMute
+      })
+    }
     switch (id) {
       case 'approve':
-        return { id, label: t('action.approve'), disabled: busy, onSelect: () => setApproving(true) }
+        return { id, label: t('action.approve'), hint: quickKeyHint(id), disabled: busy, onSelect: () => setApproving(true) }
       case 'snooze_hour':
-        return { id, label: t('action.snoozeHour'), onSelect: () => snooze('hour') }
+        return { id, label: t('action.snoozeHour'), hint: quickKeyHint(id), onSelect: () => snooze('hour') }
       case 'snooze_tomorrow':
-        return { id, label: t('action.snoozeTomorrow', { time: tomorrowLabel }), onSelect: () => snooze('tomorrow') }
+        return {
+          id,
+          label: t('action.snoozeTomorrow', { time: tomorrowLabel }),
+          hint: quickKeyHint(id),
+          onSelect: () => snooze('tomorrow')
+        }
       case 'snooze_push':
         return { id, label: t('action.snoozePush'), onSelect: () => snooze('push') }
       case 'dismiss':
-        return { id, label: t('action.dismiss'), onSelect: dismiss }
-      case 'copy_branch':
-        return { id, label: t('action.copyBranch'), onSelect: () => void copy(pr.branch) }
-      case 'copy_link':
-        return { id, label: t('action.copyLink'), onSelect: () => void copy(pr.url) }
-      case 'details':
-        return { id, label: t('action.details'), onSelect: () => onDetail?.(pr.id) }
-      case 'open':
-        return { id, label: t('action.open'), onSelect: open }
+        return { id, label: t('action.dismiss'), hint: quickKeyHint(id), onSelect: dismiss }
     }
   }
   const items = withSendTo(
-    reviewMenuActions(pr, canWrite)
+    reviewMenuActions(pr, canWrite, { muted })
       .filter((id) => id !== 'details' || onDetail)
       .map(menuItem),
     sendTo.item
@@ -119,7 +157,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
     e.stopPropagation()
     onDetail(pr.id)
   }
-  const actionsOpen = snoozing || menuOpen || approving || busy
+  const actionsOpen = menuOpen || approving || busy
 
   const sourceChip =
     pr.source.kind === 'direct' ? (
@@ -136,6 +174,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
       className="pr"
       role="button"
       tabIndex={0}
+      data-pr-id={pr.id}
       onClick={open}
       onKeyDown={onKeyDown}
       onContextMenu={onContextMenu}
@@ -160,6 +199,61 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
           >
             {timeAgo(pr.createdAt, now, locale)}
           </span>
+          <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
+            {copied && <span className="pr-copied">{t('action.copied')}</span>}
+            {canApprove && (
+              <button
+                className="pr-action pr-action-approve"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setApproving((a) => !a)
+                  setError(null)
+                }}
+                onMouseDown={(e) => e.preventDefault()}
+                title={t('action.approve')}
+                aria-label={t('action.approve')}
+                aria-expanded={approving}
+              >
+                {busy ? <span className="spinner spinner-sm" /> : <CheckIcon size={12} />}
+              </button>
+            )}
+            <button
+              className="pr-action"
+              onClick={(e) => {
+                e.stopPropagation()
+                void copy(pr.url)
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+              title={t('action.copyLink')}
+              aria-label={t('action.copyLink')}
+            >
+              <CopyIcon size={12} />
+            </button>
+            <button
+              className="pr-action pr-action-dismiss"
+              onClick={(e) => {
+                e.stopPropagation()
+                dismiss()
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+              title={t(snoozable ? 'pr.dismissHint' : 'pr.dismissInvolvedHint')}
+              aria-label={t('pr.dismiss')}
+            >
+              <XIcon size={12} />
+            </button>
+            <button
+              ref={kebab}
+              className="pr-action pr-action-menu"
+              onClick={toggleMenu}
+              onMouseDown={(e) => e.preventDefault()}
+              title={t('action.menu')}
+              aria-label={t('action.menu')}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <KebabHorizontalIcon size={12} />
+            </button>
+          </div>
         </div>
         <div className={`pr-title ${onDetail ? 'pr-title-link' : ''}`} onClick={showDetail} title={onDetail ? t('detail.titleHint') : undefined}>
           {pr.title}
@@ -182,20 +276,6 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
           {pr.author && <span className="pr-author">@{pr.author.login}</span>}
         </div>
         {checksOpen && <ChecksRow checks={pr.checks} total={pr.checksTotal} />}
-        {snoozing && (
-          <div className="snooze-row" onClick={stop}>
-            <ClockIcon size={12} />
-            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={() => snooze('hour')}>
-              {t('pr.snoozeHour')}
-            </button>
-            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={() => snooze('tomorrow')}>
-              {tomorrowLabel}
-            </button>
-            <button className="btn btn-small" onMouseDown={(e) => e.preventDefault()} onClick={() => snooze('push')}>
-              {t('pr.snoozePush')}
-            </button>
-          </div>
-        )}
         {approving && (
           <ConfirmRow
             message={t('action.approveConfirm', { number: pr.number, author: pr.author?.login ?? '' })}
@@ -212,6 +292,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
             <input
               className="input"
               value={comment}
+              autoFocus
               onChange={(e) => setComment(e.target.value)}
               placeholder={t('action.approveComment')}
               maxLength={2000}
@@ -226,53 +307,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
         )}
         <SendToStatus sendTo={sendTo} />
       </div>
-      <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
-        {copied && <span className="pr-copied">{t('action.copied')}</span>}
-        {canApprove && (
-          <button
-            className="pr-action pr-action-approve"
-            onClick={(e) => {
-              e.stopPropagation()
-              setApproving((a) => !a)
-              setError(null)
-            }}
-            onMouseDown={(e) => e.preventDefault()}
-            title={t('action.approve')}
-            aria-label={t('action.approve')}
-            aria-expanded={approving}
-          >
-            {busy ? <span className="spinner spinner-sm" /> : <CheckIcon size={12} />}
-          </button>
-        )}
-        {snoozable && (
-          <button
-            className="pr-action"
-            onClick={(e) => {
-              e.stopPropagation()
-              setSnoozing(!snoozing)
-            }}
-            onMouseDown={(e) => e.preventDefault()}
-            title={t('pr.snooze')}
-            aria-label={t('pr.snooze')}
-            aria-expanded={snoozing}
-          >
-            <ClockIcon size={12} />
-          </button>
-        )}
-        <button
-          className="pr-action pr-action-dismiss"
-          onClick={(e) => {
-            e.stopPropagation()
-            dismiss()
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-          title={t(snoozable ? 'pr.dismissHint' : 'pr.dismissInvolvedHint')}
-          aria-label={t('pr.dismiss')}
-        >
-          <XIcon size={12} />
-        </button>
-      </div>
-      {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} />}
+      {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} anchor={kebab} />}
     </div>
   )
 }

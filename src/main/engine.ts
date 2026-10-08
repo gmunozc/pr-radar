@@ -19,6 +19,7 @@ import type {
   Warning
 } from '../shared/types'
 import type { ActionTarget, RemoteAction } from './actions'
+import type { PrOutcome, PrRef } from './github'
 import {
   applyHidden,
   diffMyPrs,
@@ -27,13 +28,15 @@ import {
   type HiddenPrs,
   type HiddenResult,
   type MyPrEvent,
+  type MyPrSnapshot,
   type NotificationPlan
 } from './diff'
 import { GithubError, installationWarnings, type FetchResult, type InstallationInfo } from './github'
 import type { Logger } from './log'
-import { capMyPrEvents, planToEvents, staleNotifications, type CatchUp, type NotificationEvent } from './notifications'
+import { applyMute } from './mute'
+import { capMyPrEvents, filterMyPrEvents, planToEvents, staleNotifications, type CatchUp, type NotificationEvent } from './notifications'
 import { SessionExpiredError, type ExpiryReason, type Session } from './session'
-import { dayKey, digestDue, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil } from './schedule'
+import { dailyDue, dayKey, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil } from './schedule'
 import type { SnoozeOption } from '../shared/types'
 import { emptyQueue, migrateState, type ArmedMerge, type PersistedState, type QueuedAlerts } from './state'
 
@@ -50,6 +53,8 @@ export interface EngineDeps {
   settings(): Settings
   session: SessionLike
   fetchPullRequests(token: string, settings: Settings, login?: string): Promise<FetchResult>
+  /** The cheap change probe between full polls (see Engine.probe); absent means no fast mode. */
+  fetchFingerprint?(token: string, settings: Settings): Promise<string>
   /** GitHub App sessions only: where the app is installed. */
   fetchInstallations?(token: string): Promise<InstallationInfo[]>
   /** Writes to GitHub (merge, update branch, …); absent when the build can't write. */
@@ -58,8 +63,14 @@ export interface EngineDeps {
   requestPoll?(): void
   /** Description and counts for the detail view. */
   fetchDetail?(token: string, prId: string): Promise<PrDetail | null>
+  /** The first unresolved review thread of one of your PRs, on demand. */
+  fetchThread?(token: string, prId: string): Promise<string | null>
+  /** What became of one of your PRs that left the list (merged, closed, still open). */
+  fetchPrOutcome?(token: string, prId: string): Promise<PrOutcome | null>
   stateStore: StateStore
   notify(events: NotificationEvent[]): void
+  /** The data was just confirmed current: a full poll, or a probe that compared fingerprints. */
+  checked?(atMs: number): void
   /** Removes delivered notifications that no longer apply (reviewed, merged, dismissed, checks green again). */
   retireNotifications?(ids: string[]): void
   /** Removes every delivered notification (sign-out). */
@@ -85,7 +96,22 @@ export const INSTALLATION_RECHECK_EMPTY_MS = 5 * 60_000
  * the same head: absorbs UNKNOWN→CLEAN flips and pushes still in flight.
  */
 export const READY_POLLS_BEFORE_MERGE = 2
+/** PRs that left the list and are looked up per poll; the snapshot forgets the rest. */
+export const MAX_OUTCOME_LOOKUPS = 5
 const DAY_MS = 24 * 3_600_000
+
+/** One of your PRs that someone else merged or closed. */
+export interface Outcome {
+  kind: 'merged' | 'closed'
+  pr: PrRef
+  by: string | null
+}
+
+export interface ProbeResult {
+  /** `changed` asks for a full poll now; `failed` pauses probes (GitHub said when, if `retryAt`). */
+  outcome: 'changed' | 'same' | 'skipped' | 'failed'
+  retryAt?: number
+}
 
 interface MergeDone {
   pr: MyPullRequest
@@ -98,19 +124,31 @@ interface MergeFailure {
   detail?: string
 }
 
-/** Alerts produced by one poll (or tick), before quiet hours and grouping are applied. */
-interface Alerts {
+/** Alerts produced by one poll (or tick), before muting, quiet hours and grouping are applied. */
+export interface Alerts {
   reviewPlan: NotificationPlan
   returned: PullRequest[]
   mine: MyPrEvent[]
   merged?: MergeDone[]
   mergeFailed?: MergeFailure[]
+  /** Your PRs merged or closed by someone else since the last poll. */
+  outcomes?: Outcome[]
   sessionExpired?: boolean
 }
 
 const hasAny = (c: CatchUp) =>
-  c.reviews + c.reminders + c.approved + c.changes + c.ready + c.ciFailed + c.conflicts + c.merged + c.mergeFailed > 0 ||
-  c.sessionExpired
+  c.reviews +
+    c.reminders +
+    c.approved +
+    c.changes +
+    c.ready +
+    c.ciFailed +
+    c.conflicts +
+    c.commented +
+    c.merged +
+    c.mergeFailed +
+    c.closed >
+    0 || c.sessionExpired
 const snoozedCount = (h: Pick<HiddenResult, 'snoozed' | 'snoozedUntilPush'>) =>
   Object.keys(h.snoozed).length + Object.keys(h.snoozedUntilPush).length
 const queueHasItems = (q: QueuedAlerts) =>
@@ -121,8 +159,10 @@ const queueHasItems = (q: QueuedAlerts) =>
     q.ready.length +
     q.ciFailed.length +
     q.conflicts.length +
+    q.commented.length +
     q.merged.length +
-    q.mergeFailed.length >
+    q.mergeFailed.length +
+    q.closed.length >
     0 || q.sessionExpired
 
 export function loggedOutState(authNotice: AuthNotice | null = null, locale: Locale = 'en'): AppState {
@@ -174,6 +214,10 @@ export class Engine {
   private readyStreak = new Map<string, { headOid: string; count: number }>()
   /** Detail view cache, keyed by PR id and last update, so reopening a PR costs nothing. */
   private details = new Map<string, PrDetail>()
+  /** First unresolved thread per PR; resolving one doesn't touch `updatedAt`, so the count is in the key. */
+  private threads = new Map<string, string>()
+  /** What the last change probe saw; null until one runs (or after the searches change). */
+  private fingerprint: string | null = null
 
   constructor(
     private readonly deps: EngineDeps,
@@ -224,6 +268,7 @@ export class Engine {
       const stale = staleNotifications(stored?.seenIds ?? [], result.prs, stored?.myPrs, result.myPrs)
       if (stale.length) this.deps.retireNotifications?.(stale)
       const armed = await this.fireArmedMerges(stored?.mergeWhenReady ?? {}, result.myPrs)
+      const outcomes = await this.lookupOutcomes(stored?.myPrs, result, settings)
       this.save({
         v: 2,
         login: result.viewer.login,
@@ -237,6 +282,7 @@ export class Engine {
         lastDigestDay: stored?.lastDigestDay ?? null
       })
       this.lastSuccessAt = now
+      this.deps.checked?.(now)
 
       this.publish({
         ...this.current,
@@ -258,7 +304,8 @@ export class Engine {
         returned: hidden.returned,
         mine: mine.events,
         merged: armed.merged,
-        mergeFailed: armed.failed
+        mergeFailed: armed.failed,
+        outcomes
       })
       this.tick()
     } catch (err) {
@@ -278,6 +325,35 @@ export class Engine {
         connection: this.connection
       })
       return { retryAt }
+    }
+  }
+
+  /**
+   * Cheap "did anything change?" check between full polls (2 rate-limit points against ~6).
+   * The first probe only takes a baseline; later ones compare with it, and a difference makes
+   * the poller run a full poll right away, so a notification arrives seconds after the event.
+   */
+  async probe(): Promise<ProbeResult> {
+    const fetchFingerprint = this.deps.fetchFingerprint
+    if (!fetchFingerprint || !this.deps.session.current || this.current.status !== 'ready' || this.current.error) {
+      return { outcome: 'skipped' }
+    }
+    try {
+      const fingerprint = await this.withToken((token) => fetchFingerprint(token, this.deps.settings()))
+      const changed = this.fingerprint !== null && fingerprint !== this.fingerprint
+      this.fingerprint = fingerprint
+      this.deps.checked?.(this.deps.now())
+      if (changed) this.deps.log.debug('probe saw a change')
+      return { outcome: changed ? 'changed' : 'same' }
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        this.expire(err.reason)
+        return { outcome: 'failed' }
+      }
+      // The next full poll reports the problem, if it persists.
+      this.deps.log.debug('probe failed', err)
+      const retryAt = err instanceof GithubError && err.kind === 'rate_limited' ? err.retryAt : undefined
+      return { outcome: 'failed', retryAt }
     }
   }
 
@@ -425,6 +501,40 @@ export class Engine {
     return { remaining, merged, failed }
   }
 
+  /**
+   * Your PRs that left the list since the last poll: merged or closed by someone else is news;
+   * merged by you (on GitHub, or by PR Radar) or merely filtered out is not. A truncated list
+   * loses PRs without closing them, so nothing is looked up then.
+   */
+  private async lookupOutcomes(
+    prev: Record<string, MyPrSnapshot> | undefined,
+    result: FetchResult,
+    settings: Settings
+  ): Promise<Outcome[]> {
+    const fetchPrOutcome = this.deps.fetchPrOutcome
+    if (!prev || !fetchPrOutcome || !settings.notifications || !settings.notifyMyPrs || !settings.notifyKinds.merged) return []
+    if (result.warnings.some((w) => w.code === 'truncated_mine')) return []
+    const current = new Set(result.myPrs.map((p) => p.id))
+    const gone = Object.keys(prev)
+      .filter((id) => !current.has(id))
+      .slice(0, MAX_OUTCOME_LOOKUPS)
+    const viewer = result.viewer.login.toLowerCase()
+    const found = await Promise.all(
+      gone.map(async (id): Promise<Outcome | null> => {
+        try {
+          const outcome = await this.withToken((token) => fetchPrOutcome(token, id))
+          if (!outcome || outcome.state === 'open' || outcome.by?.toLowerCase() === viewer) return null
+          return { kind: outcome.state, pr: outcome.pr, by: outcome.by }
+        } catch (err) {
+          if (err instanceof SessionExpiredError) throw err
+          this.deps.log.warn('could not look up a PR that left the list', { id, err })
+          return null
+        }
+      })
+    )
+    return found.filter((o): o is Outcome => o !== null)
+  }
+
   private armedView(): AppState['armedMerges'] {
     const out: AppState['armedMerges'] = {}
     for (const [id, entry] of Object.entries(this.persisted?.mergeWhenReady ?? {})) {
@@ -490,6 +600,31 @@ export class Engine {
     }
   }
 
+  /** Where the first unresolved review thread of one of your PRs is; null when there is none. */
+  async loadThread(prId: string): Promise<string | null> {
+    const pr = this.current.myPrs.find((p) => p.id === prId)
+    if (!pr || !this.deps.fetchThread || !this.deps.session.current) return null
+    const key = `${pr.id}@${pr.updatedAt}@${pr.unresolvedThreads ?? '?'}`
+    const cached = this.threads.get(key)
+    if (cached) return cached
+    const fetchThread = this.deps.fetchThread
+    try {
+      const url = await this.withToken((token) => fetchThread(token, prId))
+      if (url) {
+        if (this.threads.size > 100) this.threads.clear()
+        this.threads.set(key, url)
+      }
+      return url
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        this.expire(err.reason)
+        return null
+      }
+      this.deps.log.warn('could not load the review thread', err)
+      return null
+    }
+  }
+
   /** Brings back every dismissed and snoozed PR, without notifying. */
   restoreHidden(): void {
     if (!this.persisted) return
@@ -516,8 +651,9 @@ export class Engine {
     if (settings.notifications && !quiet) {
       if (this.persisted && queueHasItems(this.persisted.queued)) this.flushQueue(now)
       const fresh = this.lastSuccessAt !== null && nowMs - this.lastSuccessAt <= DIGEST_FRESHNESS_MS
-      if (this.persisted && this.deps.session.current && fresh && digestDue(now, settings, this.persisted.lastDigestDay)) {
-        this.sendDigest(now, null)
+      const wanted = settings.digest || settings.staleAfterDays > 0
+      if (this.persisted && this.deps.session.current && fresh && wanted && dailyDue(now, settings, this.persisted.lastDigestDay)) {
+        this.sendDaily(now, null)
       }
     }
     // Keep "alerts paused until …" in the header in sync.
@@ -549,6 +685,7 @@ export class Engine {
   /** The search filters changed: the next poll sets a new baseline without notifying. */
   filtersChanged(): void {
     this.resetBaseline = true
+    this.fingerprint = null
   }
 
   /** A new login succeeded; `warning` explains a session problem that doesn't block polling. */
@@ -556,6 +693,7 @@ export class Engine {
     this.sessionWarning = warning
     this.failures = 0
     this.connection = 'ok'
+    this.fingerprint = null
     this.resetInstallations()
     this.publish({ ...loggedOutState(), status: 'loading' })
   }
@@ -571,6 +709,7 @@ export class Engine {
     this.deps.session.clear()
     this.allPrs = []
     this.allInvolved = []
+    this.fingerprint = null
     this.sessionWarning = null
     this.resetInstallations()
     this.deps.onSessionEnded()
@@ -583,6 +722,7 @@ export class Engine {
     this.deps.session.clear()
     this.allPrs = []
     this.allInvolved = []
+    this.fingerprint = null
     this.sessionWarning = null
     this.resetInstallations()
     this.deps.onSessionEnded()
@@ -599,6 +739,7 @@ export class Engine {
     this.persisted = null
     this.allPrs = []
     this.allInvolved = []
+    this.fingerprint = null
     this.sessionWarning = null
     this.resetInstallations()
     this.deps.onSessionEnded()
@@ -681,13 +822,15 @@ export class Engine {
   }
 
   /** Delivers alerts now, or holds them back during quiet hours. */
-  private dispatch(alerts: Alerts): void {
+  private dispatch(raw: Alerts): void {
     const settings = this.deps.settings()
     if (!settings.notifications) return
-    const mine = settings.notifyMyPrs ? alerts.mine : []
+    const alerts = applyMute(raw, settings.muteRepos)
+    const mine = filterMyPrEvents(alerts.mine, settings)
     // Merges the user armed are always reported, whatever the "updates on my PRs" setting.
     const merged = alerts.merged ?? []
     const mergeFailed = alerts.mergeFailed ?? []
+    const outcomes = alerts.outcomes ?? []
     const reviewEvents = planToEvents(alerts.reviewPlan)
     if (
       !reviewEvents.length &&
@@ -695,6 +838,7 @@ export class Engine {
       !mine.length &&
       !merged.length &&
       !mergeFailed.length &&
+      !outcomes.length &&
       !alerts.sessionExpired
     ) {
       return
@@ -715,8 +859,10 @@ export class Engine {
           ready: [...new Set([...q.ready, ...ids('my_pr_ready')])],
           ciFailed: [...new Set([...q.ciFailed, ...ids('my_pr_ci_failed')])],
           conflicts: [...new Set([...q.conflicts, ...ids('my_pr_conflicts')])],
-          merged: [...new Set([...q.merged, ...merged.map((m) => m.pr.id)])],
+          commented: [...new Set([...q.commented, ...ids('my_pr_commented')])],
+          merged: [...new Set([...q.merged, ...merged.map((m) => m.pr.id), ...outcomes.filter((o) => o.kind === 'merged').map((o) => o.pr.id)])],
           mergeFailed: [...new Set([...q.mergeFailed, ...mergeFailed.map((m) => m.pr.id)])],
+          closed: [...new Set([...q.closed, ...outcomes.filter((o) => o.kind === 'closed').map((o) => o.pr.id)])],
           sessionExpired: q.sessionExpired || alerts.sessionExpired === true
         }
       })
@@ -728,6 +874,7 @@ export class Engine {
     events.push(...capMyPrEvents(mine))
     for (const m of merged) events.push({ kind: 'my_pr_merged', pr: m.pr, method: m.method })
     for (const f of mergeFailed) events.push({ kind: 'merge_failed', pr: f.pr, code: f.code, detail: f.detail })
+    for (const o of outcomes) events.push({ kind: o.kind === 'merged' ? 'my_pr_merged_by' : 'my_pr_closed_by', pr: o.pr, by: o.by })
     if (alerts.sessionExpired) events.push({ kind: 'session_expired' })
     this.emit(events)
   }
@@ -746,30 +893,50 @@ export class Engine {
       ready: q.ready.filter((id) => mine.get(id)?.readyToMerge).length,
       ciFailed: q.ciFailed.filter((id) => mine.get(id)?.ci === 'failure').length,
       conflicts: q.conflicts.filter((id) => mine.get(id)?.conflicts).length,
+      commented: q.commented.filter((id) => mine.get(id)?.reviews.some((r) => r.state === 'COMMENTED')).length,
       merged: q.merged.length,
       mergeFailed: q.mergeFailed.length,
+      closed: q.closed.length,
       sessionExpired: q.sessionExpired
     }
     this.save({ ...persisted, queued: emptyQueue() })
     if (!hasAny(counts)) return
     // Today's digest is (nearly) due: send one notification instead of two.
     if (this.deps.session.current && digestNear(now, this.deps.settings(), persisted.lastDigestDay)) {
-      this.sendDigest(now, counts)
+      this.sendDaily(now, counts)
       return
     }
     this.emit([{ kind: 'catch_up', counts }])
   }
 
-  private sendDigest(now: Date, caughtUp: CatchUp | null): void {
+  /** Review requests that have waited at least `staleAfterDays` days (0 turns the reminder off). */
+  private staleReviews(nowMs: number, settings: Settings): PullRequest[] {
+    if (settings.staleAfterDays <= 0) return []
+    const muted = new Set(settings.muteRepos)
+    return this.current.prs.filter(
+      (p) => !muted.has(p.repo) && Math.floor((nowMs - Date.parse(p.createdAt)) / DAY_MS) >= settings.staleAfterDays
+    )
+  }
+
+  /** The daily slot: the digest with the stale reviews inside, or only the stale reminder when the digest is off. */
+  private sendDaily(now: Date, caughtUp: CatchUp | null): void {
+    const settings = this.deps.settings()
     const prs = this.current.prs
+    const stale = this.staleReviews(now.getTime(), settings)
+    if (this.persisted) this.save({ ...this.persisted, lastDigestDay: dayKey(now) })
+    if (!settings.digest) {
+      if (stale.length) this.emit([{ kind: 'stale_reviews', prs: stale, days: settings.staleAfterDays }])
+      return
+    }
     const oldest = prs.reduce((min, p) => Math.min(min, Date.parse(p.createdAt)), Number.POSITIVE_INFINITY)
     const oldestDays = Number.isFinite(oldest) ? Math.floor((now.getTime() - oldest) / DAY_MS) : 0
     const ready = this.current.myPrs.filter((p) => p.readyToMerge).length
     const changes = this.current.myPrs.filter((p) => p.status === 'changes_requested').length
-    if (this.persisted) this.save({ ...this.persisted, lastDigestDay: dayKey(now) })
     const caught = caughtUp && hasAny(caughtUp) ? caughtUp : null
     if (!prs.length && !ready && !changes && !caught) return
-    this.emit([{ kind: 'digest', reviews: prs.length, oldestDays, ready, changes, caughtUp: caught }])
+    this.emit([
+      { kind: 'digest', reviews: prs.length, oldestDays, ready, changes, stale, staleDays: settings.staleAfterDays, caughtUp: caught }
+    ])
   }
 
   private save(state: PersistedState): void {

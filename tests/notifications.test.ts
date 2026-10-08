@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { planToEvents, renderNotification as render, staleNotifications, type NotificationEvent } from '../src/main/notifications'
+import type { MyPrEvent } from '../src/main/diff'
+import {
+  filterMyPrEvents,
+  planToEvents,
+  renderNotification as render,
+  restoredAction,
+  staleNotifications,
+  type NotificationEvent
+} from '../src/main/notifications'
 import { translator } from '../src/shared/i18n'
-import type { PullRequest } from '../src/shared/types'
+import { DEFAULT_SETTINGS, type PullRequest } from '../src/shared/types'
 import * as fx from './fixtures'
 
 const sample = { number: 12, title: 'Add feature', url: 'https://github.com/acme/app/pull/12' }
@@ -35,7 +43,7 @@ describe('renderNotification', () => {
       title: 'Nueva review solicitada',
       subtitle: 'acme/app#12 · @octo',
       body: 'Add feature',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' },
+      action: { kind: 'open_pr', prId: 'PR_1', url: 'https://github.com/acme/app/pull/12' },
       buttons: reviewButtons
     })
   })
@@ -95,7 +103,7 @@ describe('notifications about your PRs', () => {
       title: 'Aprobaron tu PR',
       subtitle: 'acme/app#12 · @ana, @bob',
       body: 'Add feature',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+      action: { kind: 'open_pr', prId: 'MY_1', url: 'https://github.com/acme/app/pull/12' }
     })
     expect(render({ kind: 'my_pr_changes_requested', pr: mine, by: ['ana'] }, en).title).toBe('Changes requested on your PR')
     expect(render({ kind: 'my_pr_ready', pr: mine }, en)).toMatchObject({ id: 'mine-MY_1', title: 'Ready to merge', subtitle: 'acme/app#12' })
@@ -117,7 +125,7 @@ describe('notifications about your PRs', () => {
       title: 'Fallan los checks de tu PR',
       subtitle: 'acme/app#12',
       body: 'Add feature · Fallando: Pytest shard 1/4, lint…',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12/checks' }
+      action: { kind: 'open_pr', prId: 'MY_1', url: 'https://github.com/acme/app/pull/12/checks' }
     })
     expect(render({ kind: 'my_pr_ci_failed', pr: mine, failing: [] }, en)).toMatchObject({ title: 'Checks failed on your PR', body: 'Add feature' })
     expect(render({ kind: 'my_pr_conflicts', pr: mine }, es)).toEqual({
@@ -126,9 +134,23 @@ describe('notifications about your PRs', () => {
       title: 'Tu PR tiene conflictos',
       subtitle: 'acme/app#12',
       body: 'Add feature · Conflictos con main',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+      action: { kind: 'open_pr', prId: 'MY_1', url: 'https://github.com/acme/app/pull/12' }
     })
     expect(render({ kind: 'my_pr_conflicts', pr: { ...mine, baseBranch: '' } }, en)).toMatchObject({ title: 'Your PR has conflicts', body: 'Add feature' })
+  })
+
+  it('reports new comments under their own id, naming the commenter', () => {
+    const reviewed = { ...mine, reviews: [{ login: 'ana', avatarUrl: avatar, state: 'COMMENTED' as const }] }
+    expect(render({ kind: 'my_pr_commented', pr: reviewed, by: ['ana'] }, es)).toEqual({
+      id: 'comments-MY_1',
+      groupId: 'acme/app',
+      title: 'Comentaron en tu PR',
+      subtitle: 'acme/app#12 · @ana',
+      body: 'Add feature',
+      imageUrl: avatar,
+      action: { kind: 'open_pr', prId: 'MY_1', url: 'https://github.com/acme/app/pull/12' }
+    })
+    expect(render({ kind: 'my_pr_commented', pr: mine, by: ['ana'] }, en).title).toBe('New comments on your PR')
   })
 
   it('reports merges PR Radar did itself under their own id, and the ones it could not do', () => {
@@ -138,7 +160,7 @@ describe('notifications about your PRs', () => {
       title: 'Mergeado (Squash)',
       subtitle: 'acme/app#12',
       body: 'Add feature',
-      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+      action: { kind: 'open_pr', prId: 'MY_1', url: 'https://github.com/acme/app/pull/12' }
     })
     expect(render({ kind: 'merge_failed', pr: mine, code: 'not_mergeable' }, en)).toMatchObject({
       id: 'mine-MY_1',
@@ -154,7 +176,20 @@ describe('notifications about your PRs', () => {
 })
 
 describe('reminders, catch-up and digest notifications', () => {
-  const none = { reviews: 0, reminders: 0, approved: 0, changes: 0, ready: 0, ciFailed: 0, conflicts: 0, merged: 0, mergeFailed: 0, sessionExpired: false }
+  const none = {
+    reviews: 0,
+    reminders: 0,
+    approved: 0,
+    changes: 0,
+    ready: 0,
+    ciFailed: 0,
+    conflicts: 0,
+    commented: 0,
+    merged: 0,
+    mergeFailed: 0,
+    closed: 0,
+    sessionExpired: false
+  }
 
   it('reminds about one snoozed PR by opening it, with the same buttons as a request, and summarizes several', () => {
     expect(render({ kind: 'snooze_returned', prs: [pr()] }, es)).toMatchObject({
@@ -163,7 +198,7 @@ describe('reminders, catch-up and digest notifications', () => {
       title: 'Recordatorio: review pendiente',
       subtitle: 'acme/app#12 · @octo',
       body: 'Add feature',
-      action: { kind: 'open_url' },
+      action: { kind: 'open_pr', prId: 'PR_1' },
       buttons: reviewButtons
     })
     const many = render({ kind: 'snooze_returned', prs: [pr(), pr()] }, en)
@@ -180,10 +215,11 @@ describe('reminders, catch-up and digest notifications', () => {
     expect(render({ kind: 'catch_up', counts: { ...none, ciFailed: 2, conflicts: 1 } }, en).body).toBe(
       '2 PRs with failing checks · 1 PR with conflicts'
     )
+    expect(render({ kind: 'catch_up', counts: { ...none, commented: 2 } }, es).body).toBe('2 PRs con comentarios nuevos')
   })
 
   it('builds the daily digest, with the caught-up alerts first', () => {
-    const digest = { kind: 'digest' as const, reviews: 3, oldestDays: 4, ready: 1, changes: 0, caughtUp: null }
+    const digest = { kind: 'digest' as const, reviews: 3, oldestDays: 4, ready: 1, changes: 0, stale: [], staleDays: 3, caughtUp: null }
     expect(render(digest, en)).toMatchObject({
       title: 'PR Radar · daily summary',
       body: '3 reviews pending (oldest: 4 days) · 1 PR ready to merge'
@@ -191,6 +227,41 @@ describe('reminders, catch-up and digest notifications', () => {
     expect(render({ ...digest, oldestDays: 0, ready: 0, caughtUp: { ...none, reviews: 1 } }, es).body).toBe(
       'Mientras no estabas: 1 review nueva. 3 reviews pendientes'
     )
+  })
+
+  it('reminds about stale reviews, listing three at most, alone or inside the digest', () => {
+    const digest = { kind: 'digest' as const, reviews: 3, oldestDays: 4, ready: 1, changes: 0, stale: [], staleDays: 3, caughtUp: null }
+    const prs = [pr(), pr({ id: 'PR_2', number: 13 }), pr({ id: 'PR_3', number: 14 }), pr({ id: 'PR_4', number: 15 })]
+    expect(render({ kind: 'stale_reviews', prs, days: 3 }, es)).toEqual({
+      id: 'pr-radar-stale',
+      title: 'Reviews estancadas',
+      body: '4 reviews llevan esperando más de 3 días: acme/app#12, acme/app#13, acme/app#14…',
+      action: { kind: 'open_panel' }
+    })
+    expect(render({ kind: 'stale_reviews', prs: prs.slice(0, 1), days: 1 }, en).body).toBe(
+      '1 review has been waiting more than 1 day: acme/app#12'
+    )
+    expect(render({ ...digest, stale: prs.slice(0, 2), staleDays: 3 }, es).body).toBe(
+      '3 reviews pendientes (la más antigua: 4 días) · 2 reviews llevan esperando más de 3 días: acme/app#12, acme/app#13 · 1 PR listo para merge'
+    )
+  })
+
+  it('reports PRs merged or closed by someone else under their own ids', () => {
+    const ref = { id: 'MY_1', number: 12, title: 'Add feature', url: 'https://github.com/acme/app/pull/12', repo: 'acme/app' }
+    expect(render({ kind: 'my_pr_merged_by', pr: ref, by: 'ana' }, es)).toEqual({
+      id: 'merged-MY_1',
+      groupId: 'acme/app',
+      title: 'Mergearon tu PR',
+      subtitle: 'acme/app#12 · @ana',
+      body: 'Add feature',
+      action: { kind: 'open_url', url: ref.url }
+    })
+    expect(render({ kind: 'my_pr_closed_by', pr: ref, by: null }, en)).toMatchObject({
+      id: 'closed-MY_1',
+      title: 'Your PR was closed without merging',
+      subtitle: 'acme/app#12'
+    })
+    expect(render({ kind: 'catch_up', counts: { ...none, closed: 2 } }, es).body).toBe('2 PRs cerrados sin mergear')
   })
 })
 
@@ -202,12 +273,38 @@ describe('staleNotifications', () => {
       m3: { status: 'approved' as const }
     }
     const ids = staleNotifications(['a', 'b'], [fx.pr('b')], prev, [fx.myPr('m1', { ci: 'success' }), fx.myPr('m2', { conflicts: false })])
-    expect(ids).toEqual(['a', 'ci-m1', 'conflicts-m2', 'mine-m3', 'ci-m3', 'conflicts-m3'])
+    expect(ids).toEqual(['a', 'ci-m1', 'conflicts-m2', 'mine-m3', 'ci-m3', 'conflicts-m3', 'comments-m3'])
   })
 
   it('keeps notifications about PRs that are still there as they were', () => {
     const prev = { m1: { status: 'waiting' as const, ci: 'failure' as const, conflicts: true } }
     expect(staleNotifications(['a'], [fx.pr('a')], prev, [fx.myPr('m1', { ci: 'failure', conflicts: true })])).toEqual([])
     expect(staleNotifications([], [], undefined, [])).toEqual([])
+  })
+})
+
+describe('filterMyPrEvents', () => {
+  it('drops everything when updates on your PRs are off, and the kinds turned off otherwise', () => {
+    const mine = fx.myPr('MY_1')
+    const events: MyPrEvent[] = [
+      { kind: 'my_pr_approved', pr: mine, by: [] },
+      { kind: 'my_pr_ci_failed', pr: mine, failing: [] },
+      { kind: 'my_pr_commented', pr: mine, by: ['ana'] }
+    ]
+    expect(filterMyPrEvents(events, { notifyMyPrs: false, notifyKinds: DEFAULT_SETTINGS.notifyKinds })).toEqual([])
+    const kinds = { ...DEFAULT_SETTINGS.notifyKinds, ciFailed: false, commented: false }
+    expect(filterMyPrEvents(events, { notifyMyPrs: true, notifyKinds: kinds }).map((e) => e.kind)).toEqual(['my_pr_approved'])
+  })
+})
+
+describe('restoredAction', () => {
+  it('wires review ids to the PR with the snooze buttons, topic ids to the PR, and app ids to the panel', () => {
+    expect(restoredAction('PR_1', es)).toEqual({ action: { kind: 'open_pr', prId: 'PR_1' }, buttons: reviewButtons })
+    expect(restoredAction('ci-MY_1', es)).toEqual({ action: { kind: 'open_pr', prId: 'MY_1' } })
+    expect(restoredAction('merged-MY_1', es).action).toEqual({ kind: 'open_pr', prId: 'MY_1' })
+    expect(restoredAction('pr-radar-digest', es)).toEqual({
+      action: { kind: 'open_panel' },
+      buttons: [{ label: 'Abrir PR Radar', action: { kind: 'open_panel' } }]
+    })
   })
 })

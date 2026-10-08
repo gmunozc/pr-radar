@@ -183,7 +183,8 @@ const mine: MyPullRequest[] = [
     status: 'changes_requested',
     reviews: [
       { login: 'bob', avatarUrl: people.bob.avatarUrl, state: 'CHANGES_REQUESTED', id: 'U_bob' },
-      { login: 'cris', avatarUrl: people.cris.avatarUrl, state: 'APPROVED', id: 'U_cris' }
+      { login: 'cris', avatarUrl: people.cris.avatarUrl, state: 'APPROVED', id: 'U_cris' },
+      { login: 'ana', avatarUrl: people.ana.avatarUrl, state: 'COMMENTED', id: 'U_ana' }
     ],
     unresolvedThreads: 3,
     can: { ...myBase.can, updateBranch: true },
@@ -268,6 +269,18 @@ export function createMockApi(): PrRadarApi {
   }
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
   let install: InstallState = { phase: 'idle' }
+  const checkedListeners = new Set<(at: number) => void>()
+  // Fast mode confirms the data every few seconds.
+  setInterval(() => {
+    for (const cb of checkedListeners) cb(Date.now())
+  }, 5000)
+  const focusListeners = new Set<(prId: string) => void>()
+  // From the DevTools console: prRadarMock.focusPr('M2') plays a notification click.
+  ;(window as unknown as { prRadarMock?: { focusPr(prId: string): void } }).prRadarMock = {
+    focusPr: (prId) => {
+      for (const cb of focusListeners) cb(prId)
+    }
+  }
   const installListeners = new Set<(s: InstallState) => void>()
   const setInstall = (s: InstallState) => {
     install = s
@@ -327,6 +340,14 @@ export function createMockApi(): PrRadarApi {
       stateListeners.add(cb)
       return () => stateListeners.delete(cb)
     },
+    onChecked: (cb) => {
+      checkedListeners.add(cb)
+      return () => checkedListeners.delete(cb)
+    },
+    onFocusPr: (cb) => {
+      focusListeners.add(cb)
+      return () => focusListeners.delete(cb)
+    },
     refresh: async () => {
       await sleep(400)
       publish({ lastUpdated: new Date().toISOString() })
@@ -341,18 +362,46 @@ export function createMockApi(): PrRadarApi {
         await sleep(500)
         if (prId === 'R4') return { body: '', changedFiles: 2, commits: 1, comments: 0 }
         return {
-          body:
-            'Adds server-side filtering to /search so the web client stops downloading the whole result set.\n\n' +
-            '- New `filters` query parameter (repo, author, label)\n- Index on (repo_id, created_at)\n- Backfill script for existing rows\n\n' +
-            'Closes #470.',
+          body: [
+            '## What it does',
+            '',
+            'Adds **server-side filtering** to `/search` so the web client stops downloading the whole result set.',
+            '',
+            '- New `filters` query parameter (repo, author, label)',
+            '  - Validated with the same schema as the API',
+            '- Index on (repo_id, created_at)',
+            '- [x] Backfill script for existing rows',
+            '- [ ] Document the parameter in the README',
+            '',
+            '> Depends on acme/core#1530 (merge core first).',
+            '',
+            '| List | Extra columns |',
+            '| --- | --- |',
+            '| Companies | owners, dates |',
+            '| Orders | amounts, margins |',
+            '',
+            '```ts',
+            "const columns = useTableColumns('companies')",
+            '```',
+            '',
+            'Closes #470. Reviewed with @ana, spec at https://example.com/spec.'
+          ].join('\n'),
           changedFiles: 14,
           commits: 6,
           comments: 9
         }
+      },
+      thread: async (prId) => {
+        await sleep(400)
+        return prId === 'M2' ? 'https://github.com/acme/billing/pull/93#discussion_r1' : null
       }
     },
     copyText: async (text) => {
       console.info('[mock] copied', text)
+      return { ok: true }
+    },
+    copyLink: async (link) => {
+      console.info('[mock] copied link', link)
       return { ok: true }
     },
     relaunch: async () => console.info('[mock] relaunch'),
@@ -381,6 +430,7 @@ export function createMockApi(): PrRadarApi {
     },
     openExternal: async (url) => console.info('[mock] open', url),
     openCheck: async (url) => console.info('[mock] open check', url),
+    openLink: async (url) => console.info('[mock] open link', url),
     testNotification: async () => ({ ok: true }),
     openNotificationSettings: async () => {},
     appInfo: async () => ({ version: 'dev', packaged: false }),

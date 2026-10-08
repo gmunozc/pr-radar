@@ -95,11 +95,19 @@ export function snoozeUntil(date: Date, option: TimedSnooze, s: ScheduleSettings
   return option === 'hour' ? new Date(date.getTime() + HOUR) : nextWorkdayStart(date, s)
 }
 
-/** The digest is due today, its time has passed (by less than the window) and it wasn't sent yet. */
-export function digestDue(date: Date, s: ScheduleSettings, lastDigestDay: string | null): boolean {
-  if (!s.digest || !s.workDays.includes(date.getDay()) || lastDigestDay === dayKey(date)) return false
+/**
+ * Today's daily slot (the digest time on a working day) is open and wasn't handled yet. The
+ * digest and the stale-review reminder share it, so one `lastDay` serves both.
+ */
+export function dailyDue(date: Date, s: ScheduleSettings, lastDay: string | null): boolean {
+  if (!s.workDays.includes(date.getDay()) || lastDay === dayKey(date)) return false
   const due = atTime(date, s.digestTime)
   return date >= due && date.getTime() - due.getTime() <= DIGEST_WINDOW_MS
+}
+
+/** The digest is due today, its time has passed (by less than the window) and it wasn't sent yet. */
+export function digestDue(date: Date, s: ScheduleSettings, lastDigestDay: string | null): boolean {
+  return s.digest && dailyDue(date, s, lastDigestDay)
 }
 
 /** Whether today's digest (not sent yet) falls close enough to `when` to be merged with it. */

@@ -22,6 +22,13 @@ const trayAlertTemplate = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 
   <circle cx="13.1" cy="2.9" r="2.75" fill="#000"/>
 </svg>`
 
+// A PR of yours is ready to merge: the glyph shrunk towards the top-left, with a dot in the
+// bottom-right corner (the mirror of the alert badge, so both read as one family).
+const trayReadyTemplate = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <g transform="scale(0.79)"><path fill="#000" d="${PR_PATH}"/></g>
+  <circle cx="13.1" cy="13.1" r="2.75" fill="#000"/>
+</svg>`
+
 // Windows/Linux: a filled badge readable on both light and dark taskbars.
 const trayColor = (dot, { bg = '#2f81f7', dotColor = '#f85149', bang = false } = {}) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect x="1" y="1" width="30" height="30" rx="8" fill="${bg}"/>
@@ -58,8 +65,11 @@ render(trayOfflineTemplate, 16, 'resources/trayOfflineTemplate.png')
 render(trayOfflineTemplate, 32, 'resources/trayOfflineTemplate@2x.png')
 render(trayAlertTemplate, 16, 'resources/trayAlertTemplate.png')
 render(trayAlertTemplate, 32, 'resources/trayAlertTemplate@2x.png')
+render(trayReadyTemplate, 16, 'resources/trayReadyTemplate.png')
+render(trayReadyTemplate, 32, 'resources/trayReadyTemplate@2x.png')
 render(trayColor(false), 32, 'resources/tray.png')
 render(trayColor(true), 32, 'resources/trayActive.png')
 render(trayColor(false, { bg: '#6e7781' }), 32, 'resources/trayOffline.png')
 render(trayColor(true, { dotColor: '#d29922', bang: true }), 32, 'resources/trayAlert.png')
+render(trayColor(true, { dotColor: '#3fb950' }), 32, 'resources/trayReady.png')
 render(appIcon, 1024, 'build/icon.png')

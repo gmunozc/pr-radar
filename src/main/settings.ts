@@ -1,4 +1,13 @@
-import { DEFAULT_SETTINGS, MIN_POLL_INTERVAL_SEC, SHORTCUT_OPTIONS, type Settings } from '../shared/types'
+import {
+  DEFAULT_SETTINGS,
+  FAST_POLL_OPTIONS,
+  MIN_POLL_INTERVAL_SEC,
+  MINE_FILTERS,
+  NOTIFY_KINDS,
+  SHORTCUT_OPTIONS,
+  type MyPrFilter,
+  type Settings
+} from '../shared/types'
 
 export type SettingsPatch = Partial<Settings> & { openAtLogin?: boolean }
 
@@ -42,6 +51,13 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (typeof p.pollIntervalSec === 'number' && Number.isFinite(p.pollIntervalSec)) {
     out.pollIntervalSec = Math.min(3600, Math.max(MIN_POLL_INTERVAL_SEC, Math.round(p.pollIntervalSec)))
   }
+  if (typeof p.fastPoll === 'number' && (FAST_POLL_OPTIONS as readonly number[]).includes(p.fastPoll)) out.fastPoll = p.fastPoll
+  if (p.notifyKinds && typeof p.notifyKinds === 'object' && !Array.isArray(p.notifyKinds)) {
+    const kinds = p.notifyKinds as Record<string, unknown>
+    out.notifyKinds = Object.fromEntries(
+      NOTIFY_KINDS.map((k) => [k, typeof kinds[k] === 'boolean' ? kinds[k] : DEFAULT_SETTINGS.notifyKinds[k]])
+    ) as Settings['notifyKinds']
+  }
   if (typeof p.staleAfterDays === 'number' && Number.isFinite(p.staleAfterDays)) {
     out.staleAfterDays = Math.min(MAX_STALE_DAYS, Math.max(0, Math.round(p.staleAfterDays)))
   }
@@ -49,10 +65,15 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (repos) out.excludeRepos = repos
   const authors = exclusionList(p.excludeAuthors, AUTHOR)
   if (authors) out.excludeAuthors = authors
+  const muted = exclusionList(p.muteRepos, REPO)
+  if (muted) out.muteRepos = muted
   if (p.reviewFilter === 'all' || p.reviewFilter === 'direct' || p.reviewFilter === 'team') out.reviewFilter = p.reviewFilter
   if (p.reviewSort === 'newest' || p.reviewSort === 'oldest' || p.reviewSort === 'updated') out.reviewSort = p.reviewSort
+  if (typeof p.mineFilter === 'string' && (MINE_FILTERS as readonly string[]).includes(p.mineFilter)) out.mineFilter = p.mineFilter as MyPrFilter
+  if (p.mineSort === 'newest' || p.mineSort === 'oldest' || p.mineSort === 'updated') out.mineSort = p.mineSort
   if (typeof p.shortcut === 'string' && (SHORTCUT_OPTIONS as readonly string[]).includes(p.shortcut)) out.shortcut = p.shortcut
   if (p.panelSize === 'compact' || p.panelSize === 'default' || p.panelSize === 'large') out.panelSize = p.panelSize
+  if (p.notificationClick === 'github' || p.notificationClick === 'panel') out.notificationClick = p.notificationClick
   if (typeof p.clientId === 'string') out.clientId = p.clientId.trim()
   if (p.language === 'system' || p.language === 'en' || p.language === 'es') out.language = p.language
   for (const key of ['workStart', 'workEnd', 'digestTime'] as const) {

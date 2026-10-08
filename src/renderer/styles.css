@@ -72,9 +72,13 @@ body {
   overflow: hidden;
 }
 
-/* On macOS the window uses native vibrancy; let it show through. */
 html[data-platform='darwin'] body {
-  background: transparent;
+  /*
+   * The window's vibrancy shows a blurred copy of whatever is behind the panel. Over a white
+   * page the "popover" material turns light grey and the muted text vanishes, so the page
+   * itself tints it with the theme background; the 20 % left keeps a hint of the blur.
+   */
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
 }
 
 button {
@@ -343,6 +347,20 @@ html[data-platform='darwin'] .tab-active {
   text-align: left;
 }
 
+/* The row a notification was about, right after the panel opened on it. */
+.pr-flash {
+  animation: pr-flash 1.5s ease-out;
+}
+
+@keyframes pr-flash {
+  from {
+    background: var(--direct-bg);
+  }
+  to {
+    background: transparent;
+  }
+}
+
 .pr:hover {
   background: var(--surface-hover);
 }
@@ -502,27 +520,32 @@ html[data-platform='darwin'] .tab-active {
   color: var(--red);
 }
 
-/* Snooze and dismiss take the place of the age while hovering. */
+/*
+ * The actions take the place of the age in the meta line while hovering, with the menu open or
+ * with a button focused, so the repository name shortens and nothing sits over the text. The
+ * buttons are taller than the line: negative margins keep the row from growing.
+ */
 .pr-actions {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: flex;
+  display: none;
+  align-items: center;
+  align-self: center;
   gap: 4px;
-  opacity: 0;
+  margin: -4px 0 -4px auto;
+  flex-shrink: 0;
 }
 
 .pr:hover .pr-actions,
 .pr:focus-visible .pr-actions,
 .pr-actions:focus-within,
 .pr-actions-open {
-  opacity: 1;
+  display: flex;
 }
 
 .pr:hover .pr-age,
 .pr:focus-visible .pr-age,
+.pr:has(.pr-actions:focus-within) .pr-age,
 .pr:has(.pr-actions-open) .pr-age {
-  visibility: hidden;
+  display: none;
 }
 
 .pr-action {
@@ -552,13 +575,6 @@ html[data-platform='darwin'] .tab-active {
   outline: none;
 }
 
-.snooze-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 7px;
-  color: var(--text-muted);
-}
 
 .btn-small {
   padding: 2px 9px;
@@ -626,6 +642,12 @@ html[data-platform='darwin'] .tab-active {
 .ring-waiting {
   box-shadow: 0 0 0 1.5px var(--warn-fg);
   opacity: 0.8;
+}
+
+/* Commented or dismissed: they looked, nobody has decided. */
+.ring-commented {
+  box-shadow: 0 0 0 1.5px var(--text-faint);
+  opacity: 0.85;
 }
 
 .reviewer-team,
@@ -932,6 +954,11 @@ code {
   padding: 6px 12px 14px;
 }
 
+/* The sign-out confirmation sits under the account row, not inside a PR row. */
+.settings .confirm-row {
+  margin: 0 0 10px;
+}
+
 .group {
   margin-top: 10px;
 }
@@ -959,6 +986,26 @@ code {
 .setting-text {
   flex: 1;
   min-width: 0;
+}
+
+/* The per-kind checklist under "Updates on my PRs". */
+.setting-sub {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin-top: -2px;
+}
+
+.setting-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.setting-sub-item input {
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .setting-label {
@@ -1274,6 +1321,16 @@ code {
   flex: 0 0 auto;
 }
 
+/* The ⌘F text filter above a list. */
+.search-row .input {
+  flex: 1;
+  font-size: 12px;
+}
+
+.search-close {
+  flex-shrink: 0;
+}
+
 .filter-select {
   flex: 1 1 120px;
   min-width: 0;
@@ -1318,6 +1375,17 @@ code {
   padding: 0;
   background: transparent;
   cursor: default;
+}
+
+/* A chip that does something when pressed (the unresolved threads). */
+.chip-button {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.chip-button:hover:not(:disabled) {
+  text-decoration: underline;
 }
 
 .ci-button:hover,
@@ -1481,8 +1549,12 @@ html[data-density='compact'] .diff {
   box-shadow: 0 0 0 1.5px var(--green);
 }
 
-.review-changes_requested .reviewer {
+.review-changes .reviewer {
   box-shadow: 0 0 0 1.5px var(--red);
+}
+
+.review-commented .reviewer {
+  box-shadow: 0 0 0 1.5px var(--text-faint);
 }
 
 .detail-stats {
@@ -1494,12 +1566,150 @@ html[data-density='compact'] .diff {
   color: var(--text-muted);
 }
 
-.detail-body {
+/* A PR description rendered from Markdown. */
+.md {
   font-size: 12.5px;
   line-height: 1.45;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  margin: 10px 0 4px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md h1 {
+  font-size: 15px;
+}
+
+.md h2 {
+  font-size: 14px;
+}
+
+.md h3 {
+  font-size: 13px;
+}
+
+.md h4,
+.md h5,
+.md h6 {
+  font-size: 12.5px;
+}
+
+.md p {
+  margin: 0 0 8px;
+}
+
+.md ul,
+.md ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.md li + li {
+  margin-top: 2px;
+}
+
+.md li > ul,
+.md li > ol {
+  margin-bottom: 0;
+}
+
+.md li.task {
+  list-style: none;
+  margin-left: -18px;
+}
+
+.md li.task input {
+  margin: 0 6px 0 0;
+  vertical-align: -1px;
+  accent-color: var(--accent);
+}
+
+.md code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-hover);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.md pre {
+  margin: 0 0 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface-hover);
+  overflow-x: auto;
+}
+
+.md pre code {
+  padding: 0;
+  background: none;
+  font-size: 11px;
+  white-space: pre;
+}
+
+.md blockquote {
+  margin: 0 0 8px;
+  padding: 2px 10px;
+  border-left: 3px solid var(--border);
+  color: var(--text-muted);
+}
+
+.md hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.md a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.md a:hover {
+  text-decoration: underline;
+}
+
+.md table {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 8px;
+  border-collapse: collapse;
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.md th,
+.md td {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.md th {
+  font-weight: 600;
+  background: var(--surface-hover);
+}
+
+.md del {
+  color: var(--text-muted);
 }
 
 .detail-muted {

@@ -19,8 +19,10 @@ describe('migrateState', () => {
         ready: [],
         ciFailed: [],
         conflicts: [],
+        commented: [],
         merged: [],
         mergeFailed: [],
+        closed: [],
         sessionExpired: false
       },
       lastDigestDay: null
@@ -63,13 +65,16 @@ describe('migrateState and your PRs snapshot', () => {
       login: 'me',
       seenIds: [],
       myPrs: {
-        a: { status: 'waiting', ci: 'failure', ciFailedOid: 'h1', conflicts: true },
-        b: { status: 'waiting', ci: 'nope', ciFailedOid: 3, conflicts: 'yes' }
+        a: { status: 'waiting', ci: 'failure', ciFailedOid: 'h1', conflicts: true, commented: ['ana', 3] },
+        b: { status: 'waiting', ci: 'nope', ciFailedOid: 3, conflicts: 'yes', commented: 'ana' }
       },
-      queued: { ciFailed: ['a', 1], conflicts: ['b'] }
+      queued: { ciFailed: ['a', 1], conflicts: ['b'], commented: ['c'] }
     })
-    expect(state?.myPrs).toEqual({ a: { status: 'waiting', ci: 'failure', ciFailedOid: 'h1', conflicts: true }, b: { status: 'waiting' } })
-    expect(state?.queued).toMatchObject({ ciFailed: ['a'], conflicts: ['b'] })
+    expect(state?.myPrs).toEqual({
+      a: { status: 'waiting', ci: 'failure', ciFailedOid: 'h1', conflicts: true, commented: ['ana'] },
+      b: { status: 'waiting' }
+    })
+    expect(state?.queued).toMatchObject({ ciFailed: ['a'], conflicts: ['b'], commented: ['c'] })
   })
 
   it('leaves the snapshot undefined for older state files', () => {

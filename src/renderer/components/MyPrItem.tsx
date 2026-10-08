@@ -2,10 +2,12 @@ import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } fr
 import { formatDateTime, timeAgo } from '../../shared/format'
 import type { Translate } from '../../shared/i18n'
 import type { MessageKey } from '../../shared/i18n/en'
-import { myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
+import { isSharedMenuAction, MENU_KEY, myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
 import type { AppState, MergeMethod, MyPullRequest, MyReviewStatus, PrAction } from '../../shared/types'
-import { GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
+import { CopyIcon, GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
+import { REVIEW_LOOK } from '../reviews'
+import { sharedMenuItem } from '../rowMenu'
 import { useSendTo, withSendTo } from '../useLaunchers'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
@@ -35,20 +37,17 @@ const COPIED_MS = 2000
 interface Person {
   key: string
   avatarUrl: string
-  ring: 'approved' | 'changes' | 'waiting'
+  ring: 'approved' | 'changes' | 'commented' | 'waiting'
   title: string
 }
 
-/** Who already reviewed (approved / changes) and who is still pending, as avatars. */
+/** Who already reviewed (approved, changes, comments) and who is still pending, as avatars. */
 function people(pr: MyPullRequest, t: Translate): { avatars: Person[]; teams: string[] } {
-  const avatars: Person[] = pr.reviews
-    .filter((r) => r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED')
-    .map((r) => ({
-      key: `r-${r.login}`,
-      avatarUrl: r.avatarUrl,
-      ring: r.state === 'APPROVED' ? 'approved' : 'changes',
-      title: t(r.state === 'APPROVED' ? 'reviewer.approved' : 'reviewer.changes', { login: r.login })
-    }))
+  const avatars: Person[] = []
+  for (const r of pr.reviews) {
+    const look = REVIEW_LOOK[r.state]
+    if (look) avatars.push({ key: `r-${r.login}`, avatarUrl: r.avatarUrl, ring: look.ring, title: t(look.label, { login: r.login }) })
+  }
   const teams: string[] = []
   for (const r of pr.pendingReviewers) {
     if (r.kind === 'user') {
@@ -81,9 +80,12 @@ interface Props {
   staleDays: number
   /** Opens the detail view (title click, menu); absent inside the detail view itself. */
   onDetail?(prId: string): void
+  /** Whether the repository's alerts are muted; absent until the settings are known. */
+  muted?: boolean
+  onMute?(muted: boolean): void
 }
 
-export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: Props) {
+export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, muted, onMute }: Props) {
   const t = useT()
   const locale = useLocale()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -91,6 +93,7 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
   const [confirming, setConfirming] = useState<Confirming | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [threadLoading, setThreadLoading] = useState(false)
   const kebab = useRef<HTMLButtonElement>(null)
   const sendTo = useSendTo(pr)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
@@ -102,6 +105,13 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
       e.preventDefault()
       open()
     } else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault()
+      setMenuOpen(true)
+    } else if ((e.metaKey || e.ctrlKey) && e.key === 'c' && !window.getSelection()?.toString()) {
+      // ⌘C on a focused row copies its link; with text selected, the system copy wins.
+      e.preventDefault()
+      void copy(pr.url)
+    } else if (e.target === e.currentTarget && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === MENU_KEY) {
       e.preventDefault()
       setMenuOpen(true)
     }
@@ -121,15 +131,40 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
     if (result.ok) setConfirming(null)
     else setError(t(`action.error.${result.code}`, { detail: result.detail ?? '' }))
   }
-  const copy = async (text: string) => {
-    const { ok } = await window.prRadar.copyText(text)
-    if (!ok) return
+  /** The "n unresolved threads" chip opens the first of them, or the PR when GitHub has no URL. */
+  const openThread = async () => {
+    setThreadLoading(true)
+    try {
+      const url = await window.prRadar.prs.thread(pr.id)
+      void window.prRadar.openExternal(url ?? pr.url)
+    } finally {
+      setThreadLoading(false)
+    }
+  }
+  const flashCopied = () => {
     setCopied(true)
     setTimeout(() => setCopied(false), COPIED_MS)
+  }
+  const copy = async (text: string) => {
+    if ((await window.prRadar.copyText(text)).ok) flashCopied()
+  }
+  const copyLink = async () => {
+    if ((await window.prRadar.copyLink({ title: pr.title, url: pr.url })).ok) flashCopied()
   }
   const confirmWith = (kind: Confirming['kind']) => setConfirming({ kind, method: pr.merge.defaultMethod })
 
   const menuItem = (id: MyPrMenuAction): MenuItem => {
+    if (isSharedMenuAction(id)) {
+      return sharedMenuItem(id, {
+        pr,
+        t,
+        copy: (text) => void copy(text),
+        copyLink: () => void copyLink(),
+        open: (url) => void window.prRadar.openExternal(url),
+        onDetail,
+        setMuted: onMute
+      })
+    }
     switch (id) {
       case 'merge':
         return { id, label: t('action.mergeNow'), disabled: busy, onSelect: () => confirmWith('merge') }
@@ -151,18 +186,10 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
           label: t('action.repoSettings'),
           onSelect: () => void window.prRadar.openExternal(`https://github.com/${pr.repo}/settings`)
         }
-      case 'copy_branch':
-        return { id, label: t('action.copyBranch'), onSelect: () => void copy(pr.branch) }
-      case 'copy_link':
-        return { id, label: t('action.copyLink'), onSelect: () => void copy(pr.url) }
-      case 'details':
-        return { id, label: t('action.details'), onSelect: () => onDetail?.(pr.id) }
-      case 'open':
-        return { id, label: t('action.open'), onSelect: open }
     }
   }
   const items = withSendTo(
-    myPrMenuActions(pr, canWrite, armed !== undefined)
+    myPrMenuActions(pr, canWrite, armed !== undefined, { muted })
       .filter((id) => id !== 'details' || onDetail)
       .map(menuItem),
     sendTo.item
@@ -197,6 +224,7 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
       className="pr"
       role="button"
       tabIndex={0}
+      data-pr-id={pr.id}
       onClick={open}
       onKeyDown={onKeyDown}
       onContextMenu={onContextMenu}
@@ -219,6 +247,33 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
           >
             {timeAgo(pr.createdAt, now, locale)}
           </span>
+          <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
+            {copied && <span className="pr-copied">{t('action.copied')}</span>}
+            <button
+              className="pr-action"
+              onClick={(e) => {
+                e.stopPropagation()
+                void copy(pr.url)
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+              title={t('action.copyLink')}
+              aria-label={t('action.copyLink')}
+            >
+              <CopyIcon size={12} />
+            </button>
+            <button
+              ref={kebab}
+              className="pr-action"
+              onClick={toggleMenu}
+              onMouseDown={(e) => e.preventDefault()}
+              title={t('action.menu')}
+              aria-label={t('action.menu')}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              {busy ? <span className="spinner spinner-sm" /> : <KebabHorizontalIcon size={12} />}
+            </button>
+          </div>
         </div>
         <div className={`pr-title ${onDetail ? 'pr-title-link' : ''}`} onClick={showDetail} title={onDetail ? t('detail.titleHint') : undefined}>
           {pr.title}
@@ -245,7 +300,21 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
               {t(blockerChip.label)}
             </span>
           )}
-          {pr.unresolvedThreads ? <span className="chip chip-changes">{t('mine.threads', { count: pr.unresolvedThreads })}</span> : null}
+          {pr.unresolvedThreads ? (
+            <button
+              className="chip chip-changes chip-button"
+              onClick={(e) => {
+                e.stopPropagation()
+                void openThread()
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.stopPropagation()}
+              title={t('mine.threadsHint')}
+              disabled={threadLoading}
+            >
+              {threadLoading ? <span className="spinner spinner-sm" /> : t('mine.threads', { count: pr.unresolvedThreads })}
+            </button>
+          ) : null}
           {pr.isDraft && <span className="chip chip-draft">{t('pr.draft')}</span>}
           <Labels labels={pr.labels} />
           <span className="diff">
@@ -299,21 +368,6 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
           </div>
         )}
         <SendToStatus sendTo={sendTo} />
-      </div>
-      <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
-        {copied && <span className="pr-copied">{t('action.copied')}</span>}
-        <button
-          ref={kebab}
-          className="pr-action"
-          onClick={toggleMenu}
-          onMouseDown={(e) => e.preventDefault()}
-          title={t('action.menu')}
-          aria-label={t('action.menu')}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-        >
-          {busy ? <span className="spinner spinner-sm" /> : <KebabHorizontalIcon size={12} />}
-        </button>
       </div>
       {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} anchor={kebab} />}
     </div>

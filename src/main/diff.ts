@@ -110,6 +110,8 @@ export interface MyPrSnapshot {
   ciFailedOid?: string
   /** Whether it had merge conflicts, so only new ones are reported. */
   conflicts?: boolean
+  /** Who had left comment-only reviews, so only new commenters are reported. */
+  commented?: string[]
 }
 
 export type MyPrEvent =
@@ -119,8 +121,10 @@ export type MyPrEvent =
   /** The checks on the current head failed; `failing` names them (empty when GitHub didn't say). */
   | { kind: 'my_pr_ci_failed'; pr: MyPullRequest; failing: string[] }
   | { kind: 'my_pr_conflicts'; pr: MyPullRequest }
+  /** Reviewers who just left comments without a decision. */
+  | { kind: 'my_pr_commented'; pr: MyPullRequest; by: string[] }
 
-const reviewersWith = (pr: MyPullRequest, state: 'APPROVED' | 'CHANGES_REQUESTED') =>
+const reviewersWith = (pr: MyPullRequest, state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED') =>
   pr.reviews.filter((r) => r.state === state).map((r) => r.login)
 
 const failingChecks = (pr: MyPullRequest) => pr.checks.filter((c) => c.state === 'failure').map((c) => c.name)
@@ -138,12 +142,14 @@ export function diffMyPrs(
   const events: MyPrEvent[] = []
   for (const pr of current) {
     const before = prev?.[pr.id]
+    const commented = reviewersWith(pr, 'COMMENTED')
     const next: MyPrSnapshot = {
       status: pr.status,
       readyNotifiedOid: before?.readyNotifiedOid,
       ci: pr.ci,
       ciFailedOid: before?.ciFailedOid,
-      conflicts: pr.conflicts
+      conflicts: pr.conflicts,
+      commented
     }
     if (before) {
       if (pr.readyToMerge && before.readyNotifiedOid !== pr.headOid) {
@@ -161,6 +167,12 @@ export function diffMyPrs(
         next.ciFailedOid = pr.headOid
       }
       if (pr.conflicts && before.conflicts === false) events.push({ kind: 'my_pr_conflicts', pr })
+      // New comment-only reviews are news too; a snapshot that never tracked them is the baseline.
+      if (before.commented !== undefined) {
+        const known = new Set(before.commented)
+        const by = commented.filter((login) => !known.has(login))
+        if (by.length) events.push({ kind: 'my_pr_commented', pr, by })
+      }
     } else {
       // Already ready or failing when first seen: remember it so it isn't announced later.
       if (pr.readyToMerge) next.readyNotifiedOid = pr.headOid

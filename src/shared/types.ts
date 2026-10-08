@@ -159,7 +159,7 @@ export type PanelSize = 'compact' | 'default' | 'large'
 
 /** What the detail view loads on demand (one extra query per PR, cached per head commit). */
 export interface PrDetail {
-  /** The description as plain text ('' when empty). */
+  /** The description as Markdown ('' when empty). */
   body: string
   changedFiles: number
   commits: number
@@ -185,6 +185,9 @@ export interface Viewer {
 export type SnoozeOption = 'hour' | 'tomorrow' | 'push'
 
 export type ReviewFilter = 'all' | 'direct' | 'team'
+/** Your PRs: all, ready to merge, waiting for a review, or with changes requested. */
+export const MINE_FILTERS = ['all', 'ready', 'waiting', 'changes'] as const
+export type MyPrFilter = (typeof MINE_FILTERS)[number]
 export type ReviewSort = 'newest' | 'oldest' | 'updated'
 
 export type AppStatus = 'logged_out' | 'loading' | 'ready' | 'error'
@@ -263,20 +266,30 @@ export interface Settings {
   /** Repositories ("owner/name") and authors never shown. */
   excludeRepos: string[]
   excludeAuthors: string[]
+  /** Repositories ("owner/name") whose PRs stay in the lists but never notify. */
+  muteRepos: string[]
   /** Review requests older than this many days are highlighted; 0 turns it off. */
   staleAfterDays: number
   reviewFilter: ReviewFilter
   reviewSort: ReviewSort
+  mineFilter: MyPrFilter
+  mineSort: ReviewSort
   /** Third tab with PRs you take part in; costs a little more per poll. */
   showInvolved: boolean
   /** Electron accelerator that opens the panel from anywhere; '' for none (see SHORTCUT_OPTIONS). */
   shortcut: string
   panelSize: PanelSize
   pollIntervalSec: number
+  /** Seconds between cheap change probes that trigger a full check; 0 turns them off (FAST_POLL_OPTIONS). */
+  fastPoll: number
   clientId: string
   language: LanguagePref
-  /** Notify when your PRs are approved, get changes requested or become ready to merge. */
+  /** Notify about updates on your PRs (approved, changes, comments, ready, checks, conflicts). */
   notifyMyPrs: boolean
+  /** Which of those updates, when `notifyMyPrs` is on. */
+  notifyKinds: Record<NotifyKind, boolean>
+  /** What clicking an alert about one PR does: open it on GitHub, or show the panel at that row. */
+  notificationClick: NotificationClick
   /** Only notify during working hours; alerts outside them arrive together afterwards. */
   quietHours: boolean
   /** "HH:MM", local time. */
@@ -298,16 +311,22 @@ export const DEFAULT_SETTINGS: Settings = {
   hideBots: false,
   excludeRepos: [],
   excludeAuthors: [],
+  muteRepos: [],
   staleAfterDays: 3,
   reviewFilter: 'all',
   reviewSort: 'newest',
+  mineFilter: 'all',
+  mineSort: 'newest',
   showInvolved: true,
   shortcut: '',
   panelSize: 'default',
   pollIntervalSec: 30,
+  fastPoll: 5,
   clientId: '',
   language: 'system',
   notifyMyPrs: true,
+  notifyKinds: { approved: true, changes: true, ready: true, ciFailed: true, conflicts: true, commented: true, merged: true },
+  notificationClick: 'github',
   quietHours: false,
   workStart: '09:00',
   workEnd: '19:00',
@@ -317,7 +336,17 @@ export const DEFAULT_SETTINGS: Settings = {
   checkUpdates: true
 }
 
+export type NotificationClick = 'github' | 'panel'
+
+/** Updates on your PRs that can be notified, in the order the settings list them. */
+export const NOTIFY_KINDS = ['approved', 'changes', 'commented', 'ready', 'ciFailed', 'conflicts', 'merged'] as const
+export type NotifyKind = (typeof NOTIFY_KINDS)[number]
+
 export const MIN_POLL_INTERVAL_SEC = 15
+/** Probe cadences the settings offer, in seconds; 0 is off. */
+export const FAST_POLL_OPTIONS = [5, 10, 0] as const
+/** While probes run, the full check is only a safety net. */
+export const FULL_POLL_WITH_FAST_SEC = 120
 
 export type NotifyResult = { ok: true } | { ok: false; error: string }
 
@@ -341,6 +370,10 @@ export interface PrRadarApi {
   platform: string
   getState(): Promise<AppState>
   onState(cb: (state: AppState) => void): () => void
+  /** A poll or a change probe just confirmed the data is current (epoch ms). */
+  onChecked(cb: (atMs: number) => void): () => void
+  /** A notification was clicked with "open the panel at that PR": show that row. */
+  onFocusPr(cb: (prId: string) => void): () => void
   refresh(): Promise<void>
   dismiss(prId: string): Promise<void>
   snooze(prId: string, option: SnoozeOption): Promise<void>
@@ -352,8 +385,12 @@ export interface PrRadarApi {
     action(prId: string, action: PrAction): Promise<ActionResult>
     /** Description and counts for the detail view; null when the PR is unknown or GitHub fails. */
     detail(prId: string): Promise<PrDetail | null>
+    /** URL of the first unresolved review thread of one of your PRs; null when there is none. */
+    thread(prId: string): Promise<string | null>
   }
   copyText(text: string): Promise<{ ok: boolean }>
+  /** Title and link to the clipboard: Markdown as plain text, an anchor as rich text. */
+  copyLink(link: { title: string; url: string }): Promise<{ ok: boolean }>
   /** Restarts the app (needed for Chromium's own UI language to change). */
   relaunch(): Promise<void>
   auth: {
@@ -375,6 +412,8 @@ export interface PrRadarApi {
   /** Settings changed (from the panel or the tray menu). */
   onSettings(cb: (settings: Settings & { openAtLogin: boolean }) => void): () => void
   openExternal(url: string): Promise<void>
+  /** Opens an http(s) link from a PR description, whatever the host. */
+  openLink(url: string): Promise<void>
   /** Opens a check's details page; only URLs present in the current state are allowed. */
   openCheck(url: string): Promise<void>
   testNotification(): Promise<NotifyResult>
@@ -421,15 +460,19 @@ export interface PrRadarApi {
 export const IPC = {
   getState: 'state:get',
   state: 'state:update',
+  checked: 'state:checked',
   refresh: 'state:refresh',
   dismiss: 'prs:dismiss',
   snooze: 'prs:snooze',
   restoreDismissed: 'prs:restore',
   prAction: 'prs:action',
   prDetail: 'prs:detail',
+  prThread: 'prs:thread',
   copyText: 'clipboard:copy',
+  copyLink: 'clipboard:copy-link',
   relaunch: 'app:relaunch',
   panelHide: 'panel:hide',
+  focusPr: 'panel:focus-pr',
   settingsChanged: 'settings:update',
   authStart: 'auth:start',
   authCancel: 'auth:cancel',
@@ -443,6 +486,7 @@ export const IPC = {
   settingsSet: 'settings:set',
   openExternal: 'shell:open-external',
   openCheck: 'shell:open-check',
+  openLink: 'shell:open-link',
   testNotification: 'notify:test',
   openNotificationSettings: 'notify:open-settings',
   appInfo: 'app:info',

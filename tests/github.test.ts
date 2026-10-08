@@ -7,6 +7,9 @@ import {
   buildMyPrsQuery,
   buildSearchQuery,
   ciFromRollup,
+  fetchFingerprint,
+  fetchFirstUnresolvedThread,
+  fetchPrOutcome,
   fetchPullRequests,
   GithubError,
   GRAPHQL_URL,
@@ -14,7 +17,10 @@ import {
   isReadyToMerge,
   mergeBlocker,
   mergeOptions,
+  mergeReviews,
   myReviewStatus,
+  PROBE_QUERY,
+  probeFingerprint,
   reviewFreshness,
   searchQueries
 } from '../src/main/github'
@@ -57,6 +63,7 @@ const rawMyPr = (over: Record<string, unknown> = {}) => ({
   ...rawPr({ author: { login: 'me', avatarUrl: 'x' }, reviewRequests: { nodes: [] } }),
   reviewDecision: null,
   latestOpinionatedReviews: { nodes: [] },
+  latestReviews: { nodes: [] },
   ...over
 })
 
@@ -122,6 +129,19 @@ describe('search exclusions', () => {
     expect(JSON.parse(fetchFn.mock.calls[1][1].body).variables.withInvolved).toBe(true)
   })
 
+  it("stays quiet when GitHub's count and its results disagree by a few, as happens right after a merge", async () => {
+    const page = (n: number, issueCount: number) => ({
+      viewer: { login: 'me', avatarUrl: 'x' },
+      requested: search([]),
+      mine: search(Array.from({ length: n }, (_, i) => rawMyPr({ id: `M${i}` })), issueCount),
+      involved: search([])
+    })
+    const few = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(jsonResponse({ data: page(13, 14) })))
+    expect(few.warnings).toEqual([])
+    const overflow = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(jsonResponse({ data: page(50, 51) })))
+    expect(overflow.warnings).toContainEqual({ code: 'truncated_mine', params: { shown: 50, total: 51 } })
+  })
+
   it('warns when exclusions were truncated', async () => {
     const excludeRepos = Array.from({ length: 30 }, (_, i) => `acme/repository-number-${i}`)
     const result = await fetchPullRequests('tok', { ...settings, excludeRepos }, 'me', vi.fn().mockResolvedValue(ok([])))
@@ -143,6 +163,9 @@ describe('myReviewStatus', () => {
     expect(myReviewStatus(null, 1, ['CHANGES_REQUESTED'])).toBe('changes_requested')
     expect(myReviewStatus(null, 0, ['APPROVED'])).toBe('approved')
     expect(myReviewStatus(null, 0, [])).toBe('no_reviewers')
+    // Comments without a decision: someone is looking, so it is waiting rather than unreviewed.
+    expect(myReviewStatus(null, 0, ['COMMENTED'])).toBe('waiting')
+    expect(myReviewStatus('REVIEW_REQUIRED', 0, ['COMMENTED', 'DISMISSED'])).toBe('waiting')
   })
 })
 
@@ -542,7 +565,7 @@ describe('graphqlRequest', () => {
 describe('fetchPullRequestDetail', () => {
   it('maps the description and counts, and reports a missing PR as null', async () => {
     const fetchFn = vi.fn().mockResolvedValue(
-      jsonResponse({ data: { node: { bodyText: ' Hello ', changedFiles: 3, totalCommentsCount: 2, commits: { totalCount: 4 } } } })
+      jsonResponse({ data: { node: { body: ' Hello ', changedFiles: 3, totalCommentsCount: 2, commits: { totalCount: 4 } } } })
     )
     await expect(fetchPullRequestDetail('tok', 'PR_1', fetchFn)).resolves.toEqual({ body: 'Hello', changedFiles: 3, commits: 4, comments: 2 })
     expect(JSON.parse(fetchFn.mock.calls[0][1].body).variables).toEqual({ id: 'PR_1' })
@@ -586,5 +609,126 @@ describe('GitHub App installations', () => {
   it('reports an expired token as unauthorized', async () => {
     const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ message: 'Bad credentials' }, { status: 401 }))
     await expect(fetchInstallations('ghu_x', fetchFn)).rejects.toMatchObject({ kind: 'unauthorized' })
+  })
+})
+
+describe('change probes', () => {
+  const probePr = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    updatedAt: 'T1',
+    headRefOid: 'h1',
+    isDraft: false,
+    reviewDecision: null,
+    mergeable: 'MERGEABLE',
+    mergeStateStatus: 'CLEAN',
+    commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] },
+    ...over
+  })
+  const data = (requested: unknown[], mine: unknown[] = [], involved?: unknown[]) =>
+    ({ requested: search(requested), mine: search(mine), ...(involved ? { involved: search(involved) } : {}) }) as Parameters<
+      typeof probeFingerprint
+    >[0]
+
+  it('does not depend on the order GitHub returns PRs in', () => {
+    expect(probeFingerprint(data([probePr('a'), probePr('b')]))).toBe(probeFingerprint(data([probePr('b'), probePr('a')])))
+  })
+
+  it('changes with anything a notification could come from', () => {
+    const base = probeFingerprint(data([probePr('a')]))
+    const variants = [
+      data([probePr('a'), probePr('b')]),
+      data([probePr('a', { updatedAt: 'T2' })]),
+      data([probePr('a', { headRefOid: 'h2' })]),
+      data([probePr('a', { isDraft: true })]),
+      data([probePr('a', { reviewDecision: 'APPROVED' })]),
+      data([probePr('a', { mergeStateStatus: 'BEHIND' })]),
+      data([probePr('a', { commits: { nodes: [{ commit: { statusCheckRollup: { state: 'FAILURE' } } }] } })]),
+      data([probePr('a', { commits: { nodes: [{ commit: { statusCheckRollup: null } }] } })]),
+      data([], [probePr('a')]),
+      data([probePr('a')], [], [probePr('c')])
+    ]
+    for (const variant of variants) expect(probeFingerprint(variant)).not.toBe(base)
+    expect(new Set(variants.map(probeFingerprint)).size).toBe(variants.length)
+  })
+
+  it('asks for the same searches as the full query and fails without data', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: data([probePr('a')]) }))
+    await expect(fetchFingerprint('tok', { ...settings, showInvolved: false }, fetchFn)).resolves.toHaveLength(16)
+    const { query, variables } = JSON.parse(fetchFn.mock.calls[0][1].body)
+    expect(query).toBe(PROBE_QUERY)
+    expect(variables).toMatchObject({ requested: searchQueries(settings).requested, withInvolved: false, first: 50 })
+    const noData = vi.fn().mockResolvedValue(jsonResponse({ data: null, errors: [{ message: 'nope' }] }))
+    await expect(fetchFingerprint('tok', settings, noData)).rejects.toMatchObject({ kind: 'unknown', message: 'nope' })
+  })
+})
+
+describe('mergeReviews', () => {
+  const review = (login: string, state: string, id?: string) => ({ state, author: { login, avatarUrl: login[0], ...(id ? { id } : {}) } })
+
+  it('shows commenters and dismissed reviews next to the decisions, once per person', () => {
+    const reviews = mergeReviews(
+      {
+        latestOpinionatedReviews: { nodes: [review('ana', 'APPROVED', 'U_1'), review('dan', 'DISMISSED')] } as never,
+        latestReviews: { nodes: [review('ana', 'COMMENTED', 'U_1'), review('bob', 'COMMENTED'), review('dan', 'DISMISSED'), review('eve', 'PENDING')] } as never
+      },
+      'me'
+    )
+    expect(reviews).toEqual([
+      { login: 'ana', avatarUrl: 'a', state: 'APPROVED', id: 'U_1' },
+      { login: 'bob', avatarUrl: 'b', state: 'COMMENTED' },
+      { login: 'dan', avatarUrl: 'd', state: 'DISMISSED' }
+    ])
+  })
+
+  it('ignores your own comment reviews and copes without the latestReviews field', () => {
+    expect(mergeReviews({ latestOpinionatedReviews: { nodes: [] }, latestReviews: { nodes: [review('me', 'COMMENTED')] } } as never, 'me')).toEqual([])
+    expect(mergeReviews({ latestOpinionatedReviews: { nodes: [review('ana', 'APPROVED')] }, latestReviews: null } as never, 'me')).toHaveLength(1)
+  })
+
+  it('turns "no reviewers" into "waiting" once someone has commented', async () => {
+    const mine = rawMyPr({ reviewDecision: 'REVIEW_REQUIRED', latestReviews: { nodes: [review('claude', 'COMMENTED'), review('dan', 'COMMENTED')] } })
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], {}, [mine])))
+    expect(result.myPrs[0]).toMatchObject({ status: 'waiting', reviews: [{ login: 'claude', state: 'COMMENTED' }, { login: 'dan', state: 'COMMENTED' }] })
+  })
+})
+
+describe('fetchFirstUnresolvedThread', () => {
+  const threads = (nodes: unknown[]) => jsonResponse({ data: { node: { reviewThreads: { nodes } } } })
+  const thread = (isResolved: boolean, url: string) => ({ isResolved, comments: { nodes: [{ url }] } })
+
+  it("returns the first unresolved thread's first comment, null when all are resolved or the PR is unknown", async () => {
+    const mixed = threads([thread(true, 'https://x/1'), null, thread(false, 'https://x/2'), thread(false, 'https://x/3')])
+    await expect(fetchFirstUnresolvedThread('tok', 'PR_1', vi.fn().mockResolvedValue(mixed))).resolves.toBe('https://x/2')
+    await expect(fetchFirstUnresolvedThread('tok', 'PR_1', vi.fn().mockResolvedValue(threads([thread(true, 'https://x/1')])))).resolves.toBeNull()
+    await expect(fetchFirstUnresolvedThread('tok', 'PR_x', vi.fn().mockResolvedValue(jsonResponse({ data: { node: null } })))).resolves.toBeNull()
+  })
+})
+
+describe('fetchPrOutcome', () => {
+  const node = (over: Record<string, unknown>) =>
+    jsonResponse({
+      data: {
+        node: {
+          id: 'M1',
+          number: 7,
+          title: 'Done',
+          url: 'https://github.com/acme/app/pull/7',
+          repository: { nameWithOwner: 'acme/app' },
+          state: 'OPEN',
+          mergedBy: null,
+          timelineItems: { nodes: [] },
+          ...over
+        }
+      }
+    })
+  const ref = { id: 'M1', number: 7, title: 'Done', url: 'https://github.com/acme/app/pull/7', repo: 'acme/app' }
+
+  it('tells merged from closed and open, naming who did it', async () => {
+    const merged = vi.fn().mockResolvedValue(node({ state: 'MERGED', mergedBy: { login: 'ana' } }))
+    await expect(fetchPrOutcome('tok', 'M1', merged)).resolves.toEqual({ state: 'merged', pr: ref, by: 'ana' })
+    const closed = vi.fn().mockResolvedValue(node({ state: 'CLOSED', timelineItems: { nodes: [{ actor: { login: 'bob' } }] } }))
+    await expect(fetchPrOutcome('tok', 'M1', closed)).resolves.toEqual({ state: 'closed', pr: ref, by: 'bob' })
+    await expect(fetchPrOutcome('tok', 'M1', vi.fn().mockResolvedValue(node({})))).resolves.toEqual({ state: 'open' })
+    await expect(fetchPrOutcome('tok', 'M1', vi.fn().mockResolvedValue(jsonResponse({ data: { node: null } })))).resolves.toBeNull()
   })
 })

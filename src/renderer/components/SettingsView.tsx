@@ -1,15 +1,30 @@
 import { useEffect, useState } from 'react'
 import type { LanguagePref } from '../../shared/i18n'
+import type { MessageKey } from '../../shared/i18n/en'
 import {
+  FAST_POLL_OPTIONS,
   MIN_POLL_INTERVAL_SEC,
+  NOTIFY_KINDS,
   SHORTCUT_OPTIONS,
+  type NotificationClick,
+  type NotifyKind,
   type AppState,
   type NotifyResult,
   type PanelSize,
   type Settings
 } from '../../shared/types'
+import { ConfirmRow } from './ConfirmRow'
 
 const PANEL_SIZES: PanelSize[] = ['compact', 'default', 'large']
+const KIND_LABEL: Record<NotifyKind, MessageKey> = {
+  approved: 'settings.notify.approved',
+  changes: 'settings.notify.changes',
+  commented: 'settings.notify.commented',
+  ready: 'settings.notify.ready',
+  ciFailed: 'settings.notify.ciFailed',
+  conflicts: 'settings.notify.conflicts',
+  merged: 'settings.notify.merged'
+}
 const MAC_KEYS: Record<string, string> = { CommandOrControl: '⌘', Control: '⌃', Alt: '⌥', Shift: '⇧' }
 const PC_KEYS: Record<string, string> = { CommandOrControl: 'Ctrl', Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift' }
 
@@ -114,6 +129,7 @@ export function SettingsView({ state, onOpenLaunchers }: { state: AppState; onOp
   const [stale, setStale] = useState('')
   const [shortcutTaken, setShortcutTaken] = useState(false)
   const [testResult, setTestResult] = useState<NotifyResult | 'sending' | null>(null)
+  const [confirmLogout, setConfirmLogout] = useState(false)
   const [version, setVersion] = useState('')
   const [copied, setCopied] = useState(false)
   const [updateCheck, setUpdateCheck] = useState<'idle' | 'checking' | 'up_to_date' | 'available'>('idle')
@@ -216,6 +232,12 @@ export function SettingsView({ state, onOpenLaunchers }: { state: AppState; onOp
           value={settings.excludeAuthors}
           onCommit={(excludeAuthors) => void update({ excludeAuthors })}
         />
+        <ListInput
+          label={t('settings.muteRepos')}
+          hint={t('settings.muteReposHint')}
+          value={settings.muteRepos}
+          onCommit={(muteRepos) => void update({ muteRepos })}
+        />
         <label className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.staleDays')}</div>
@@ -251,12 +273,42 @@ export function SettingsView({ state, onOpenLaunchers }: { state: AppState; onOp
           checked={settings.notifyMyPrs}
           onChange={(v) => void update({ notifyMyPrs: v })}
         />
+        {settings.notifyMyPrs && (
+          <div className="setting setting-sub" role="group" aria-label={t('settings.notifyMyPrs')}>
+            {NOTIFY_KINDS.map((kind) => (
+              <label key={kind} className="setting-sub-item">
+                <input
+                  type="checkbox"
+                  checked={settings.notifyKinds[kind]}
+                  onChange={(e) => void update({ notifyKinds: { ...settings.notifyKinds, [kind]: e.target.checked } })}
+                />
+                {t(KIND_LABEL[kind])}
+              </label>
+            ))}
+          </div>
+        )}
+        <label className="setting">
+          <div className="setting-text">
+            <div className="setting-label">{t('settings.notificationClick')}</div>
+            <div className="setting-hint">{t('settings.notificationClickHint')}</div>
+          </div>
+          <select
+            className="input select"
+            value={settings.notificationClick}
+            onChange={(e) => void update({ notificationClick: e.target.value as NotificationClick })}
+          >
+            <option value="github">{t('settings.notificationClick.github')}</option>
+            <option value="panel">{t('settings.notificationClick.panel')}</option>
+          </select>
+        </label>
         <label className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.digest')}</div>
             <div className="setting-hint">{t('settings.digestHint')}</div>
           </div>
-          {settings.digest && <TimeInput value={settings.digestTime} onCommit={(v) => void update({ digestTime: v })} />}
+          {(settings.digest || settings.staleAfterDays > 0) && (
+            <TimeInput value={settings.digestTime} onCommit={(v) => void update({ digestTime: v })} />
+          )}
           <input
             type="checkbox"
             className="switch"
@@ -305,23 +357,38 @@ export function SettingsView({ state, onOpenLaunchers }: { state: AppState; onOp
         )}
         <label className="setting">
           <div className="setting-text">
-            <div className="setting-label">{t('settings.interval')}</div>
-            <div className="setting-hint">{t('settings.intervalHint', { min: MIN_POLL_INTERVAL_SEC })}</div>
+            <div className="setting-label">{t('settings.fastPoll')}</div>
+            <div className="setting-hint">{t('settings.fastPollHint')}</div>
           </div>
-          <div className="row">
-            <input
-              className="input input-num"
-              type="number"
-              min={MIN_POLL_INTERVAL_SEC}
-              step={5}
-              value={interval}
-              onChange={(e) => setIntervalValue(e.target.value)}
-              onBlur={commitInterval}
-              onKeyDown={(e) => e.key === 'Enter' && commitInterval()}
-            />
-            <span className="unit">s</span>
-          </div>
+          <select className="input select" value={settings.fastPoll} onChange={(e) => void update({ fastPoll: Number(e.target.value) })}>
+            {FAST_POLL_OPTIONS.map((seconds) => (
+              <option key={seconds} value={seconds}>
+                {seconds === 0 ? t('settings.fastPollOff') : t('settings.fastPollEvery', { seconds })}
+              </option>
+            ))}
+          </select>
         </label>
+        {settings.fastPoll === 0 && (
+          <label className="setting">
+            <div className="setting-text">
+              <div className="setting-label">{t('settings.interval')}</div>
+              <div className="setting-hint">{t('settings.intervalHint', { min: MIN_POLL_INTERVAL_SEC })}</div>
+            </div>
+            <div className="row">
+              <input
+                className="input input-num"
+                type="number"
+                min={MIN_POLL_INTERVAL_SEC}
+                step={5}
+                value={interval}
+                onChange={(e) => setIntervalValue(e.target.value)}
+                onBlur={commitInterval}
+                onKeyDown={(e) => e.key === 'Enter' && commitInterval()}
+              />
+              <span className="unit">s</span>
+            </div>
+          </label>
+        )}
         <div className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.test')}</div>
@@ -442,10 +509,21 @@ export function SettingsView({ state, onOpenLaunchers }: { state: AppState; onOp
               {t('settings.switchMethod')}
             </button>
           )}
-          <button className="btn btn-danger" onClick={() => void api.auth.logout()}>
+          <button className="btn btn-danger" onClick={() => setConfirmLogout(true)} aria-expanded={confirmLogout}>
             {t('settings.logout')}
           </button>
         </div>
+        {confirmLogout && (
+          <ConfirmRow
+            danger
+            message={t('settings.logoutConfirm')}
+            hint={t('settings.logoutHint')}
+            confirmLabel={t('settings.logout')}
+            cancelLabel={t('action.cancel')}
+            onConfirm={() => void api.auth.logout()}
+            onCancel={() => setConfirmLogout(false)}
+          />
+        )}
         <div className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.quitApp')}</div>

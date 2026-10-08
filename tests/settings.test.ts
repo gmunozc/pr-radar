@@ -8,6 +8,15 @@ describe('sanitizeSettingsPatch', () => {
       sanitizeSettingsPatch({ includeTeams: false, pollIntervalSec: 3, clientId: '  abc ', evil: 1, notifications: 'yes' })
     ).toEqual({ includeTeams: false, pollIntervalSec: 15, clientId: 'abc' })
     expect(sanitizeSettingsPatch({ pollIntervalSec: 99999 })).toEqual({ pollIntervalSec: 3600 })
+    expect(sanitizeSettingsPatch({ fastPoll: 10 })).toEqual({ fastPoll: 10 })
+    expect(sanitizeSettingsPatch({ fastPoll: 7 })).toEqual({})
+    expect(sanitizeSettingsPatch({ notifyKinds: { approved: false, bogus: true, ready: 'no' } })).toEqual({
+      notifyKinds: { ...DEFAULT_SETTINGS.notifyKinds, approved: false }
+    })
+    expect(sanitizeSettingsPatch({ notifyKinds: ['approved'] })).toEqual({})
+    expect(sanitizeSettingsPatch({ muteRepos: [' acme/app ', 'nope', 'acme/app', 7] })).toEqual({ muteRepos: ['acme/app'] })
+    expect(sanitizeSettingsPatch({ notificationClick: 'panel' })).toEqual({ notificationClick: 'panel' })
+    expect(sanitizeSettingsPatch({ notificationClick: 'browser' })).toEqual({})
     expect(sanitizeSettingsPatch(null)).toEqual({})
   })
 })
@@ -59,6 +68,8 @@ describe('exclusions and list settings', () => {
       reviewSort: 'oldest'
     })
     expect(sanitizeSettingsPatch({ staleAfterDays: -2, reviewFilter: 'mine', reviewSort: 'random' })).toEqual({ staleAfterDays: 0 })
+    expect(sanitizeSettingsPatch({ mineFilter: 'ready', mineSort: 'updated' })).toEqual({ mineFilter: 'ready', mineSort: 'updated' })
+    expect(sanitizeSettingsPatch({ mineFilter: 'mine', mineSort: 'random' })).toEqual({})
   })
 })
 

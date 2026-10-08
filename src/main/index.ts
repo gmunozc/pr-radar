@@ -1,5 +1,18 @@
 /** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
-import { app, clipboard, dialog, globalShortcut, net, Notification, powerMonitor, screen, session, shell, type DownloadItem } from 'electron'
+import {
+  app,
+  clipboard,
+  ClipboardItem,
+  dialog,
+  globalShortcut,
+  net,
+  Notification,
+  powerMonitor,
+  screen,
+  session,
+  shell,
+  type DownloadItem
+} from 'electron'
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
@@ -12,14 +25,21 @@ import { debugMenu, FaultInjector } from './debug'
 import { refreshAccessToken } from './deviceFlow'
 import { buildDiagnostics } from './diagnostics'
 import { Engine } from './engine'
-import { fetchInstallations, fetchPullRequestDetail, fetchPullRequests } from './github'
+import {
+  fetchFingerprint,
+  fetchFirstUnresolvedThread,
+  fetchInstallations,
+  fetchPrOutcome,
+  fetchPullRequestDetail,
+  fetchPullRequests
+} from './github'
 import { applyLanguage, currentLocale, t } from './i18n'
 import { isKnownCheckUrl, registerIpc } from './ipc'
 import { Launcher } from './launcher'
 import { describeLaunchers, LAUNCHERS_FILE, MAX_PROJECTS, parseLaunchers, validateLaunchers, type ParsedLaunchers } from './launcherConfig'
 import { logger } from './log'
-import { deliverEvents, retire, retireAll } from './notifier'
-import { Poller } from './poller'
+import { deliverEvents, reconnectHistory, retire, retireAll, type NotificationHandlers } from './notifier'
+import { Poller, probeIntervalFor } from './poller'
 import { detectProject, listSkills, type DetectDeps } from './projects'
 import { Session, SessionExpiredError } from './session'
 import { normalizeSettings } from './settings'
@@ -36,6 +56,9 @@ import { Panel } from './window'
 const smoke = process.env.PR_RADAR_SMOKE === '1'
 if (smoke) app.setPath('userData', mkdtempSync(join(tmpdir(), 'pr-radar-smoke-')))
 else if (!app.isPackaged) app.setPath('userData', join(app.getPath('appData'), 'PR Radar Dev'))
+
+/** Change probes pause after this long without keyboard or mouse input. */
+const PROBE_PAUSE_IDLE_SEC = 10 * 60
 
 const settingsFile = new JsonFile<unknown>(join(app.getPath('userData'), 'settings.json'), () => ({}))
 let settings: Settings = normalizeSettings(settingsFile.read())
@@ -94,6 +117,28 @@ function main(): void {
   panel.resize(settings.panelSize)
   const showPanel = () => panel.show(tray?.getBounds())
   const togglePanel = () => panel.toggle(tray?.getBounds())
+  // A click on an alert about one PR: GitHub, or the panel at that row (Settings), when it is
+  // still listed. Notifications restored from a previous run carry no URL: the state has it.
+  const openPr = (prId: string, url?: string) => {
+    const { prs, myPrs, involved } = engine.state
+    const pr = [...prs, ...myPrs, ...involved].find((p) => p.id === prId)
+    if (settings.notificationClick === 'panel' && pr) {
+      showPanel()
+      if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.focusPr, prId)
+      return
+    }
+    const target = url ?? pr?.url
+    if (target) void shell.openExternal(target)
+    else showPanel()
+  }
+  const handlers: NotificationHandlers = {
+    openPanel: showPanel,
+    openPr,
+    perform: (action) => {
+      if (action.kind === 'snooze') engine.snooze(action.prId, action.option)
+      else if (action.kind === 'dismiss') engine.dismiss(action.prId)
+    }
+  }
 
   const publishAuth = (status: AuthStatus) => {
     if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.authStatus, status)
@@ -106,28 +151,27 @@ function main(): void {
       settings: () => settings,
       session,
       fetchPullRequests: faults ? faults.wrap(fetchPullRequests) : fetchPullRequests,
+      fetchFingerprint: (token, s) => fetchFingerprint(token, s),
       fetchInstallations: (token) => fetchInstallations(token),
       runPrAction: (token, pr, action) => runPrAction(token, pr, action),
       requestPoll: () => void poller.runNow(),
       fetchDetail: (token, prId) => fetchPullRequestDetail(token, prId),
+      fetchThread: (token, prId) => fetchFirstUnresolvedThread(token, prId),
+      fetchPrOutcome: (token, prId) => fetchPrOutcome(token, prId),
       stateStore: {
         read: () => stateFile.read(),
         write: (state) => stateFile.write(state),
         remove: () => stateFile.remove()
       },
-      notify: (events) =>
-        deliverEvents(events, {
-          openPanel: showPanel,
-          perform: (action) => {
-            if (action.kind === 'snooze') engine.snooze(action.prId, action.option)
-            else if (action.kind === 'dismiss') engine.dismiss(action.prId)
-          }
-        }),
+      notify: (events) => deliverEvents(events, handlers),
       retireNotifications: retire,
       clearNotifications: retireAll,
       publish: (state) => {
         tray?.update(state)
         if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.state, state)
+      },
+      checked: (at) => {
+        if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.checked, at)
       },
       onSessionEnded: () => {
         poller.stop()
@@ -140,7 +184,12 @@ function main(): void {
     authStore.readError
   )
 
-  const poller = new Poller(() => engine.poll(), () => settings.pollIntervalSec)
+  const poller = new Poller(() => engine.poll(), () => settings.pollIntervalSec, {
+    intervalSec: () => probeIntervalFor(settings.fastPoll, powerMonitor.isOnBatteryPower()),
+    run: () => engine.probe(),
+    // Nobody needs a notification within seconds while they are away from the computer.
+    paused: () => powerMonitor.getSystemIdleTime() >= PROBE_PAUSE_IDLE_SEC
+  })
 
   // Update notice: packaged builds only, against this repository's GitHub releases. In
   // development, PR_RADAR_DEV_VERSION=0.0.1 pretends to be that version to exercise the flow.
@@ -372,7 +421,22 @@ function main(): void {
         void poller.runNow()
       },
       downloadUpdate: () => void openRelease(updates?.available?.downloadUrl ?? updates?.available?.releaseUrl),
-      logout: () => engine.logout(),
+      logout: () => {
+        // No panel here to hold the confirmation: ask the way the OS does, in front of everything.
+        app.focus({ steal: true })
+        void dialog
+          .showMessageBox({
+            type: 'warning',
+            message: t('settings.logoutConfirm'),
+            detail: t('settings.logoutHint'),
+            buttons: [t('settings.logout'), t('action.cancel')],
+            defaultId: 1,
+            cancelId: 1
+          })
+          .then(({ response }) => {
+            if (response === 0) engine.logout()
+          })
+      },
       isLoggedIn: () => session.current !== null,
       extraMenu: faults
         ? () =>
@@ -406,6 +470,7 @@ function main(): void {
     hidePanel: () => panel.hide(),
     prAction: (prId, action) => engine.runAction(prId, action),
     prDetail: (prId) => engine.loadDetail(prId),
+    prThread: (prId) => engine.loadThread(prId),
     copyText: async (text) => {
       try {
         await clipboard.writeText(text)
@@ -415,6 +480,16 @@ function main(): void {
         return { ok: false }
       }
     },
+    copyLink: async ({ text, html }) => {
+      try {
+        await clipboard.write([new ClipboardItem({ 'text/plain': text, 'text/html': html })])
+        return { ok: true }
+      } catch (err) {
+        logger.warn('could not copy the link to the clipboard', err)
+        return { ok: false }
+      }
+    },
+    openLink: (url) => shell.openExternal(url),
     openCheck: async (url) => {
       if (isKnownCheckUrl(engine.state, url)) await shell.openExternal(url)
       else logger.warn('refused to open an unknown check URL', { url })
@@ -492,6 +567,7 @@ function main(): void {
         void poller.runNow()
       }
       engine.settingsChanged()
+      poller.refresh()
       const view = { ...settings, openAtLogin: app.getLoginItemSettings().openAtLogin }
       if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.settingsChanged, view)
       return view
@@ -547,6 +623,9 @@ function main(): void {
     }
   })
 
+  // Clicks on notifications left over from the previous run should still open their PR.
+  void reconnectHistory(handlers)
+
   powerMonitor.on('suspend', () => poller.stop())
   const wake = () => {
     if (session.current && !poller.isActive) poller.start()
@@ -554,6 +633,13 @@ function main(): void {
   }
   powerMonitor.on('resume', wake)
   powerMonitor.on('unlock-screen', wake)
+  // Probes slow down on battery: re-arm the timers when the power source changes.
+  const powerChanged = (onBattery: boolean) => () => {
+    logger.info('power source changed', { onBattery })
+    poller.refresh()
+  }
+  powerMonitor.on('on-battery', powerChanged(true))
+  powerMonitor.on('on-ac', powerChanged(false))
 
   app.on('second-instance', showPanel)
 
