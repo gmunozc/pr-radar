@@ -389,6 +389,10 @@ export function createMockApi(): PrRadarApi {
           commits: 6,
           comments: 9
         }
+      },
+      thread: async (prId) => {
+        await sleep(400)
+        return prId === 'M2' ? 'https://github.com/acme/billing/pull/93#discussion_r1' : null
       }
     },
     copyText: async (text) => {

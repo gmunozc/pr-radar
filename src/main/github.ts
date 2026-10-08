@@ -882,6 +882,41 @@ export async function fetchPullRequestDetail(token: string, id: string, fetchFn:
   }
 }
 
+// Asked for on demand: inside the main query it would cost 25 points more per poll.
+const PR_THREADS_QUERY = /* GraphQL */ `
+  query PullRequestThreads($id: ID!) {
+    node(id: $id) {
+      ... on PullRequest {
+        reviewThreads(first: 50) {
+          nodes {
+            isResolved
+            comments(first: 1) { nodes { url } }
+          }
+        }
+      }
+    }
+  }
+`
+
+interface RawThreadsResponse {
+  data?: {
+    node?: {
+      reviewThreads?: { nodes: Array<{ isResolved: boolean; comments?: { nodes: Array<{ url: string } | null> } | null } | null> } | null
+    } | null
+  } | null
+  errors?: Array<{ message: string }>
+}
+
+/** Where the first unresolved review thread of a PR is (the "n unresolved threads" chip); one point. */
+export async function fetchFirstUnresolvedThread(token: string, id: string, fetchFn: FetchFn = fetch): Promise<string | null> {
+  const { body } = await graphqlRequest<RawThreadsResponse>(token, PR_THREADS_QUERY, { id }, fetchFn)
+  for (const thread of body.data?.node?.reviewThreads?.nodes ?? []) {
+    const url = thread && !thread.isResolved ? thread.comments?.nodes?.[0]?.url : undefined
+    if (url) return url
+  }
+  return null
+}
+
 /** Repository/organization permissions PR Radar's GitHub App needs (all read-only). */
 export const REQUIRED_APP_PERMISSIONS = ['pull_requests', 'checks', 'statuses'] as const
 

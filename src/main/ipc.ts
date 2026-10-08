@@ -32,6 +32,7 @@ export interface IpcContext {
   hidePanel(): void
   prAction(prId: string, action: PrAction): Promise<ActionResult>
   prDetail(prId: string): Promise<PrDetail | null>
+  prThread(prId: string): Promise<string | null>
   copyText(text: string): Promise<{ ok: boolean }>
   copyLink(link: ClipboardLink): Promise<{ ok: boolean }>
   openCheck(url: string): Promise<void>
@@ -140,6 +141,7 @@ export function registerIpc(ctx: IpcContext): void {
     return ctx.prAction(prId, parsed)
   })
   ipcMain.handle(IPC.prDetail, (_e, prId: unknown) => (typeof prId === 'string' ? ctx.prDetail(prId) : null))
+  ipcMain.handle(IPC.prThread, (_e, prId: unknown) => (typeof prId === 'string' ? ctx.prThread(prId) : null))
   ipcMain.handle(IPC.copyText, (_e, text: unknown) =>
     typeof text === 'string' && text.length <= MAX_COPY_LENGTH ? ctx.copyText(text) : { ok: false }
   )

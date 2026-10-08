@@ -384,6 +384,8 @@ export interface PrRadarApi {
     action(prId: string, action: PrAction): Promise<ActionResult>
     /** Description and counts for the detail view; null when the PR is unknown or GitHub fails. */
     detail(prId: string): Promise<PrDetail | null>
+    /** URL of the first unresolved review thread of one of your PRs; null when there is none. */
+    thread(prId: string): Promise<string | null>
   }
   copyText(text: string): Promise<{ ok: boolean }>
   /** Title and link to the clipboard: Markdown as plain text, an anchor as rich text. */
@@ -446,6 +448,7 @@ export const IPC = {
   restoreDismissed: 'prs:restore',
   prAction: 'prs:action',
   prDetail: 'prs:detail',
+  prThread: 'prs:thread',
   copyText: 'clipboard:copy',
   copyLink: 'clipboard:copy-link',
   relaunch: 'app:relaunch',

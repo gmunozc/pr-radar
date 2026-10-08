@@ -180,6 +180,7 @@ export const en = {
   'checks.toggle': 'Show checks',
   'mine.threads.one': '{count} unresolved thread',
   'mine.threads.other': '{count} unresolved threads',
+  'mine.threadsHint': 'Open the first unresolved thread on GitHub',
   'mine.approvalsHint': '{have} of {need} required approvals',
   'settings.showInvolved': 'Involved tab',
   'settings.showInvolvedHint': 'PRs where you were mentioned, assigned or commented. Costs a little more API per check.',

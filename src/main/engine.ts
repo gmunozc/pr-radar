@@ -61,6 +61,8 @@ export interface EngineDeps {
   requestPoll?(): void
   /** Description and counts for the detail view. */
   fetchDetail?(token: string, prId: string): Promise<PrDetail | null>
+  /** The first unresolved review thread of one of your PRs, on demand. */
+  fetchThread?(token: string, prId: string): Promise<string | null>
   stateStore: StateStore
   notify(events: NotificationEvent[]): void
   /** The data was just confirmed current: a full poll, or a probe that compared fingerprints. */
@@ -186,6 +188,8 @@ export class Engine {
   private readyStreak = new Map<string, { headOid: string; count: number }>()
   /** Detail view cache, keyed by PR id and last update, so reopening a PR costs nothing. */
   private details = new Map<string, PrDetail>()
+  /** First unresolved thread per PR; resolving one doesn't touch `updatedAt`, so the count is in the key. */
+  private threads = new Map<string, string>()
   /** What the last change probe saw; null until one runs (or after the searches change). */
   private fingerprint: string | null = null
 
@@ -530,6 +534,31 @@ export class Engine {
         return null
       }
       this.deps.log.warn('could not load PR detail', err)
+      return null
+    }
+  }
+
+  /** Where the first unresolved review thread of one of your PRs is; null when there is none. */
+  async loadThread(prId: string): Promise<string | null> {
+    const pr = this.current.myPrs.find((p) => p.id === prId)
+    if (!pr || !this.deps.fetchThread || !this.deps.session.current) return null
+    const key = `${pr.id}@${pr.updatedAt}@${pr.unresolvedThreads ?? '?'}`
+    const cached = this.threads.get(key)
+    if (cached) return cached
+    const fetchThread = this.deps.fetchThread
+    try {
+      const url = await this.withToken((token) => fetchThread(token, prId))
+      if (url) {
+        if (this.threads.size > 100) this.threads.clear()
+        this.threads.set(key, url)
+      }
+      return url
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        this.expire(err.reason)
+        return null
+      }
+      this.deps.log.warn('could not load the review thread', err)
       return null
     }
   }

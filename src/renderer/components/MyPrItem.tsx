@@ -91,6 +91,7 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
   const [confirming, setConfirming] = useState<Confirming | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [threadLoading, setThreadLoading] = useState(false)
   const kebab = useRef<HTMLButtonElement>(null)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const busy = pending !== undefined
@@ -126,6 +127,16 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
     const result = await window.prRadar.prs.action(pr.id, action)
     if (result.ok) setConfirming(null)
     else setError(t(`action.error.${result.code}`, { detail: result.detail ?? '' }))
+  }
+  /** The "n unresolved threads" chip opens the first of them, or the PR when GitHub has no URL. */
+  const openThread = async () => {
+    setThreadLoading(true)
+    try {
+      const url = await window.prRadar.prs.thread(pr.id)
+      void window.prRadar.openExternal(url ?? pr.url)
+    } finally {
+      setThreadLoading(false)
+    }
   }
   const flashCopied = () => {
     setCopied(true)
@@ -283,7 +294,21 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
               {t(blockerChip.label)}
             </span>
           )}
-          {pr.unresolvedThreads ? <span className="chip chip-changes">{t('mine.threads', { count: pr.unresolvedThreads })}</span> : null}
+          {pr.unresolvedThreads ? (
+            <button
+              className="chip chip-changes chip-button"
+              onClick={(e) => {
+                e.stopPropagation()
+                void openThread()
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && e.stopPropagation()}
+              title={t('mine.threadsHint')}
+              disabled={threadLoading}
+            >
+              {threadLoading ? <span className="spinner spinner-sm" /> : t('mine.threads', { count: pr.unresolvedThreads })}
+            </button>
+          ) : null}
           {pr.isDraft && <span className="chip chip-draft">{t('pr.draft')}</span>}
           <Labels labels={pr.labels} />
           <span className="diff">

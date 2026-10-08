@@ -101,6 +101,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
   const clearNotifications = vi.fn()
   const checked = vi.fn()
   const fetchDetail = vi.fn(async (_token: string, prId: string) => ({ body: `about ${prId}`, changedFiles: 1, commits: 2, comments: 3 }))
+  const fetchThread = vi.fn(async (_token: string, prId: string) => (prId === 'm1' ? 'https://github.com/acme/app/pull/1#discussion_r1' : null))
   const deps: EngineDeps = {
     now: () => clock,
     fetchInstallations,
@@ -111,6 +112,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     runPrAction,
     requestPoll,
     fetchDetail,
+    fetchThread,
     stateStore: { read: () => stored, write: (s) => (stored = s), remove: () => (stored = null) },
     notify: (e) => events.push(...e),
     checked,
@@ -137,6 +139,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     clearNotifications,
     checked,
     fetchDetail,
+    fetchThread,
     refresh,
     onSessionEnded,
     session,
@@ -983,5 +986,23 @@ describe('Engine and muted repositories', () => {
     loud.events.length = 0
     for (let i = 0; i < 3; i++) await loud.engine.poll()
     expect(loud.events.map((e) => e.kind)).toEqual(['review_requested', 'my_pr_approved'])
+  })
+})
+
+describe('Engine review threads', () => {
+  it('loads the first unresolved thread of your PRs, cached until the count or the update changes, and ignores other PRs', async () => {
+    const t = setup([
+      result(['a'], 'me', [], [myPr('m1', { unresolvedThreads: 2 })]),
+      result(['a'], 'me', [], [myPr('m1', { unresolvedThreads: 1 })])
+    ])
+    await t.engine.poll()
+    await expect(t.engine.loadThread('a')).resolves.toBeNull()
+    expect(t.fetchThread).not.toHaveBeenCalled()
+    await expect(t.engine.loadThread('m1')).resolves.toBe('https://github.com/acme/app/pull/1#discussion_r1')
+    await t.engine.loadThread('m1')
+    expect(t.fetchThread).toHaveBeenCalledTimes(1)
+    await t.engine.poll()
+    await t.engine.loadThread('m1')
+    expect(t.fetchThread).toHaveBeenCalledTimes(2)
   })
 })

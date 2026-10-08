@@ -10,6 +10,7 @@ const actions = readFileSync(new URL('../src/main/actions.ts', import.meta.url),
 const query = github.match(/PULL_REQUESTS_QUERY = \/\* GraphQL \*\/ `([\s\S]*?)`/)[1]
 const probe = github.match(/PROBE_QUERY = \/\* GraphQL \*\/ `([\s\S]*?)`/)[1]
 const detail = github.match(/PR_DETAIL_QUERY = \/\* GraphQL \*\/ `([\s\S]*?)`/)[1]
+const threads = github.match(/PR_THREADS_QUERY = \/\* GraphQL \*\/ `([\s\S]*?)`/)[1]
 const mutations = [...actions.matchAll(/(\w+): \/\* GraphQL \*\/ `([\s\S]*?)`/g)].map((m) => [m[1], m[2]])
 
 function run(doc, variables) {
@@ -57,6 +58,7 @@ const probed = run(probe, {
 report('PROBE_QUERY', probed.errors ?? [])
 // The detail query runs with an invalid id: GitHub validates the document and returns a null node.
 report('PR_DETAIL_QUERY', run(detail, { id: 'PR_kwDOinvalid0000' }).errors ?? [])
+report('PR_THREADS_QUERY', run(threads, { id: 'PR_kwDOinvalid0000' }).errors ?? [])
 for (const [name, doc] of mutations) {
   const r = run(doc, { id: 'PR_kwDOinvalid0000', head: '0'.repeat(40), method: 'SQUASH', body: 'x', users: ['U_kgDOinvalid'] })
   report(`mutation ${name}`, r.errors ?? [])

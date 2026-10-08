@@ -8,6 +8,7 @@ import {
   buildSearchQuery,
   ciFromRollup,
   fetchFingerprint,
+  fetchFirstUnresolvedThread,
   fetchPullRequests,
   GithubError,
   GRAPHQL_URL,
@@ -687,5 +688,17 @@ describe('mergeReviews', () => {
     const mine = rawMyPr({ reviewDecision: 'REVIEW_REQUIRED', latestReviews: { nodes: [review('claude', 'COMMENTED'), review('dan', 'COMMENTED')] } })
     const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], {}, [mine])))
     expect(result.myPrs[0]).toMatchObject({ status: 'waiting', reviews: [{ login: 'claude', state: 'COMMENTED' }, { login: 'dan', state: 'COMMENTED' }] })
+  })
+})
+
+describe('fetchFirstUnresolvedThread', () => {
+  const threads = (nodes: unknown[]) => jsonResponse({ data: { node: { reviewThreads: { nodes } } } })
+  const thread = (isResolved: boolean, url: string) => ({ isResolved, comments: { nodes: [{ url }] } })
+
+  it("returns the first unresolved thread's first comment, null when all are resolved or the PR is unknown", async () => {
+    const mixed = threads([thread(true, 'https://x/1'), null, thread(false, 'https://x/2'), thread(false, 'https://x/3')])
+    await expect(fetchFirstUnresolvedThread('tok', 'PR_1', vi.fn().mockResolvedValue(mixed))).resolves.toBe('https://x/2')
+    await expect(fetchFirstUnresolvedThread('tok', 'PR_1', vi.fn().mockResolvedValue(threads([thread(true, 'https://x/1')])))).resolves.toBeNull()
+    await expect(fetchFirstUnresolvedThread('tok', 'PR_x', vi.fn().mockResolvedValue(jsonResponse({ data: { node: null } })))).resolves.toBeNull()
   })
 })

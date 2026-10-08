@@ -20,7 +20,8 @@ const api: PrRadarApi = {
   hidePanel: () => ipcRenderer.invoke(IPC.panelHide),
   prs: {
     action: (prId, action) => ipcRenderer.invoke(IPC.prAction, prId, action),
-    detail: (prId) => ipcRenderer.invoke(IPC.prDetail, prId)
+    detail: (prId) => ipcRenderer.invoke(IPC.prDetail, prId),
+    thread: (prId) => ipcRenderer.invoke(IPC.prThread, prId)
   },
   copyText: (text) => ipcRenderer.invoke(IPC.copyText, text),
   copyLink: (link) => ipcRenderer.invoke(IPC.copyLink, link),

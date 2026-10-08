@@ -1283,6 +1283,17 @@ code {
   cursor: default;
 }
 
+/* A chip that does something when pressed (the unresolved threads). */
+.chip-button {
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.chip-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
 .ci-button:hover,
 .ci-button[aria-expanded='true'] {
   filter: brightness(1.25);

@@ -177,6 +177,7 @@ export const es: Record<MessageKey, string> = {
   'checks.toggle': 'Ver checks',
   'mine.threads.one': '{count} hilo sin resolver',
   'mine.threads.other': '{count} hilos sin resolver',
+  'mine.threadsHint': 'Abrir el primer hilo sin resolver en GitHub',
   'mine.approvalsHint': '{have} de {need} aprobaciones requeridas',
   'settings.showInvolved': 'Pestaña Participo',
   'settings.showInvolvedHint': 'PRs donde te mencionaron, te asignaron o comentaste. Gasta algo más de API por consulta.',

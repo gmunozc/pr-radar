@@ -10,7 +10,7 @@ import { debugMenu, FaultInjector } from './debug'
 import { refreshAccessToken } from './deviceFlow'
 import { buildDiagnostics } from './diagnostics'
 import { Engine } from './engine'
-import { fetchFingerprint, fetchInstallations, fetchPullRequestDetail, fetchPullRequests } from './github'
+import { fetchFingerprint, fetchFirstUnresolvedThread, fetchInstallations, fetchPullRequestDetail, fetchPullRequests } from './github'
 import { applyLanguage, currentLocale } from './i18n'
 import { isKnownCheckUrl, registerIpc } from './ipc'
 import { logger } from './log'
@@ -118,6 +118,7 @@ function main(): void {
       runPrAction: (token, pr, action) => runPrAction(token, pr, action),
       requestPoll: () => void poller.runNow(),
       fetchDetail: (token, prId) => fetchPullRequestDetail(token, prId),
+      fetchThread: (token, prId) => fetchFirstUnresolvedThread(token, prId),
       stateStore: {
         read: () => stateFile.read(),
         write: (state) => stateFile.write(state),
@@ -288,6 +289,7 @@ function main(): void {
     hidePanel: () => panel.hide(),
     prAction: (prId, action) => engine.runAction(prId, action),
     prDetail: (prId) => engine.loadDetail(prId),
+    prThread: (prId) => engine.loadThread(prId),
     copyText: async (text) => {
       try {
         await clipboard.writeText(text)
