@@ -689,13 +689,15 @@ export function mapResponse(body: RawResponse): FetchResult {
     const saml = otherErrors.some((e) => /SAML/i.test(e.message))
     warnings.push(saml ? { code: 'saml' } : { code: 'partial', params: { detail: otherErrors[0].message } })
   }
-  if (data.requested.issueCount > data.requested.nodes.length) {
+  // GitHub's search count can exceed the results it returns for a poll or two (right after a
+  // merge, say): only a real page overflow is worth a banner.
+  if (data.requested.issueCount > PAGE_SIZE) {
     warnings.push({ code: 'truncated_requested', params: { shown: prs.length, total: data.requested.issueCount } })
   }
-  if (data.mine.issueCount > data.mine.nodes.length) {
+  if (data.mine.issueCount > PAGE_SIZE) {
     warnings.push({ code: 'truncated_mine', params: { shown: myPrs.length, total: data.mine.issueCount } })
   }
-  if (data.involved && data.involved.issueCount > data.involved.nodes.length) {
+  if (data.involved && data.involved.issueCount > PAGE_SIZE) {
     warnings.push({ code: 'truncated_involved', params: { shown: involved.length, total: data.involved.issueCount } })
   }
   return { viewer, prs, myPrs, involved, warnings }

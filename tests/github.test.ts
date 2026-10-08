@@ -127,6 +127,19 @@ describe('search exclusions', () => {
     expect(JSON.parse(fetchFn.mock.calls[1][1].body).variables.withInvolved).toBe(true)
   })
 
+  it("stays quiet when GitHub's count and its results disagree by a few, as happens right after a merge", async () => {
+    const page = (n: number, issueCount: number) => ({
+      viewer: { login: 'me', avatarUrl: 'x' },
+      requested: search([]),
+      mine: search(Array.from({ length: n }, (_, i) => rawMyPr({ id: `M${i}` })), issueCount),
+      involved: search([])
+    })
+    const few = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(jsonResponse({ data: page(13, 14) })))
+    expect(few.warnings).toEqual([])
+    const overflow = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(jsonResponse({ data: page(50, 51) })))
+    expect(overflow.warnings).toContainEqual({ code: 'truncated_mine', params: { shown: 50, total: 51 } })
+  })
+
   it('warns when exclusions were truncated', async () => {
     const excludeRepos = Array.from({ length: 30 }, (_, i) => `acme/repository-number-${i}`)
     const result = await fetchPullRequests('tok', { ...settings, excludeRepos }, 'me', vi.fn().mockResolvedValue(ok([])))
