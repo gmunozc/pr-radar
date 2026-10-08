@@ -506,27 +506,32 @@ html[data-platform='darwin'] .tab-active {
   color: var(--red);
 }
 
-/* Snooze and dismiss take the place of the age while hovering. */
+/*
+ * The actions take the place of the age in the meta line while hovering, with the menu open or
+ * with a button focused, so the repository name shortens and nothing sits over the text. The
+ * buttons are taller than the line: negative margins keep the row from growing.
+ */
 .pr-actions {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: flex;
+  display: none;
+  align-items: center;
+  align-self: center;
   gap: 4px;
-  opacity: 0;
+  margin: -4px 0 -4px auto;
+  flex-shrink: 0;
 }
 
 .pr:hover .pr-actions,
 .pr:focus-visible .pr-actions,
 .pr-actions:focus-within,
 .pr-actions-open {
-  opacity: 1;
+  display: flex;
 }
 
 .pr:hover .pr-age,
 .pr:focus-visible .pr-age,
+.pr:has(.pr-actions:focus-within) .pr-age,
 .pr:has(.pr-actions-open) .pr-age {
-  visibility: hidden;
+  display: none;
 }
 
 .pr-action {

@@ -211,6 +211,33 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
           >
             {timeAgo(pr.createdAt, now, locale)}
           </span>
+          <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
+            {copied && <span className="pr-copied">{t('action.copied')}</span>}
+            <button
+              className="pr-action"
+              onClick={(e) => {
+                e.stopPropagation()
+                void copy(pr.url)
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+              title={t('action.copyLink')}
+              aria-label={t('action.copyLink')}
+            >
+              <CopyIcon size={12} />
+            </button>
+            <button
+              ref={kebab}
+              className="pr-action"
+              onClick={toggleMenu}
+              onMouseDown={(e) => e.preventDefault()}
+              title={t('action.menu')}
+              aria-label={t('action.menu')}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              {busy ? <span className="spinner spinner-sm" /> : <KebabHorizontalIcon size={12} />}
+            </button>
+          </div>
         </div>
         <div className={`pr-title ${onDetail ? 'pr-title-link' : ''}`} onClick={showDetail} title={onDetail ? t('detail.titleHint') : undefined}>
           {pr.title}
@@ -290,33 +317,6 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
             {error}
           </div>
         )}
-      </div>
-      <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
-        {copied && <span className="pr-copied">{t('action.copied')}</span>}
-        <button
-          className="pr-action"
-          onClick={(e) => {
-            e.stopPropagation()
-            void copy(pr.url)
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-          title={t('action.copyLink')}
-          aria-label={t('action.copyLink')}
-        >
-          <CopyIcon size={12} />
-        </button>
-        <button
-          ref={kebab}
-          className="pr-action"
-          onClick={toggleMenu}
-          onMouseDown={(e) => e.preventDefault()}
-          title={t('action.menu')}
-          aria-label={t('action.menu')}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-        >
-          {busy ? <span className="spinner spinner-sm" /> : <KebabHorizontalIcon size={12} />}
-        </button>
       </div>
       {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} anchor={kebab} />}
     </div>

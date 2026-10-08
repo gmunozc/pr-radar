@@ -157,6 +157,61 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
           >
             {timeAgo(pr.createdAt, now, locale)}
           </span>
+          <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
+            {copied && <span className="pr-copied">{t('action.copied')}</span>}
+            {canApprove && (
+              <button
+                className="pr-action pr-action-approve"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setApproving((a) => !a)
+                  setError(null)
+                }}
+                onMouseDown={(e) => e.preventDefault()}
+                title={t('action.approve')}
+                aria-label={t('action.approve')}
+                aria-expanded={approving}
+              >
+                {busy ? <span className="spinner spinner-sm" /> : <CheckIcon size={12} />}
+              </button>
+            )}
+            <button
+              className="pr-action"
+              onClick={(e) => {
+                e.stopPropagation()
+                void copy(pr.url)
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+              title={t('action.copyLink')}
+              aria-label={t('action.copyLink')}
+            >
+              <CopyIcon size={12} />
+            </button>
+            <button
+              className="pr-action pr-action-dismiss"
+              onClick={(e) => {
+                e.stopPropagation()
+                dismiss()
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+              title={t(snoozable ? 'pr.dismissHint' : 'pr.dismissInvolvedHint')}
+              aria-label={t('pr.dismiss')}
+            >
+              <XIcon size={12} />
+            </button>
+            <button
+              ref={kebab}
+              className="pr-action pr-action-menu"
+              onClick={toggleMenu}
+              onMouseDown={(e) => e.preventDefault()}
+              title={t('action.menu')}
+              aria-label={t('action.menu')}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <KebabHorizontalIcon size={12} />
+            </button>
+          </div>
         </div>
         <div className={`pr-title ${onDetail ? 'pr-title-link' : ''}`} onClick={showDetail} title={onDetail ? t('detail.titleHint') : undefined}>
           {pr.title}
@@ -207,61 +262,6 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
             {error}
           </div>
         )}
-      </div>
-      <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
-        {copied && <span className="pr-copied">{t('action.copied')}</span>}
-        {canApprove && (
-          <button
-            className="pr-action pr-action-approve"
-            onClick={(e) => {
-              e.stopPropagation()
-              setApproving((a) => !a)
-              setError(null)
-            }}
-            onMouseDown={(e) => e.preventDefault()}
-            title={t('action.approve')}
-            aria-label={t('action.approve')}
-            aria-expanded={approving}
-          >
-            {busy ? <span className="spinner spinner-sm" /> : <CheckIcon size={12} />}
-          </button>
-        )}
-        <button
-          className="pr-action"
-          onClick={(e) => {
-            e.stopPropagation()
-            void copy(pr.url)
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-          title={t('action.copyLink')}
-          aria-label={t('action.copyLink')}
-        >
-          <CopyIcon size={12} />
-        </button>
-        <button
-          className="pr-action pr-action-dismiss"
-          onClick={(e) => {
-            e.stopPropagation()
-            dismiss()
-          }}
-          onMouseDown={(e) => e.preventDefault()}
-          title={t(snoozable ? 'pr.dismissHint' : 'pr.dismissInvolvedHint')}
-          aria-label={t('pr.dismiss')}
-        >
-          <XIcon size={12} />
-        </button>
-        <button
-          ref={kebab}
-          className="pr-action pr-action-menu"
-          onClick={toggleMenu}
-          onMouseDown={(e) => e.preventDefault()}
-          title={t('action.menu')}
-          aria-label={t('action.menu')}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-        >
-          <KebabHorizontalIcon size={12} />
-        </button>
       </div>
       {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} anchor={kebab} />}
     </div>
