@@ -454,6 +454,8 @@ export const es: Record<MessageKey, string> = {
   'tray.tooltipPending.one': 'PR Radar — {count} PR pendiente',
   'tray.tooltipPending.other': 'PR Radar — {count} PRs pendientes',
   'tray.tooltipNone': 'PR Radar — nada pendiente',
+  'tray.ready.one': '{count} PR tuyo listo para merge',
+  'tray.ready.other': '{count} PRs tuyos listos para merge',
   'tray.statusOffline': 'Sin conexión — reintentando',
   'tray.statusRateLimited': 'Límite de GitHub — reintento a las {time}',
   'tray.statusRateLimitedSoon': 'Límite de GitHub — reintento en breve',

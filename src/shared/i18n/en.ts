@@ -455,6 +455,8 @@ export const en = {
   'tray.tooltipSignedOut': 'PR Radar — not connected',
   'tray.tooltipPending.one': 'PR Radar — {count} PR to review',
   'tray.tooltipPending.other': 'PR Radar — {count} PRs to review',
+  'tray.ready.one': '{count} of your PRs ready to merge',
+  'tray.ready.other': '{count} of your PRs ready to merge',
   'tray.tooltipNone': 'PR Radar — nothing to review',
   'tray.statusOffline': 'No connection — retrying',
   'tray.statusRateLimited': 'GitHub rate limit — retrying at {time}',

@@ -21,8 +21,14 @@ function icon(name: string) {
 
 // macOS uses template images (tinted by the system); Windows/Linux use coloured icons.
 const ICON_FILES: Record<TrayIcon, string> = isMac
-  ? { idle: 'trayTemplate.png', active: 'trayTemplate.png', offline: 'trayOfflineTemplate.png', alert: 'trayAlertTemplate.png' }
-  : { idle: 'tray.png', active: 'trayActive.png', offline: 'trayOffline.png', alert: 'trayAlert.png' }
+  ? {
+      idle: 'trayTemplate.png',
+      active: 'trayTemplate.png',
+      ready: 'trayReadyTemplate.png',
+      offline: 'trayOfflineTemplate.png',
+      alert: 'trayAlertTemplate.png'
+    }
+  : { idle: 'tray.png', active: 'trayActive.png', ready: 'trayReady.png', offline: 'trayOffline.png', alert: 'trayAlert.png' }
 
 export interface TrayActions {
   refresh(): void
@@ -90,8 +96,11 @@ export class AppTray {
     if (state.status === 'logged_out') tooltip = t('tray.tooltipSignedOut')
     else if (this.count > 0) tooltip = t('tray.tooltipPending', { count: this.count })
     else tooltip = state.status === 'ready' ? t('tray.tooltipNone') : 'PR Radar'
+    const lines = [tooltip]
+    if (visual.ready > 0) lines.push(t('tray.ready', { count: visual.ready }))
     const status = statusLabel(visual.status)
-    this.tray.setToolTip(status ? `${tooltip}\n${status}` : tooltip)
+    if (status) lines.push(status)
+    this.tray.setToolTip(lines.join('\n'))
 
     if (isLinux) this.tray.setContextMenu(this.buildMenu())
   }
