@@ -29,7 +29,7 @@ const input = (over: Partial<DiagnosticsInput> = {}): DiagnosticsInput => ({
   state: { ...loggedOutState(), status: 'ready', lastUpdated: '2026-10-01T20:42:00.000Z' },
   consecutiveFailures: 0,
   notificationsSupported: true,
-  launchers: { terminal: null, actions: 0, repos: 0, errors: 0 },
+  launchers: { terminal: null, projects: 0, actions: 0, errors: 0 },
   logs: [{ time: '2026-10-01T20:40:00.000Z', level: 'warn', message: 'poll failed Bearer gho_leakedtoken123456' }],
   now: Date.UTC(2026, 9, 1, 21, 0),
   ...over
@@ -38,9 +38,9 @@ const input = (over: Partial<DiagnosticsInput> = {}): DiagnosticsInput => ({
 describe('buildDiagnostics', () => {
   it('reports the Send to setup as counts only', () => {
     expect(buildDiagnostics(input())).toContain('Launchers none')
-    expect(buildDiagnostics(input({ launchers: { terminal: null, actions: 0, repos: 0, errors: 1 } }))).toContain('Launchers none errors=1')
-    expect(buildDiagnostics(input({ launchers: { terminal: 'warp', actions: 2, repos: 3, errors: 0 } }))).toContain(
-      'Launchers terminal=warp actions=2 repos=3 errors=0'
+    expect(buildDiagnostics(input({ launchers: { terminal: null, projects: 0, actions: 0, errors: 1 } }))).toContain('Launchers none errors=1')
+    expect(buildDiagnostics(input({ launchers: { terminal: 'warp', projects: 1, actions: 2, errors: 0 } }))).toContain(
+      'Launchers terminal=warp projects=1 actions=2 errors=0'
     )
   })
 

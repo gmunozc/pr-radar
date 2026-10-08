@@ -41,7 +41,7 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 - **New version notice.** On macOS, **Install** downloads the dmg, checks it against the release's `SHA256SUMS.txt` and opens it; elsewhere it links to the release.
 - **Panel size** (compact, default, large) in Settings → General.
 - **PR details** inside the panel: click a title to see the checks, who reviewed, files, commits, comments and the description.
-- **Send to an agent** (macOS): right-click a PR → Send to… opens a terminal tab with your coding agent on that PR, in a git worktree at its latest commit. See [Send to an agent](#send-to-an-agent-macos).
+- **Send to an agent** (macOS): right-click a PR → Send to… opens Claude Code on that PR in a Warp tab, with a skill or prompt you pick in Settings and the PR's code in a git worktree. See [Send to an agent](#send-to-an-agent-macos).
 - **Copy diagnostics:** a report you can attach to an issue, with tokens removed.
 
 <p>
@@ -96,33 +96,19 @@ PR Radar checks GitHub every 30 seconds by default (minimum 15). Each check is o
 
 ## Send to an agent (macOS)
 
-Right-click a PR → **Send to…** and pick an action: PR Radar opens a new terminal tab with your coding agent already working on that PR, for example `claude '/triage-review https://github.com/acme/app/pull/42'`. PR Radar only launches; your agent, skills and rules stay where they are.
+Right-click a PR → **Send to…** and pick an action: PR Radar opens a new Warp tab with Claude Code already working on that PR, for example `claude --add-dir <worktree> '/triage-review https://github.com/acme/app/pull/42 …'`. PR Radar only launches; your skills and rules stay where they are.
 
-Set it up in Settings → **Send to agent** → **Create**, which writes an example `launchers.json` and opens it:
+Set it up in Settings → **Send to agent** → **Set up**:
 
-```json
-{
-  "terminal": { "kind": "warp" },
-  "agents": { "claude": "claude {prompt}" },
-  "worktreesDir": "~/.pr-radar/worktrees",
-  "repos": {
-    "acme/app": "~/code/app",
-    "acme/sub": { "path": "~/code/mono/sub", "agentDir": "~/code/mono" }
-  },
-  "actions": [
-    { "id": "triage-review", "label": "Triage the review", "showOn": "mine", "agent": "claude", "prompt": "/triage-review {url}" },
-    { "id": "code-review", "label": "Code review", "showOn": "review", "prompt": "/code-review {url}", "workspace": "worktree" }
-  ]
-}
-```
+- **Terminal:** Warp or Warp Preview.
+- **Projects:** **Add project…** and choose the folder where Claude Code should start (the root of the repository, with its `CLAUDE.md` and `.claude/skills`). PR Radar finds its GitHub repositories on its own, checked-out submodules included, so it knows which clone each PR belongs to. If you check out a submodule later, use **Detect again**.
+- **Actions:** each one is an entry of **Send to…** on the PRs of its project:
+  - **Run:** a skill of the project, one of yours (`~/.claude/skills`), or a custom prompt that may use `{url}`, `{number}`, `{repo}` and `{sha}`. Skills receive the PR link.
+  - **Extra text** (optional) goes after the PR link.
+  - **Show on:** My PRs, To review, Involved, or All.
+  - **Code:** **PR worktree** (default) adds a git worktree at the PR's latest commit under `~/.pr-radar/worktrees`, fetching `pull/<n>/head` when the commit isn't local. Claude starts in the project root and gets the worktree with `--add-dir` and its path in the prompt, so it reads the PR's code while your own checkout is never touched. A worktree is reused for the same commit; remove old ones with `git worktree remove`. **Project as is** skips the worktree.
 
-- **`terminal`:** `warp`, `warp-preview`, or `custom` with a `command` run by `/bin/sh` that includes `{command}` (the `cd` plus the agent, already quoted) and optionally `{dir}`. For example, Terminal.app: `osascript -e 'on run argv' -e 'tell application "Terminal" to do script (item 1 of argv)' -e 'end run' {command}`. Apps started from the Finder get a short `PATH`, so use full paths or `open -na <App> --args …`.
-- **`agents`:** a command per agent. `{prompt}` (required) and `{workspace}` are replaced already quoted, so don't add quotes around them.
-- **`repos`:** where each repository is cloned. `agentDir` starts the agent in another folder (a monorepo root with its `CLAUDE.md`, say) while the worktree belongs to the repository; add `--add-dir {workspace}` to the agent command then. `remote` defaults to `origin`.
-- **`actions`:** `showOn` is `mine`, `review`, `involved` or `all`. `prompt` may use `{url}`, `{number}`, `{repo}` and `{sha}`. The branch name and title are never available: the PR's author chooses them.
-- **`workspace`:** `worktree` (default) adds a git worktree at the PR's latest commit under `worktreesDir`, fetching `pull/<n>/head` when the commit isn't local, so the agent reads the PR's code and your own checkout is never touched. A worktree is reused for the same commit; remove old ones with `git worktree remove`. `folder` opens the clone as it is.
-
-Errors in the file show up in Settings; valid actions keep working. **`launchers.json` runs commands on your Mac:** if your team shares one, review changes to it like code.
+The branch name and title of a PR never reach the command line: its author chooses them. The settings are stored in `launchers.json` (Settings → Send to agent → launchers.json → Open), which you can share with your team; it runs commands on your Mac, so review changes to it like code.
 
 ## Privacy and security
 

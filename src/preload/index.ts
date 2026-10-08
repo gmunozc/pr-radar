@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { LaunchersInfo } from '../shared/launchers'
+import type { LaunchersView } from '../shared/launchers'
 import { IPC, type AppState, type AuthStatus, type InstallState, type PrRadarApi, type Settings } from '../shared/types'
 
 function subscribe<T>(channel: string, cb: (value: T) => void): () => void {
@@ -59,10 +59,14 @@ const api: PrRadarApi = {
   },
   launchers: {
     get: () => ipcRenderer.invoke(IPC.launchersGet),
+    save: (config) => ipcRenderer.invoke(IPC.launchersSave, config),
+    addProject: () => ipcRenderer.invoke(IPC.launchersAddProject),
+    redetect: (projectId) => ipcRenderer.invoke(IPC.launchersRedetect, projectId),
+    skills: (projectId) => ipcRenderer.invoke(IPC.launchersSkills, projectId),
     launch: (prId, actionId) => ipcRenderer.invoke(IPC.launch, prId, actionId),
     openFile: () => ipcRenderer.invoke(IPC.launchersOpenFile),
     openWorktrees: () => ipcRenderer.invoke(IPC.launchersOpenWorktrees),
-    onChange: (cb) => subscribe<LaunchersInfo>(IPC.launchersChanged, cb)
+    onChange: (cb) => subscribe<LaunchersView>(IPC.launchersChanged, cb)
   },
   quit: () => ipcRenderer.invoke(IPC.quit)
 }

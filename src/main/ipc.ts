@@ -1,5 +1,5 @@
 import { app, ipcMain, shell } from 'electron'
-import type { LaunchersInfo, LaunchResult } from '../shared/launchers'
+import type { LaunchersView, LaunchResult, ProjectResult, SaveLaunchersResult, SkillInfo } from '../shared/launchers'
 import {
   IPC,
   type ActionResult,
@@ -58,7 +58,11 @@ export interface IpcContext {
   cancelInstall(): void
   openInstaller(): Promise<void>
   installState(): InstallState
-  launchers(): LaunchersInfo
+  launchers(): LaunchersView
+  saveLaunchers(config: unknown): SaveLaunchersResult
+  addProject(): Promise<ProjectResult>
+  redetectProject(projectId: string): Promise<ProjectResult>
+  skills(projectId: string): SkillInfo[]
   launch(prId: string, actionId: string): Promise<LaunchResult>
   openLaunchersFile(): Promise<void>
   openWorktrees(): Promise<void>
@@ -172,6 +176,15 @@ export function registerIpc(ctx: IpcContext): void {
     typeof prId === 'string' && typeof actionId === 'string' && actionId.length <= MAX_ID_LENGTH
       ? ctx.launch(prId, actionId)
       : { ok: false, code: 'unknown_action' }
+  )
+  // The configuration is validated in full by the main process before anything is written.
+  ipcMain.handle(IPC.launchersSave, (_e, config: unknown) => ctx.saveLaunchers(config))
+  ipcMain.handle(IPC.launchersAddProject, () => ctx.addProject())
+  ipcMain.handle(IPC.launchersRedetect, (_e, projectId: unknown): Promise<ProjectResult> | ProjectResult =>
+    typeof projectId === 'string' && projectId.length <= MAX_ID_LENGTH ? ctx.redetectProject(projectId) : { ok: false, code: 'not_found' }
+  )
+  ipcMain.handle(IPC.launchersSkills, (_e, projectId: unknown) =>
+    typeof projectId === 'string' && projectId.length <= MAX_ID_LENGTH ? ctx.skills(projectId) : []
   )
   ipcMain.handle(IPC.launchersOpenFile, () => ctx.openLaunchersFile())
   ipcMain.handle(IPC.launchersOpenWorktrees, () => ctx.openWorktrees())

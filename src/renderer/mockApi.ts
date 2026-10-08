@@ -16,7 +16,7 @@ import type {
   SnoozeOption
 } from '../shared/types'
 import { DEFAULT_SETTINGS } from '../shared/types'
-import type { LaunchersInfo } from '../shared/launchers'
+import type { LaunchersConfig, LaunchersView, SkillInfo } from '../shared/launchers'
 
 type SettingsView = Settings & { openAtLogin: boolean }
 
@@ -412,28 +412,97 @@ export function createMockApi(): PrRadarApi {
       }
     },
     launchers: {
-      get: async () => launchers,
-      // R4 has no local clone mapped, so the error path can be seen too.
+      get: async () => launcherView(),
+      save: async (next) => {
+        await sleep(200)
+        const missing = next.actions.findIndex((a) => !a.label.trim())
+        if (missing >= 0) return { ok: false, errors: [{ code: 'invalid_action', at: `actions[${missing}].label` }] }
+        launcherConfig = next
+        return { ok: true, view: launcherView() }
+      },
+      addProject: async () => {
+        await sleep(600)
+        const project = { id: `p_${Date.now()}`, name: 'docs', path: '/Users/you/code/docs', repos: { 'globex/docs': '/Users/you/code/docs' } }
+        launcherConfig = { ...launcherConfig, projects: [...launcherConfig.projects, project] }
+        return { ok: true, projectId: project.id, view: launcherView() }
+      },
+      redetect: async (projectId) => {
+        await sleep(600)
+        return { ok: true, projectId, view: launcherView() }
+      },
+      skills: async () => {
+        await sleep(150)
+        return mockSkills
+      },
       launch: async (prId, actionId) => {
         await sleep(900)
         console.info('[mock] launch', actionId, 'on', prId)
-        return prId === 'R4' ? { ok: false, code: 'repo_not_mapped' } : { ok: true }
+        // R1's clone is "missing", so the error path can be seen too.
+        return prId === 'R1' ? { ok: false, code: 'repo_not_found' } : { ok: true }
       },
-      openFile: async () => console.info('[mock] open', launchers.path),
-      openWorktrees: async () => console.info('[mock] open', launchers.worktreesDir),
+      openFile: async () => console.info('[mock] open launchers.json'),
+      openWorktrees: async () => console.info('[mock] open worktrees'),
       onChange: () => () => {}
     }
   }
 }
 
-const launchers: LaunchersInfo = {
-  path: '~/Library/Application Support/PR Radar Dev/launchers.json',
-  exists: true,
-  actions: [
-    { id: 'triage-review', label: 'Revisar la review', showOn: 'mine' },
-    { id: 'code-review', label: 'Code review', showOn: 'review' },
-    { id: 'explain', label: 'Explicar el PR', showOn: 'all' }
+let launcherConfig: LaunchersConfig = {
+  version: 2,
+  terminal: 'warp',
+  projects: [
+    {
+      id: 'p_acme',
+      name: 'acme',
+      path: '/Users/you/code/acme',
+      repos: {
+        'acme/web': '/Users/you/code/acme',
+        'acme/billing': '/Users/you/code/acme/billing',
+        'globex/console': '/Users/you/code/acme/console'
+      }
+    }
   ],
-  errors: [{ code: 'unknown_placeholder', at: 'actions[3].prompt', detail: '{branch}' }],
-  worktreesDir: '~/.pr-radar/worktrees'
+  actions: [
+    {
+      id: 'a_triage',
+      label: 'Revisar la review',
+      projectId: 'p_acme',
+      showOn: 'mine',
+      run: { kind: 'skill', skill: 'triage-review', scope: 'project' },
+      extra: '',
+      workspace: 'worktree'
+    },
+    {
+      id: 'a_review',
+      label: 'Code review',
+      projectId: 'p_acme',
+      showOn: 'review',
+      run: { kind: 'prompt', text: '/code-review {number}' },
+      extra: '',
+      workspace: 'worktree'
+    }
+  ]
 }
+
+function launcherView(): LaunchersView {
+  return {
+    path: '~/Library/Application Support/PR Radar Dev/launchers.json',
+    exists: true,
+    config: launcherConfig,
+    entries: launcherConfig.actions.map(({ id, label, showOn, projectId }) => ({
+      id,
+      label,
+      showOn,
+      repos: Object.keys(launcherConfig.projects.find((p) => p.id === projectId)?.repos ?? {}).map((r) => r.toLowerCase())
+    })),
+    errors: [],
+    worktreesDir: '~/.pr-radar/worktrees'
+  }
+}
+
+const mockSkills: SkillInfo[] = [
+  { name: 'triage-review', description: 'Reads the review comments of a PR and says which are valid, wrong, debatable or already fixed.', scope: 'project' },
+  { name: 'accessibility-audit', description: 'Run WCAG 2.2 AA accessibility audits on components and views.', scope: 'project' },
+  { name: 'altio-backend-patterns', description: 'Backend conventions for the Altio services.', scope: 'project' },
+  { name: 'codebase-memory', description: 'Use the codebase knowledge graph for structural code queries.', scope: 'user' }
+]

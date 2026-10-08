@@ -4,6 +4,7 @@ import {
   fillTemplate,
   Launcher,
   launchValues,
+  promptFor,
   shellQuote,
   TAB_CONFIG_TTL_MS,
   tomlString,
@@ -11,42 +12,52 @@ import {
   type LauncherDeps,
   type LaunchPr
 } from '../src/main/launcher'
-import type { LauncherConfig } from '../src/main/launcherConfig'
 import type { Logger } from '../src/main/log'
+import type { LauncherAction, LauncherProject, LaunchersConfig } from '../src/shared/launchers'
 
 const silent: Logger = { debug() {}, info() {}, warn() {}, error() {} }
 const SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
 const NOW = 1_800_000_000_000
+const ROOT = '/code/mono'
+const CORE = '/code/mono/core'
+const WORKTREES = '/Users/me/.pr-radar/worktrees'
+const WORKTREE = `${WORKTREES}/Acme__Core/pr-42-a1b2c3d`
 
-const prA: LaunchPr = { repo: 'Acme/App', number: 42, url: 'https://github.com/Acme/App/pull/42', headOid: SHA }
+const prA: LaunchPr = { repo: 'Acme/Core', number: 42, url: 'https://github.com/Acme/Core/pull/42', headOid: SHA }
 
-const config = (over: Partial<LauncherConfig> = {}): LauncherConfig => ({
-  terminal: { kind: 'warp' },
-  agents: { claude: 'claude {prompt}' },
-  worktreesDir: '/Users/me/.pr-radar/worktrees',
-  repos: { 'acme/app': { path: '/code/app', agentDir: null, remote: 'origin' } },
-  actions: [
-    { id: 'triage', label: 'Triage', showOn: 'mine', agent: 'claude', prompt: '/triage-review {url}', workspace: 'worktree' },
-    { id: 'here', label: 'Here', showOn: 'all', agent: 'claude', prompt: 'look at #{number}', workspace: 'folder' }
-  ],
+const project: LauncherProject = { id: 'p1', name: 'mono', path: ROOT, repos: { 'acme/mono': ROOT, 'acme/core': CORE } }
+const triage: LauncherAction = {
+  id: 'triage',
+  label: 'Triage',
+  projectId: 'p1',
+  showOn: 'mine',
+  run: { kind: 'skill', skill: 'triage-review', scope: 'project' },
+  extra: '',
+  workspace: 'worktree'
+}
+const here: LauncherAction = { ...triage, id: 'here', label: 'Here', run: { kind: 'prompt', text: 'look at #{number}' }, workspace: 'folder' }
+
+const config = (over: Partial<LaunchersConfig> = {}): LaunchersConfig => ({
+  version: 2,
+  terminal: 'warp',
+  projects: [project],
+  actions: [triage, here],
   ...over
 })
-
-const WORKTREE = '/Users/me/.pr-radar/worktrees/Acme__App/pr-42-a1b2c3d'
 
 interface Fake {
   deps: LauncherDeps
   git: string[][]
   files: Map<string, string>
   urls: string[]
-  spawned: string[][]
   removed: string[]
+  redetected: number
 }
 
 /** A launcher over an in-memory world: `dirs` exist, `commits` are in the clone, git answers from them. */
 function fake(
   opts: {
-    config?: LauncherConfig | null
+    config?: LaunchersConfig
     pr?: LaunchPr | null
     dirs?: string[]
     commits?: string[]
@@ -54,14 +65,19 @@ function fake(
     fetchFails?: boolean
     tabConfigs?: string[]
     worktreeHead?: string
+    redetected?: LauncherProject | null
   } = {}
 ): Fake {
-  const dirs = new Set(opts.dirs ?? ['/code/app'])
+  const dirs = new Set(opts.dirs ?? [ROOT, CORE])
   const commits = new Set(opts.commits ?? [SHA])
-  const world: Fake = { git: [], files: new Map(), urls: [], spawned: [], removed: [], deps: null as unknown as LauncherDeps }
+  const world: Fake = { git: [], files: new Map(), urls: [], removed: [], redetected: 0, deps: null as unknown as LauncherDeps }
   world.deps = {
-    config: () => (opts.config === undefined ? config() : opts.config),
+    config: () => opts.config ?? config(),
     findPr: () => (opts.pr === undefined ? prA : opts.pr),
+    redetect: async () => {
+      world.redetected++
+      return opts.redetected ?? null
+    },
     run: async (file, args, { cwd }) => {
       expect(file).toBe('git')
       world.git.push([cwd, ...args])
@@ -80,9 +96,6 @@ function fake(
       if (cmd === 'worktree' && args[1] === 'add') dirs.add(args[3])
       return ''
     },
-    spawnDetached: async (file, args) => {
-      world.spawned.push([file, ...args])
-    },
     isDir: (path) => dirs.has(path),
     mkdir: (path) => dirs.add(path),
     writeFile: (path, text) => world.files.set(path, text),
@@ -91,12 +104,15 @@ function fake(
     openUrl: async (url) => {
       world.urls.push(url)
     },
+    worktreesDir: WORKTREES,
     home: '/Users/me',
     now: () => NOW,
     log: silent
   }
   return world
 }
+
+const tabConfig = (w: Fake) => [...w.files.values()][0]
 
 describe('command building', () => {
   it('quotes anything for a shell', () => {
@@ -113,46 +129,53 @@ describe('command building', () => {
   })
 
   it('accepts only values that look like GitHub', () => {
-    expect(launchValues(prA)).toEqual({ url: prA.url, number: '42', repo: 'Acme/App', sha: SHA })
+    expect(launchValues(prA)).toEqual({ url: prA.url, number: '42', repo: 'Acme/Core', sha: SHA })
     expect(launchValues({ ...prA, headOid: '' })).toBeNull()
     expect(launchValues({ ...prA, headOid: 'main; rm -rf ~' })).toBeNull()
-    expect(launchValues({ ...prA, url: 'https://github.com/Acme/App/pull/42?x=$(id)' })).toBeNull()
+    expect(launchValues({ ...prA, url: 'https://github.com/Acme/Core/pull/42?x=$(id)' })).toBeNull()
     expect(launchValues({ ...prA, repo: 'a/b c' })).toBeNull()
     expect(launchValues({ ...prA, number: 0 })).toBeNull()
   })
 
-  it('quotes the prompt and the workspace into the agent command', () => {
+  it('asks for the skill with the PR link, the extra text and where the code is', () => {
     const values = launchValues(prA)!
-    const action = config().actions[0]
-    expect(agentCommand('claude --add-dir {workspace} {prompt}', action, values, '/w/it s')).toBe(
-      `claude --add-dir '/w/it s' '/triage-review https://github.com/Acme/App/pull/42'`
+    expect(promptFor(triage, values, null)).toBe('/triage-review https://github.com/Acme/Core/pull/42')
+    expect(promptFor({ ...triage, extra: "don't fix anything" }, values, '/w')).toBe(
+      "/triage-review https://github.com/Acme/Core/pull/42 don't fix anything (PR code at commit a1b2c3d: /w)"
     )
-    expect(worktreePath('/wt', values)).toBe('/wt/Acme__App/pr-42-a1b2c3d')
+    expect(promptFor(here, values, null)).toBe('look at #42')
+    expect(worktreePath('/wt', values)).toBe('/wt/Acme__Core/pr-42-a1b2c3d')
+  })
+
+  it('runs claude with the worktree added and the prompt as one argument', () => {
+    expect(agentCommand("it's", '/w/a b')).toBe(`claude --add-dir '/w/a b' 'it'\\''s'`)
+    expect(agentCommand('x', null)).toBe(`claude 'x'`)
   })
 })
 
 describe('Launcher', () => {
-  it('adds a worktree at the PR head and opens it in a Warp tab', async () => {
+  it('adds a worktree of the PR repository and opens Warp in the project root', async () => {
     const w = fake()
     expect(await new Launcher(w.deps).launch('PR_1', 'triage')).toEqual({ ok: true })
     expect(w.git).toEqual([
-      ['/code/app', 'rev-parse', '--git-dir'],
-      ['/code/app', 'cat-file', '-e', `${SHA}^{commit}`],
-      ['/code/app', 'worktree', 'prune'],
-      ['/code/app', 'worktree', 'add', '--detach', WORKTREE, SHA]
+      [CORE, 'rev-parse', '--git-dir'],
+      [CORE, 'cat-file', '-e', `${SHA}^{commit}`],
+      [CORE, 'worktree', 'prune'],
+      [CORE, 'worktree', 'add', '--detach', WORKTREE, SHA]
     ])
     const name = `pr_radar_${NOW}_1`
     expect(w.urls).toEqual([`warp://tab_config/${name}`])
+    const prompt = `/triage-review https://github.com/Acme/Core/pull/42 (PR code at commit a1b2c3d: ${WORKTREE})`
     expect(w.files.get(`/Users/me/.warp/tab_configs/${name}.toml`)).toBe(
       [
         '# Written by PR Radar for one "Send to" launch; removed after a few minutes.',
-        'name = "Acme/App#42 · Triage"',
+        'name = "Acme/Core#42 · Triage"',
         '',
         '[[panes]]',
         'id = "main"',
         'type = "terminal"',
-        `directory = "${WORKTREE}"`,
-        `commands = ["claude '/triage-review https://github.com/Acme/App/pull/42'"]`,
+        `directory = "${ROOT}"`,
+        `commands = ["claude --add-dir '${WORKTREE}' '${prompt}'"]`,
         ''
       ].join('\n')
     )
@@ -161,7 +184,7 @@ describe('Launcher', () => {
   it('fetches the PR head only when the commit is missing', async () => {
     const w = fake({ commits: [], fetched: [SHA] })
     expect(await new Launcher(w.deps).launch('PR_1', 'triage')).toEqual({ ok: true })
-    expect(w.git).toContainEqual(['/code/app', 'fetch', '--no-tags', 'origin', 'pull/42/head'])
+    expect(w.git).toContainEqual([CORE, 'fetch', '--no-tags', 'origin', 'pull/42/head'])
   })
 
   it('reports a failed fetch, or a commit the fetch did not bring (force-pushed)', async () => {
@@ -170,39 +193,34 @@ describe('Launcher', () => {
   })
 
   it('reuses an existing worktree at the same commit', async () => {
-    const w = fake({ dirs: ['/code/app', WORKTREE] })
+    const w = fake({ dirs: [ROOT, CORE, WORKTREE] })
     expect(await new Launcher(w.deps).launch('PR_1', 'triage')).toEqual({ ok: true })
     expect(w.git).toEqual([[WORKTREE, 'rev-parse', 'HEAD']])
-    expect(await new Launcher(fake({ dirs: ['/code/app', WORKTREE], worktreeHead: 'other' }).deps).launch('PR_1', 'triage')).toEqual({
+    expect(await new Launcher(fake({ dirs: [ROOT, CORE, WORKTREE], worktreeHead: 'other' }).deps).launch('PR_1', 'triage')).toEqual({
       ok: false,
       code: 'git_failed'
     })
   })
 
-  it('opens the clone as it is for folder actions, without git', async () => {
+  it('opens the project as it is for folder actions, without git', async () => {
     const w = fake()
     expect(await new Launcher(w.deps).launch('PR_1', 'here')).toEqual({ ok: true })
     expect(w.git).toEqual([])
-    expect([...w.files.values()][0]).toContain(`directory = "/code/app"`)
-    expect([...w.files.values()][0]).toContain(`commands = ["claude 'look at #42'"]`)
+    expect(tabConfig(w)).toContain(`directory = "${ROOT}"`)
+    expect(tabConfig(w)).toContain(`commands = ["claude 'look at #42'"]`)
   })
 
-  it('starts the agent in agentDir when the repository sets one', async () => {
-    const w = fake({ config: config({ repos: { 'acme/app': { path: '/code/app', agentDir: '/code', remote: 'origin' } } }) })
-    await new Launcher(w.deps).launch('PR_1', 'triage')
-    expect([...w.files.values()][0]).toContain(`directory = "/code"`)
-  })
-
-  it('runs a custom terminal through sh with the whole command quoted', async () => {
-    const w = fake({ config: config({ terminal: { kind: 'custom', command: 'ghostty --working-directory={dir} -e {command}' } }) })
-    expect(await new Launcher(w.deps).launch('PR_1', 'here')).toEqual({ ok: true })
-    expect(w.spawned).toEqual([
-      ['/bin/sh', '-c', `ghostty --working-directory='/code/app' -e 'cd '\\''/code/app'\\'' && claude '\\''look at #42'\\'''`]
-    ])
+  it('detects the project again when the repository is missing from it', async () => {
+    const narrow = { ...project, repos: { 'acme/mono': ROOT } }
+    const found = fake({ config: config({ projects: [narrow] }), redetected: project })
+    expect(await new Launcher(found.deps).launch('PR_1', 'triage')).toEqual({ ok: true })
+    expect(found.redetected).toBe(1)
+    const missing = fake({ config: config({ projects: [narrow] }) })
+    expect(await new Launcher(missing.deps).launch('PR_1', 'triage')).toEqual({ ok: false, code: 'repo_not_mapped' })
   })
 
   it('uses Warp Preview folders and scheme', async () => {
-    const w = fake({ config: config({ terminal: { kind: 'warp-preview' } }) })
+    const w = fake({ config: config({ terminal: 'warp-preview' }) })
     await new Launcher(w.deps).launch('PR_1', 'here')
     expect(w.urls[0]).toMatch(/^warppreview:\/\/tab_config\/pr_radar_/)
     expect([...w.files.keys()][0]).toMatch(/^\/Users\/me\/\.warp-preview\/tab_configs\//)
@@ -219,15 +237,12 @@ describe('Launcher', () => {
 
   it('explains why it cannot launch', async () => {
     const launch = (opts: Parameters<typeof fake>[0], action = 'triage') => new Launcher(fake(opts).deps).launch('PR_1', action)
-    expect(await launch({ config: null })).toEqual({ ok: false, code: 'not_configured' })
+    expect(await launch({ config: config({ actions: [] }) })).toEqual({ ok: false, code: 'not_configured' })
     expect(await launch({}, 'nope')).toEqual({ ok: false, code: 'unknown_action' })
     expect(await launch({ pr: null })).toEqual({ ok: false, code: 'pr_not_found' })
     expect(await launch({ pr: { ...prA, headOid: '' } })).toEqual({ ok: false, code: 'pr_not_found' })
-    expect(await launch({ pr: { ...prA, repo: 'other/repo', url: 'https://github.com/other/repo/pull/42' } })).toEqual({
-      ok: false,
-      code: 'repo_not_mapped'
-    })
-    expect(await launch({ dirs: [] })).toEqual({ ok: false, code: 'repo_not_found' })
+    expect(await launch({ dirs: [ROOT] })).toEqual({ ok: false, code: 'repo_not_found' })
+    expect(await launch({ dirs: [CORE] }, 'here')).toEqual({ ok: false, code: 'repo_not_found' })
   })
 
   it('refuses a second launch on the same PR while one is preparing', async () => {
@@ -237,6 +252,7 @@ describe('Launcher', () => {
     w.deps.run = (file, args, opts) => (args[0] === 'rev-parse' ? new Promise((r) => (release = () => r('.git'))) : run(file, args, opts))
     const launcher = new Launcher(w.deps)
     const first = launcher.launch('PR_1', 'triage')
+    await new Promise((r) => setTimeout(r, 0))
     expect(await launcher.launch('PR_1', 'triage')).toEqual({ ok: false, code: 'busy' })
     release()
     expect(await first).toEqual({ ok: true })

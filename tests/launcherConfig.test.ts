@@ -1,120 +1,120 @@
 import { describe, expect, it } from 'vitest'
-import { describeLaunchers, EXAMPLE_LAUNCHERS, expandHome, parseLauncherConfig, placeholders } from '../src/main/launcherConfig'
-import { launchersFor, launchTargetOf, type LauncherEntry } from '../src/shared/launchers'
+import { describeLaunchers, entriesOf, expandHome, oneLine, parseLaunchers, placeholders, validateLaunchers } from '../src/main/launcherConfig'
+import { launchersFor, launchTargetOf, projectRepoPath, runSummary, type LauncherEntry } from '../src/shared/launchers'
 import { myPr, pr } from './fixtures'
 
 const HOME = '/Users/me'
-const parse = (value: unknown) => parseLauncherConfig(JSON.stringify(value), HOME)
+const parse = (value: unknown) => validateLaunchers(value, HOME)
 
+const project = {
+  id: 'p1',
+  name: 'development',
+  path: '/code/development',
+  repos: { 'orion-global/development': '/code/development', 'orion-global/Core': '/code/development/core' }
+}
 const valid = {
-  terminal: { kind: 'warp' },
-  agents: { claude: 'claude {prompt}' },
-  repos: {
-    'Acme/App': '~/code/app',
-    'acme/mono-sub': { path: '/src/mono/sub', agentDir: '~/src/mono', remote: 'upstream' }
-  },
+  version: 2,
+  terminal: 'warp',
+  projects: [project],
   actions: [
-    { id: 'triage', label: 'Triage the review', showOn: 'mine', agent: 'claude', prompt: '/triage-review {url}' },
-    { id: 'review', label: 'Code review', showOn: 'review', prompt: '/code-review {number}', workspace: 'folder' }
+    { id: 'a1', label: 'Revisar la review', projectId: 'p1', showOn: 'mine', run: { kind: 'skill', skill: 'triage-review', scope: 'project' }, extra: '', workspace: 'worktree' },
+    { id: 'a2', label: 'Code review', projectId: 'p1', showOn: 'review', run: { kind: 'prompt', text: '/code-review {number}' }, extra: '', workspace: 'folder' }
   ]
 }
 
-describe('parseLauncherConfig', () => {
-  it('reads a valid file, with defaults for what it leaves out', () => {
-    const { config, errors } = parse(valid)
+describe('validateLaunchers', () => {
+  it('reads a valid config, with defaults for what it leaves out', () => {
+    const { config, errors } = parse({ ...valid, actions: [{ id: 'a3', label: 'X', projectId: 'p1', run: { kind: 'skill', skill: 'audit' } }] })
     expect(errors).toEqual([])
     expect(config).toEqual({
-      terminal: { kind: 'warp' },
-      agents: { claude: 'claude {prompt}' },
-      worktreesDir: '/Users/me/.pr-radar/worktrees',
-      repos: {
-        'acme/app': { path: '/Users/me/code/app', agentDir: null, remote: 'origin' },
-        'acme/mono-sub': { path: '/src/mono/sub', agentDir: '/Users/me/src/mono', remote: 'upstream' }
-      },
-      actions: [
-        { id: 'triage', label: 'Triage the review', showOn: 'mine', agent: 'claude', prompt: '/triage-review {url}', workspace: 'worktree' },
-        { id: 'review', label: 'Code review', showOn: 'review', agent: 'claude', prompt: '/code-review {number}', workspace: 'folder' }
-      ]
+      version: 2,
+      terminal: 'warp',
+      projects: [project],
+      actions: [{ id: 'a3', label: 'X', projectId: 'p1', showOn: 'all', run: { kind: 'skill', skill: 'audit', scope: 'project' }, extra: '', workspace: 'worktree' }]
     })
+    expect(parse(valid)).toEqual({ config: valid, errors: [] })
   })
 
-  it('treats a missing file as not configured and broken JSON as an error', () => {
-    expect(parseLauncherConfig(null, HOME)).toEqual({ config: null, errors: [] })
-    expect(parseLauncherConfig('{ nope', HOME).errors[0].code).toBe('invalid_json')
-    expect(parse([1, 2]).errors).toEqual([{ code: 'not_object', at: '' }])
+  it('treats a missing file as empty, and broken or old files as errors', () => {
+    expect(parseLaunchers(null, HOME)).toEqual({ config: { version: 2, terminal: 'warp', projects: [], actions: [] }, errors: [] })
+    expect(parseLaunchers('{ nope', HOME).errors[0].code).toBe('invalid_json')
+    expect(parse([1]).errors).toEqual([{ code: 'not_object', at: '' }])
+    expect(parse({ terminal: { kind: 'warp' }, actions: [] }).errors).toEqual([{ code: 'old_format', at: '' }])
   })
 
-  it('accepts Warp Preview and a custom terminal that takes {command}', () => {
-    expect(parse({ terminal: { kind: 'warp-preview' } }).config?.terminal).toEqual({ kind: 'warp-preview' })
-    expect(parse({ terminal: { kind: 'custom', command: 'ghostty -e {command}' } }).config?.terminal).toEqual({
-      kind: 'custom',
-      command: 'ghostty -e {command}'
-    })
-    const noCommand = parse({ terminal: { kind: 'custom', command: 'ghostty' } })
-    expect(noCommand.config?.terminal).toEqual({ kind: 'warp' })
-    expect(noCommand.errors).toEqual([{ code: 'missing_placeholder', at: 'terminal.command', detail: '{command}' }])
-    expect(parse({ terminal: 'iterm' }).errors).toEqual([{ code: 'invalid_terminal', at: 'terminal' }])
-  })
-
-  it('keeps the valid actions and reports the rest', () => {
+  it('keeps valid entries and reports the rest', () => {
     const { config, errors } = parse({
       ...valid,
+      terminal: 'iterm',
+      projects: [
+        project,
+        { ...project },
+        { id: 'p2', name: 'x', path: 'relative', repos: {} },
+        { id: 'p3', name: 'y', path: '~/y', repos: { 'not a repo': '/y', 'a/b': 'rel' } }
+      ],
       actions: [
         ...valid.actions,
-        { id: 'triage', label: 'Again', prompt: 'x' },
-        { id: 'bad id!', label: 'x', prompt: 'x' },
-        { id: 'branch', label: 'Branch', prompt: 'look at {branch}' },
-        { id: 'ghost', label: 'Ghost', agent: 'codex', prompt: 'x' },
-        { id: 'where', label: 'Where', prompt: 'x', showOn: 'everywhere' },
-        { id: 'nolabel', label: '  ', prompt: 'x' }
+        { ...valid.actions[0] },
+        { id: 'bad id!', label: 'x', projectId: 'p1', run: { kind: 'skill', skill: 'x' } },
+        { id: 'a4', label: 'x', projectId: 'nope', run: { kind: 'skill', skill: 'x' } },
+        { id: 'a5', label: 'x', projectId: 'p1', run: { kind: 'skill', skill: '-rf; echo' } },
+        { id: 'a6', label: 'x', projectId: 'p1', run: { kind: 'prompt', text: 'look at {branch}' } },
+        { id: 'a7', label: ' ', projectId: 'p1', run: { kind: 'skill', skill: 'x' } },
+        { id: 'a8', label: 'x', projectId: 'p1', showOn: 'everywhere', run: { kind: 'skill', skill: 'x' } }
       ]
     })
-    expect(config?.actions.map((a) => a.id)).toEqual(['triage', 'review'])
+    expect(config.terminal).toBe('warp')
+    expect(config.projects.map((p) => p.id)).toEqual(['p1', 'p3'])
+    expect(config.projects[1]).toEqual({ id: 'p3', name: 'y', path: '/Users/me/y', repos: {} })
+    expect(config.actions.map((a) => a.id)).toEqual(['a1', 'a2'])
     expect(errors).toEqual([
-      { code: 'duplicate_action', at: 'actions[2].id', detail: 'triage' },
+      { code: 'invalid_terminal', at: 'terminal' },
+      { code: 'duplicate_project', at: 'projects[1].id', detail: 'p1' },
+      { code: 'invalid_path', at: 'projects[2].path' },
+      { code: 'invalid_repo', at: 'projects[3].repos.not a repo' },
+      { code: 'invalid_repo', at: 'projects[3].repos.a/b' },
+      { code: 'duplicate_action', at: 'actions[2].id', detail: 'a1' },
       { code: 'invalid_action', at: 'actions[3].id' },
-      { code: 'unknown_placeholder', at: 'actions[4].prompt', detail: '{branch}' },
-      { code: 'unknown_agent', at: 'actions[5].agent', detail: 'codex' },
-      { code: 'invalid_action', at: 'actions[6].showOn' },
-      { code: 'invalid_action', at: 'actions[7].label' }
+      { code: 'unknown_project', at: 'actions[4].projectId' },
+      { code: 'invalid_skill', at: 'actions[5].run', detail: '-rf; echo' },
+      { code: 'unknown_placeholder', at: 'actions[6].run', detail: '{branch}' },
+      { code: 'invalid_action', at: 'actions[7].label' },
+      { code: 'invalid_action', at: 'actions[8].showOn' }
     ])
   })
 
-  it('needs the agent named when there is more than one', () => {
-    const { config, errors } = parse({
-      agents: { claude: 'claude {prompt}', codex: 'codex {prompt}' },
-      actions: [{ id: 'a', label: 'A', prompt: 'x' }]
+  it('keeps prompts and extra text on one line', () => {
+    const { config } = parse({
+      ...valid,
+      actions: [{ id: 'a1', label: 'L', projectId: 'p1', run: { kind: 'prompt', text: 'one\ntwo' }, extra: ' be\n brief ' }]
     })
-    expect(config?.actions).toEqual([])
-    expect(errors).toEqual([{ code: 'unknown_agent', at: 'actions[0].agent' }])
-  })
-
-  it('checks agent commands and repository entries', () => {
-    const { config, errors } = parse({
-      agents: { claude: 'claude {prompt} {workspace}', bare: 'claude', evil: 'claude {prompt} {title}', 'bad name': 'x {prompt}' },
-      repos: { 'not a repo': '/x', 'acme/rel': 'code/rel', 'acme/remote': { path: '/x', remote: 'a b' }, 'acme/ok': '/ok' }
-    })
-    expect(config?.agents).toEqual({ claude: 'claude {prompt} {workspace}' })
-    expect(Object.keys(config?.repos ?? {})).toEqual(['acme/ok'])
-    expect(errors).toEqual([
-      { code: 'missing_placeholder', at: 'agents.bare', detail: '{prompt}' },
-      { code: 'unknown_placeholder', at: 'agents.evil', detail: '{title}' },
-      { code: 'invalid_agent', at: 'agents.bad name' },
-      { code: 'invalid_repo', at: 'repos.not a repo' },
-      { code: 'invalid_path', at: 'repos.acme/rel.path' },
-      { code: 'invalid_repo', at: 'repos.acme/remote.remote' }
-    ])
-  })
-
-  it('caps the number of actions', () => {
-    const actions = Array.from({ length: 25 }, (_, i) => ({ id: `a${i}`, label: `A${i}`, prompt: 'x' }))
-    const { config, errors } = parse({ agents: { claude: 'claude {prompt}' }, actions })
-    expect(config?.actions).toHaveLength(20)
-    expect(errors).toEqual([{ code: 'too_many_actions', at: 'actions', detail: '20' }])
+    expect(config.actions[0].run).toEqual({ kind: 'prompt', text: 'one two' })
+    expect(config.actions[0].extra).toBe('be brief')
+    expect(oneLine('  a \t b\r\n')).toBe('a b')
   })
 })
 
-describe('template helpers', () => {
+describe('entries and helpers', () => {
+  it('gives each entry the repositories of its project, lower case', () => {
+    expect(entriesOf(parse(valid).config)).toEqual([
+      { id: 'a1', label: 'Revisar la review', showOn: 'mine', repos: ['orion-global/development', 'orion-global/core'] },
+      { id: 'a2', label: 'Code review', showOn: 'review', repos: ['orion-global/development', 'orion-global/core'] }
+    ])
+    const view = describeLaunchers(parse(valid), '/data/launchers.json', true, HOME)
+    expect(view.worktreesDir).toBe('/Users/me/.pr-radar/worktrees')
+    expect(view.entries).toHaveLength(2)
+  })
+
+  it('finds a clone whatever the casing', () => {
+    expect(projectRepoPath(project, 'Orion-Global/core')).toBe('/code/development/core')
+    expect(projectRepoPath(project, 'orion-global/altio')).toBeNull()
+  })
+
+  it('summarizes what an action runs', () => {
+    expect(runSummary({ kind: 'skill', skill: 'triage-review', scope: 'project' })).toBe('/triage-review')
+    expect(runSummary({ kind: 'prompt', text: 'x'.repeat(50) })).toBe(`${'x'.repeat(39)}…`)
+  })
+
   it('lists placeholders and expands ~', () => {
     expect(placeholders('/x {url} and {number}{sha} {not-one}')).toEqual(['url', 'number', 'sha'])
     expect(expandHome('~', HOME)).toBe(HOME)
@@ -125,42 +125,19 @@ describe('template helpers', () => {
 
 describe('launchersFor', () => {
   const entries: LauncherEntry[] = [
-    { id: 'mine', label: 'M', showOn: 'mine' },
-    { id: 'review', label: 'R', showOn: 'review' },
-    { id: 'involved', label: 'I', showOn: 'involved' },
-    { id: 'all', label: 'A', showOn: 'all' }
+    { id: 'mine', label: 'M', showOn: 'mine', repos: ['acme/app'] },
+    { id: 'review', label: 'R', showOn: 'review', repos: ['acme/app'] },
+    { id: 'involved', label: 'I', showOn: 'involved', repos: ['acme/app'] },
+    { id: 'all', label: 'A', showOn: 'all', repos: ['acme/app'] },
+    { id: 'other', label: 'O', showOn: 'all', repos: ['acme/other'] }
   ]
 
-  it('offers each action on the lists it names', () => {
+  it('offers each action on the lists it names, for its own repositories', () => {
     expect(launchTargetOf(myPr('a'))).toBe('mine')
     expect(launchTargetOf(pr('a', { source: { kind: 'team', slug: 'core' } }))).toBe('review')
     expect(launchersFor(myPr('a'), entries).map((e) => e.id)).toEqual(['mine', 'all'])
-    expect(launchersFor(pr('a'), entries).map((e) => e.id)).toEqual(['review', 'all'])
+    expect(launchersFor(pr('a', { repo: 'Acme/App' }), entries).map((e) => e.id)).toEqual(['review', 'all'])
     expect(launchersFor(pr('a', { source: { kind: 'involved' } }), entries).map((e) => e.id)).toEqual(['involved', 'all'])
-  })
-})
-
-describe('describeLaunchers', () => {
-  it('gives the panel ids and labels only', () => {
-    const info = describeLaunchers(parse(valid), '/data/launchers.json', true, HOME)
-    expect(info).toEqual({
-      path: '/data/launchers.json',
-      exists: true,
-      actions: [
-        { id: 'triage', label: 'Triage the review', showOn: 'mine' },
-        { id: 'review', label: 'Code review', showOn: 'review' }
-      ],
-      errors: [],
-      worktreesDir: '/Users/me/.pr-radar/worktrees'
-    })
-    expect(describeLaunchers(parseLauncherConfig(null, HOME), '/x', false, HOME).actions).toEqual([])
-  })
-})
-
-describe('EXAMPLE_LAUNCHERS', () => {
-  it('is a valid file', () => {
-    const { config, errors } = parse(EXAMPLE_LAUNCHERS)
-    expect(errors).toEqual([])
-    expect(config?.actions.map((a) => a.id)).toEqual(['triage-review', 'code-review'])
+    expect(launchersFor(pr('a', { repo: 'acme/other' }), entries).map((e) => e.id)).toEqual(['other'])
   })
 })

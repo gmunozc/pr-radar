@@ -27,8 +27,8 @@ src/main/          main process
   engine.ts        polling, new-PR detection, dismiss/snooze, quiet hours, digest (no Electron imports)
   github.ts        GraphQL query and mapping; deviceFlow.ts / session.ts: sign-in and token renewal
   diff.ts          pure "what changed" logic; schedule.ts: calendar rules; notifications.ts: texts
-  launcher.ts      Send to: worktree at the PR head, then a terminal tab with the agent;
-                   launcherConfig.ts: launchers.json validation
+  launcher.ts      Send to: worktree at the PR head, then a Warp tab with Claude Code;
+                   launcherConfig.ts: launchers.json validation; projects.ts: repos and skills
   index.ts         composition root: wires the engine to Electron (tray, panel, IPC, timers)
 src/preload/       typed bridge exposed to the panel as window.prRadar
 src/renderer/      the panel (React)

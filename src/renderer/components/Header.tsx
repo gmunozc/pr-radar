@@ -6,7 +6,8 @@ import { AlertIcon, ArrowLeftIcon, GearIcon, SyncIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
 import type { Tab } from './Tabs'
 
-export type View = 'list' | 'settings' | 'detail'
+/** `launchers` is a page of Settings ("Send to agent"). */
+export type View = 'list' | 'settings' | 'detail' | 'launchers'
 
 interface Props {
   state: AppState
@@ -69,7 +70,14 @@ export function Header({ state, tab, view, detailTitle, refreshing, onRefresh, o
   const subtitle = state.lastUpdated
     ? t('header.updated', { time: timeAgo(state.lastUpdated, now, locale) })
     : t('header.loading')
-  const title = view === 'settings' ? t('header.settings') : view === 'detail' ? (detailTitle ?? '') : listTitle(state, tab, t)
+  const title =
+    view === 'settings'
+      ? t('header.settings')
+      : view === 'launchers'
+        ? t('launchers.title')
+        : view === 'detail'
+          ? (detailTitle ?? '')
+          : listTitle(state, tab, t)
 
   return (
     <>
@@ -90,7 +98,7 @@ export function Header({ state, tab, view, detailTitle, refreshing, onRefresh, o
             {state.quietUntil ? t('header.quietUntil', { when: formatDayTime(state.quietUntil, now, locale) }) : subtitle}
           </div>
         </div>
-        {view !== 'settings' && (
+        {view !== 'settings' && view !== 'launchers' && (
           <button
             className={`icon-btn ${refreshing ? 'spinning' : ''}`}
             onMouseDown={keepFocus}

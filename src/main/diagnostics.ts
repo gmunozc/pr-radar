@@ -17,7 +17,7 @@ export interface DiagnosticsInput {
   consecutiveFailures: number
   notificationsSupported: boolean
   /** "Send to…" setup, as counts: launchers.json holds local paths and repository names. */
-  launchers: { terminal: string | null; actions: number; repos: number; errors: number }
+  launchers: { terminal: string | null; projects: number; actions: number; errors: number }
   logs: LogEntry[]
   now: number
 }
@@ -51,7 +51,7 @@ export function buildDiagnostics(d: DiagnosticsInput): string {
     `Warnings ${state.warnings.length ? state.warnings.map((w) => w.code).join(', ') : 'none'}`,
     `Notifications supported=${d.notificationsSupported}`,
     d.launchers.terminal
-      ? `Launchers terminal=${d.launchers.terminal} actions=${d.launchers.actions} repos=${d.launchers.repos} errors=${d.launchers.errors}`
+      ? `Launchers terminal=${d.launchers.terminal} projects=${d.launchers.projects} actions=${d.launchers.actions} errors=${d.launchers.errors}`
       : `Launchers none${d.launchers.errors ? ` errors=${d.launchers.errors}` : ''}`,
     `Generated ${iso(d.now)}`,
     '',

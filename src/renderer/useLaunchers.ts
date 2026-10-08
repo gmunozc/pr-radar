@@ -1,32 +1,33 @@
 import { useEffect, useState } from 'react'
-import { launchersFor, type LauncherEntry, type LaunchersInfo } from '../shared/launchers'
+import { launchersFor, type LauncherEntry, type LaunchersView } from '../shared/launchers'
 import type { MyPullRequest, PullRequest } from '../shared/types'
 import type { MenuItem } from './components/ActionMenu'
 import { useT } from './i18n'
 
 // One copy for the whole panel: every PR row reads it, so it isn't fetched once per row.
-let current: LaunchersInfo | null = null
+let current: LaunchersView | null = null
 let subscribed = false
-const listeners = new Set<(info: LaunchersInfo) => void>()
+const listeners = new Set<(view: LaunchersView) => void>()
 
-function publish(info: LaunchersInfo): void {
-  current = info
-  for (const cb of listeners) cb(info)
+/** Shares a new configuration with every row (also used after saving from Settings). */
+export function publishLaunchers(view: LaunchersView): void {
+  current = view
+  for (const cb of listeners) cb(view)
 }
 
 /** Re-reads launchers.json (Settings does it when shown). */
 export function reloadLaunchers(): void {
-  void window.prRadar.launchers.get().then(publish)
+  void window.prRadar.launchers.get().then(publishLaunchers)
 }
 
 /** The "Send to…" setup, kept in sync with launchers.json. */
-export function useLaunchers(): LaunchersInfo | null {
+export function useLaunchers(): LaunchersView | null {
   const [info, setInfo] = useState(current)
   useEffect(() => {
     listeners.add(setInfo)
     if (!subscribed) {
       subscribed = true
-      window.prRadar.launchers.onChange(publish)
+      window.prRadar.launchers.onChange(publishLaunchers)
       reloadLaunchers()
     }
     return () => {
@@ -61,7 +62,7 @@ export function useSendTo(pr: PullRequest | MyPullRequest): SendTo {
       setLaunching(null)
     }
   }
-  const entries = info ? launchersFor(pr, info.actions) : []
+  const entries = info ? launchersFor(pr, info.entries) : []
   const item: MenuItem | null =
     entries.length === 0
       ? null
