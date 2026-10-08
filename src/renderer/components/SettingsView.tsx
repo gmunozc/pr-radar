@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { LanguagePref } from '../../shared/i18n'
+import type { MessageKey } from '../../shared/i18n/en'
 import {
   FAST_POLL_OPTIONS,
   MIN_POLL_INTERVAL_SEC,
+  NOTIFY_KINDS,
   SHORTCUT_OPTIONS,
+  type NotifyKind,
   type AppState,
   type NotifyResult,
   type PanelSize,
@@ -11,6 +14,14 @@ import {
 } from '../../shared/types'
 
 const PANEL_SIZES: PanelSize[] = ['compact', 'default', 'large']
+const KIND_LABEL: Record<NotifyKind, MessageKey> = {
+  approved: 'settings.notify.approved',
+  changes: 'settings.notify.changes',
+  commented: 'settings.notify.commented',
+  ready: 'settings.notify.ready',
+  ciFailed: 'settings.notify.ciFailed',
+  conflicts: 'settings.notify.conflicts'
+}
 const MAC_KEYS: Record<string, string> = { CommandOrControl: '⌘', Control: '⌃', Alt: '⌥', Shift: '⇧' }
 const PC_KEYS: Record<string, string> = { CommandOrControl: 'Ctrl', Control: 'Ctrl', Alt: 'Alt', Shift: 'Shift' }
 
@@ -251,6 +262,20 @@ export function SettingsView({ state }: { state: AppState }) {
           checked={settings.notifyMyPrs}
           onChange={(v) => void update({ notifyMyPrs: v })}
         />
+        {settings.notifyMyPrs && (
+          <div className="setting setting-sub" role="group" aria-label={t('settings.notifyMyPrs')}>
+            {NOTIFY_KINDS.map((kind) => (
+              <label key={kind} className="setting-sub-item">
+                <input
+                  type="checkbox"
+                  checked={settings.notifyKinds[kind]}
+                  onChange={(e) => void update({ notifyKinds: { ...settings.notifyKinds, [kind]: e.target.checked } })}
+                />
+                {t(KIND_LABEL[kind])}
+              </label>
+            ))}
+          </div>
+        )}
         <label className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.digest')}</div>

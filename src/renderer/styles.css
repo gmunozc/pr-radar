@@ -969,6 +969,26 @@ code {
   min-width: 0;
 }
 
+/* The per-kind checklist under "Updates on my PRs". */
+.setting-sub {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin-top: -2px;
+}
+
+.setting-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.setting-sub-item input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .setting-label {
   font-weight: 500;
 }

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { planToEvents, renderNotification as render, staleNotifications, type NotificationEvent } from '../src/main/notifications'
+import type { MyPrEvent } from '../src/main/diff'
+import { filterMyPrEvents, planToEvents, renderNotification as render, staleNotifications, type NotificationEvent } from '../src/main/notifications'
 import { translator } from '../src/shared/i18n'
-import type { PullRequest } from '../src/shared/types'
+import { DEFAULT_SETTINGS, type PullRequest } from '../src/shared/types'
 import * as fx from './fixtures'
 
 const sample = { number: 12, title: 'Add feature', url: 'https://github.com/acme/app/pull/12' }
@@ -131,6 +132,20 @@ describe('notifications about your PRs', () => {
     expect(render({ kind: 'my_pr_conflicts', pr: { ...mine, baseBranch: '' } }, en)).toMatchObject({ title: 'Your PR has conflicts', body: 'Add feature' })
   })
 
+  it('reports new comments under their own id, naming the commenter', () => {
+    const reviewed = { ...mine, reviews: [{ login: 'ana', avatarUrl: avatar, state: 'COMMENTED' as const }] }
+    expect(render({ kind: 'my_pr_commented', pr: reviewed, by: ['ana'] }, es)).toEqual({
+      id: 'comments-MY_1',
+      groupId: 'acme/app',
+      title: 'Comentaron en tu PR',
+      subtitle: 'acme/app#12 · @ana',
+      body: 'Add feature',
+      imageUrl: avatar,
+      action: { kind: 'open_url', url: 'https://github.com/acme/app/pull/12' }
+    })
+    expect(render({ kind: 'my_pr_commented', pr: mine, by: ['ana'] }, en).title).toBe('New comments on your PR')
+  })
+
   it('reports merges PR Radar did itself under their own id, and the ones it could not do', () => {
     expect(render({ kind: 'my_pr_merged', pr: mine, method: 'SQUASH' }, es)).toEqual({
       id: 'merged-MY_1',
@@ -154,7 +169,19 @@ describe('notifications about your PRs', () => {
 })
 
 describe('reminders, catch-up and digest notifications', () => {
-  const none = { reviews: 0, reminders: 0, approved: 0, changes: 0, ready: 0, ciFailed: 0, conflicts: 0, merged: 0, mergeFailed: 0, sessionExpired: false }
+  const none = {
+    reviews: 0,
+    reminders: 0,
+    approved: 0,
+    changes: 0,
+    ready: 0,
+    ciFailed: 0,
+    conflicts: 0,
+    commented: 0,
+    merged: 0,
+    mergeFailed: 0,
+    sessionExpired: false
+  }
 
   it('reminds about one snoozed PR by opening it, with the same buttons as a request, and summarizes several', () => {
     expect(render({ kind: 'snooze_returned', prs: [pr()] }, es)).toMatchObject({
@@ -180,6 +207,7 @@ describe('reminders, catch-up and digest notifications', () => {
     expect(render({ kind: 'catch_up', counts: { ...none, ciFailed: 2, conflicts: 1 } }, en).body).toBe(
       '2 PRs with failing checks · 1 PR with conflicts'
     )
+    expect(render({ kind: 'catch_up', counts: { ...none, commented: 2 } }, es).body).toBe('2 PRs con comentarios nuevos')
   })
 
   it('builds the daily digest, with the caught-up alerts first', () => {
@@ -202,12 +230,26 @@ describe('staleNotifications', () => {
       m3: { status: 'approved' as const }
     }
     const ids = staleNotifications(['a', 'b'], [fx.pr('b')], prev, [fx.myPr('m1', { ci: 'success' }), fx.myPr('m2', { conflicts: false })])
-    expect(ids).toEqual(['a', 'ci-m1', 'conflicts-m2', 'mine-m3', 'ci-m3', 'conflicts-m3'])
+    expect(ids).toEqual(['a', 'ci-m1', 'conflicts-m2', 'mine-m3', 'ci-m3', 'conflicts-m3', 'comments-m3'])
   })
 
   it('keeps notifications about PRs that are still there as they were', () => {
     const prev = { m1: { status: 'waiting' as const, ci: 'failure' as const, conflicts: true } }
     expect(staleNotifications(['a'], [fx.pr('a')], prev, [fx.myPr('m1', { ci: 'failure', conflicts: true })])).toEqual([])
     expect(staleNotifications([], [], undefined, [])).toEqual([])
+  })
+})
+
+describe('filterMyPrEvents', () => {
+  it('drops everything when updates on your PRs are off, and the kinds turned off otherwise', () => {
+    const mine = fx.myPr('MY_1')
+    const events: MyPrEvent[] = [
+      { kind: 'my_pr_approved', pr: mine, by: [] },
+      { kind: 'my_pr_ci_failed', pr: mine, failing: [] },
+      { kind: 'my_pr_commented', pr: mine, by: ['ana'] }
+    ]
+    expect(filterMyPrEvents(events, { notifyMyPrs: false, notifyKinds: DEFAULT_SETTINGS.notifyKinds })).toEqual([])
+    const kinds = { ...DEFAULT_SETTINGS.notifyKinds, ciFailed: false, commented: false }
+    expect(filterMyPrEvents(events, { notifyMyPrs: true, notifyKinds: kinds }).map((e) => e.kind)).toEqual(['my_pr_approved'])
   })
 })

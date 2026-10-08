@@ -483,6 +483,7 @@ describe('Engine quiet hours', () => {
           ready: 0,
           ciFailed: 0,
           conflicts: 0,
+          commented: 0,
           merged: 0,
           mergeFailed: 0,
           sessionExpired: false
@@ -841,7 +842,7 @@ describe('Engine and delivered notifications', () => {
     await t.engine.poll()
     expect(t.retireNotifications).not.toHaveBeenCalled()
     await t.engine.poll()
-    expect(t.retireNotifications).toHaveBeenCalledWith(['a', 'ci-m1', 'mine-m2', 'ci-m2', 'conflicts-m2'])
+    expect(t.retireNotifications).toHaveBeenCalledWith(['a', 'ci-m1', 'mine-m2', 'ci-m2', 'conflicts-m2', 'comments-m2'])
   })
 
   it('retires the notification of a PR you dismiss or snooze, and all of them on sign-out', async () => {
@@ -931,5 +932,33 @@ describe('Engine freshness', () => {
     expect(t.checked).toHaveBeenCalledTimes(3)
     await t.engine.probe()
     expect(t.checked).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('Engine and updates on your PRs', () => {
+  it('holds new comments back in quiet hours and counts them in the catch-up', async () => {
+    const commented = myPr('m1', { reviews: [{ login: 'ana', avatarUrl: '', state: 'COMMENTED' }] })
+    const t = setup([result([], 'me', [], [myPr('m1')]), result([], 'me', [], [commented])], {
+      auth: fresh(),
+      settings: { quietHours: true, digest: false },
+      now: at(5, '07:00')
+    })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.events).toEqual([])
+    expect(t.stored).toMatchObject({ queued: { commented: ['m1'] } })
+    t.setNow(at(5, '09:00'))
+    t.engine.tick()
+    expect(t.events).toEqual([{ kind: 'catch_up', counts: expect.objectContaining({ commented: 1 }) }])
+  })
+
+  it('drops the kinds of updates turned off in the settings', async () => {
+    const approved = myPr('m1', { status: 'approved', reviews: [{ login: 'ana', avatarUrl: '', state: 'APPROVED' }] })
+    const t = setup([result([], 'me', [], [myPr('m1')]), result([], 'me', [], [approved])], {
+      settings: { notifyKinds: { ...DEFAULT_SETTINGS.notifyKinds, approved: false } }
+    })
+    await t.engine.poll()
+    await t.engine.poll()
+    expect(t.events).toEqual([])
   })
 })

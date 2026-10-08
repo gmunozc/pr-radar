@@ -10,6 +10,10 @@ describe('sanitizeSettingsPatch', () => {
     expect(sanitizeSettingsPatch({ pollIntervalSec: 99999 })).toEqual({ pollIntervalSec: 3600 })
     expect(sanitizeSettingsPatch({ fastPoll: 10 })).toEqual({ fastPoll: 10 })
     expect(sanitizeSettingsPatch({ fastPoll: 7 })).toEqual({})
+    expect(sanitizeSettingsPatch({ notifyKinds: { approved: false, bogus: true, ready: 'no' } })).toEqual({
+      notifyKinds: { ...DEFAULT_SETTINGS.notifyKinds, approved: false }
+    })
+    expect(sanitizeSettingsPatch({ notifyKinds: ['approved'] })).toEqual({})
     expect(sanitizeSettingsPatch(null)).toEqual({})
   })
 })

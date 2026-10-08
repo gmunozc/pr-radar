@@ -31,7 +31,7 @@ import {
 } from './diff'
 import { GithubError, installationWarnings, type FetchResult, type InstallationInfo } from './github'
 import type { Logger } from './log'
-import { capMyPrEvents, planToEvents, staleNotifications, type CatchUp, type NotificationEvent } from './notifications'
+import { capMyPrEvents, filterMyPrEvents, planToEvents, staleNotifications, type CatchUp, type NotificationEvent } from './notifications'
 import { SessionExpiredError, type ExpiryReason, type Session } from './session'
 import { dayKey, digestDue, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil } from './schedule'
 import type { SnoozeOption } from '../shared/types'
@@ -119,7 +119,7 @@ interface Alerts {
 }
 
 const hasAny = (c: CatchUp) =>
-  c.reviews + c.reminders + c.approved + c.changes + c.ready + c.ciFailed + c.conflicts + c.merged + c.mergeFailed > 0 ||
+  c.reviews + c.reminders + c.approved + c.changes + c.ready + c.ciFailed + c.conflicts + c.commented + c.merged + c.mergeFailed > 0 ||
   c.sessionExpired
 const snoozedCount = (h: Pick<HiddenResult, 'snoozed' | 'snoozedUntilPush'>) =>
   Object.keys(h.snoozed).length + Object.keys(h.snoozedUntilPush).length
@@ -131,6 +131,7 @@ const queueHasItems = (q: QueuedAlerts) =>
     q.ready.length +
     q.ciFailed.length +
     q.conflicts.length +
+    q.commented.length +
     q.merged.length +
     q.mergeFailed.length >
     0 || q.sessionExpired
@@ -731,7 +732,7 @@ export class Engine {
   private dispatch(alerts: Alerts): void {
     const settings = this.deps.settings()
     if (!settings.notifications) return
-    const mine = settings.notifyMyPrs ? alerts.mine : []
+    const mine = filterMyPrEvents(alerts.mine, settings)
     // Merges the user armed are always reported, whatever the "updates on my PRs" setting.
     const merged = alerts.merged ?? []
     const mergeFailed = alerts.mergeFailed ?? []
@@ -762,6 +763,7 @@ export class Engine {
           ready: [...new Set([...q.ready, ...ids('my_pr_ready')])],
           ciFailed: [...new Set([...q.ciFailed, ...ids('my_pr_ci_failed')])],
           conflicts: [...new Set([...q.conflicts, ...ids('my_pr_conflicts')])],
+          commented: [...new Set([...q.commented, ...ids('my_pr_commented')])],
           merged: [...new Set([...q.merged, ...merged.map((m) => m.pr.id)])],
           mergeFailed: [...new Set([...q.mergeFailed, ...mergeFailed.map((m) => m.pr.id)])],
           sessionExpired: q.sessionExpired || alerts.sessionExpired === true
@@ -793,6 +795,7 @@ export class Engine {
       ready: q.ready.filter((id) => mine.get(id)?.readyToMerge).length,
       ciFailed: q.ciFailed.filter((id) => mine.get(id)?.ci === 'failure').length,
       conflicts: q.conflicts.filter((id) => mine.get(id)?.conflicts).length,
+      commented: q.commented.filter((id) => mine.get(id)?.reviews.some((r) => r.state === 'COMMENTED')).length,
       merged: q.merged.length,
       mergeFailed: q.mergeFailed.length,
       sessionExpired: q.sessionExpired

@@ -1,6 +1,6 @@
 /** What PR Radar can notify about, and how each notification reads. Free of Electron APIs. */
 import type { Translate } from '../shared/i18n'
-import type { ActionErrorCode, MergeMethod, MyPullRequest, PullRequest, SnoozeOption } from '../shared/types'
+import type { ActionErrorCode, MergeMethod, MyPullRequest, NotifyKind, PullRequest, Settings, SnoozeOption } from '../shared/types'
 import type { MyPrEvent, MyPrSnapshot, NotificationPlan } from './diff'
 
 /** What happened while quiet hours held notifications back. */
@@ -12,6 +12,7 @@ export interface CatchUp {
   ready: number
   ciFailed: number
   conflicts: number
+  commented: number
   merged: number
   mergeFailed: number
   sessionExpired: boolean
@@ -85,6 +86,22 @@ export function planToEvents(plan: NotificationPlan): NotificationEvent[] {
 const myPrId = (prId: string) => `mine-${prId}`
 const ciId = (prId: string) => `ci-${prId}`
 const conflictsId = (prId: string) => `conflicts-${prId}`
+const commentsId = (prId: string) => `comments-${prId}`
+
+const KIND_OF: Record<MyPrEvent['kind'], NotifyKind> = {
+  my_pr_approved: 'approved',
+  my_pr_changes_requested: 'changes',
+  my_pr_ready: 'ready',
+  my_pr_ci_failed: 'ciFailed',
+  my_pr_conflicts: 'conflicts',
+  my_pr_commented: 'commented'
+}
+
+/** The updates on your PRs the settings want notified. */
+export function filterMyPrEvents(events: MyPrEvent[], settings: Pick<Settings, 'notifyMyPrs' | 'notifyKinds'>): MyPrEvent[] {
+  if (!settings.notifyMyPrs) return []
+  return events.filter((e) => settings.notifyKinds[KIND_OF[e.kind]])
+}
 
 /**
  * Delivered notifications that no longer apply after a poll, for the notifier to remove: review
@@ -103,7 +120,7 @@ export function staleNotifications(
   const mine = new Map(myPrs.map((p) => [p.id, p]))
   for (const [id, before] of Object.entries(prevMine ?? {})) {
     const pr = mine.get(id)
-    if (!pr) ids.push(myPrId(id), ciId(id), conflictsId(id))
+    if (!pr) ids.push(myPrId(id), ciId(id), conflictsId(id), commentsId(id))
     else {
       if (before.ci === 'failure' && pr.ci === 'success') ids.push(ciId(id))
       if (before.conflicts === true && !pr.conflicts) ids.push(conflictsId(id))
@@ -155,6 +172,7 @@ export function catchUpParts(c: CatchUp, t: Translate): string[] {
   if (c.reminders) parts.push(t('notif.catchUpReminders', { count: c.reminders }))
   if (c.approved) parts.push(t('notif.catchUpApproved', { count: c.approved }))
   if (c.changes) parts.push(t('notif.catchUpChanges', { count: c.changes }))
+  if (c.commented) parts.push(t('notif.catchUpCommented', { count: c.commented }))
   if (c.ready) parts.push(t('notif.catchUpReady', { count: c.ready }))
   if (c.ciFailed) parts.push(t('notif.catchUpCiFailed', { count: c.ciFailed }))
   if (c.conflicts) parts.push(t('notif.catchUpConflicts', { count: c.conflicts }))
@@ -227,6 +245,16 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         action: { kind: 'open_url', url: `${pr.url}/checks` }
       }
     }
+    case 'my_pr_commented':
+      return {
+        id: commentsId(event.pr.id),
+        groupId: event.pr.repo,
+        title: t('notif.commented'),
+        subtitle: where(event.pr, event.by),
+        body: event.pr.title,
+        ...picture(reviewerAvatar(event.pr, event.by)),
+        action: { kind: 'open_url', url: event.pr.url }
+      }
     case 'my_pr_conflicts': {
       const { pr } = event
       return {

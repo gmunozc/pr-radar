@@ -276,8 +276,10 @@ export interface Settings {
   fastPoll: number
   clientId: string
   language: LanguagePref
-  /** Notify when your PRs are approved, get changes requested or become ready to merge. */
+  /** Notify about updates on your PRs (approved, changes, comments, ready, checks, conflicts). */
   notifyMyPrs: boolean
+  /** Which of those updates, when `notifyMyPrs` is on. */
+  notifyKinds: Record<NotifyKind, boolean>
   /** Only notify during working hours; alerts outside them arrive together afterwards. */
   quietHours: boolean
   /** "HH:MM", local time. */
@@ -310,6 +312,7 @@ export const DEFAULT_SETTINGS: Settings = {
   clientId: '',
   language: 'system',
   notifyMyPrs: true,
+  notifyKinds: { approved: true, changes: true, ready: true, ciFailed: true, conflicts: true, commented: true },
   quietHours: false,
   workStart: '09:00',
   workEnd: '19:00',
@@ -318,6 +321,10 @@ export const DEFAULT_SETTINGS: Settings = {
   digestTime: '09:30',
   checkUpdates: true
 }
+
+/** Updates on your PRs that can be notified, in the order the settings list them. */
+export const NOTIFY_KINDS = ['approved', 'changes', 'commented', 'ready', 'ciFailed', 'conflicts'] as const
+export type NotifyKind = (typeof NOTIFY_KINDS)[number]
 
 export const MIN_POLL_INTERVAL_SEC = 15
 /** Probe cadences the settings offer, in seconds; 0 is off. */

@@ -1,5 +1,6 @@
 /** Builds the "Copy diagnostics" report. Pure; index.ts collects the inputs from Electron. */
 import type { AppState, Settings } from '../shared/types'
+import { NOTIFY_KINDS } from '../shared/types'
 import { redact, type LogEntry } from './log'
 import type { StoredAuth } from './session'
 
@@ -34,7 +35,8 @@ export function buildDiagnostics(d: DiagnosticsInput): string {
       .join(' · ')}`,
     `Panel last shown on display ${d.panelDisplayId ?? 'none'}`,
     `Settings includeTeams=${settings.includeTeams} showDrafts=${settings.showDrafts} notifications=${settings.notifications} ` +
-      `pollIntervalSec=${settings.pollIntervalSec} fastPoll=${settings.fastPoll} clientId=${d.clientIdConfigured ? 'configured' : 'missing'}`,
+      `pollIntervalSec=${settings.pollIntervalSec} fastPoll=${settings.fastPoll} clientId=${d.clientIdConfigured ? 'configured' : 'missing'} ` +
+      `notifyOff=${NOTIFY_KINDS.filter((k) => !settings.notifyKinds[k]).join(',') || 'none'}`,
     // Only counts: the bug template asks users not to share private repository names.
     `Filters hideBots=${settings.hideBots} excludeRepos=${settings.excludeRepos.length} excludeAuthors=${settings.excludeAuthors.length} ` +
       `staleAfterDays=${settings.staleAfterDays} reviewFilter=${settings.reviewFilter} reviewSort=${settings.reviewSort} ` +
