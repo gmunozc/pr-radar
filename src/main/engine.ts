@@ -31,6 +31,7 @@ import {
 } from './diff'
 import { GithubError, installationWarnings, type FetchResult, type InstallationInfo } from './github'
 import type { Logger } from './log'
+import { applyMute } from './mute'
 import { capMyPrEvents, filterMyPrEvents, planToEvents, staleNotifications, type CatchUp, type NotificationEvent } from './notifications'
 import { SessionExpiredError, type ExpiryReason, type Session } from './session'
 import { dayKey, digestDue, digestNear, isQuiet, nextWorkdayStart, quietEndsAt, snoozeUntil } from './schedule'
@@ -108,8 +109,8 @@ interface MergeFailure {
   detail?: string
 }
 
-/** Alerts produced by one poll (or tick), before quiet hours and grouping are applied. */
-interface Alerts {
+/** Alerts produced by one poll (or tick), before muting, quiet hours and grouping are applied. */
+export interface Alerts {
   reviewPlan: NotificationPlan
   returned: PullRequest[]
   mine: MyPrEvent[]
@@ -729,9 +730,10 @@ export class Engine {
   }
 
   /** Delivers alerts now, or holds them back during quiet hours. */
-  private dispatch(alerts: Alerts): void {
+  private dispatch(raw: Alerts): void {
     const settings = this.deps.settings()
     if (!settings.notifications) return
+    const alerts = applyMute(raw, settings.muteRepos)
     const mine = filterMyPrEvents(alerts.mine, settings)
     // Merges the user armed are always reported, whatever the "updates on my PRs" setting.
     const merged = alerts.merged ?? []

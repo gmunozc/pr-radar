@@ -308,6 +308,8 @@ export const es: Record<MessageKey, string> = {
   'settings.hideBotsHint': 'Dependabot, Renovate y GitHub Actions.',
   'settings.excludeRepos': 'Excluir repositorios',
   'settings.excludeReposHint': 'owner/nombre, separados por comas.',
+  'settings.muteRepos': 'Repositorios silenciados',
+  'settings.muteReposHint': 'owner/nombre, separados por comas. Se ven en las listas, pero no avisan.',
   'settings.excludeAuthors': 'Excluir autores',
   'settings.excludeAuthorsHint': 'Usuarios de GitHub, separados por comas.',
   'settings.staleDays': 'Resaltar reviews que esperan más de',

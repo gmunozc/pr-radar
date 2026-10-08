@@ -310,6 +310,8 @@ export const en = {
   'settings.hideBotsHint': 'Dependabot, Renovate and GitHub Actions.',
   'settings.excludeRepos': 'Exclude repositories',
   'settings.excludeReposHint': 'owner/name, separated by commas.',
+  'settings.muteRepos': 'Muted repositories',
+  'settings.muteReposHint': 'owner/name, comma-separated. Still listed, never notify.',
   'settings.excludeAuthors': 'Exclude authors',
   'settings.excludeAuthorsHint': 'GitHub logins, separated by commas.',
   'settings.staleDays': 'Highlight reviews waiting more than',

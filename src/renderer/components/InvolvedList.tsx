@@ -3,6 +3,7 @@ import { PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
+import { muteProps } from '../muteRepos'
 import { PrItem } from './PrItem'
 import { RestoreHidden } from './PrList'
 
@@ -12,6 +13,7 @@ const MENTIONED_URL = 'https://github.com/pulls/mentioned'
 export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
   const t = useT()
   const settings = useSettings()
+  const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
 
   if (state.status === 'loading' && state.involved.length === 0) {
     return (
@@ -48,6 +50,7 @@ export function InvolvedList({ state, onDetail }: { state: AppState; onDetail(pr
             pending={state.pendingActions[pr.id]}
             staleDays={settings?.staleAfterDays ?? 0}
             onDetail={onDetail}
+            {...muteProps(settings, pr.repo, saveMuted)}
           />
         ))}
       </main>

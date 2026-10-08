@@ -56,6 +56,8 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (repos) out.excludeRepos = repos
   const authors = exclusionList(p.excludeAuthors, AUTHOR)
   if (authors) out.excludeAuthors = authors
+  const muted = exclusionList(p.muteRepos, REPO)
+  if (muted) out.muteRepos = muted
   if (p.reviewFilter === 'all' || p.reviewFilter === 'direct' || p.reviewFilter === 'team') out.reviewFilter = p.reviewFilter
   if (p.reviewSort === 'newest' || p.reviewSort === 'oldest' || p.reviewSort === 'updated') out.reviewSort = p.reviewSort
   if (typeof p.shortcut === 'string' && (SHORTCUT_OPTIONS as readonly string[]).includes(p.shortcut)) out.shortcut = p.shortcut

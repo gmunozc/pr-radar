@@ -39,6 +39,7 @@ export function buildDiagnostics(d: DiagnosticsInput): string {
       `notifyOff=${NOTIFY_KINDS.filter((k) => !settings.notifyKinds[k]).join(',') || 'none'}`,
     // Only counts: the bug template asks users not to share private repository names.
     `Filters hideBots=${settings.hideBots} excludeRepos=${settings.excludeRepos.length} excludeAuthors=${settings.excludeAuthors.length} ` +
+      `muteRepos=${settings.muteRepos.length} ` +
       `staleAfterDays=${settings.staleAfterDays} reviewFilter=${settings.reviewFilter} reviewSort=${settings.reviewSort} ` +
       `showInvolved=${settings.showInvolved} shortcut=${settings.shortcut || 'none'}`,
     auth

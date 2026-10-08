@@ -23,9 +23,12 @@ interface Props {
   staleDays: number
   /** Opens the detail view (title click, menu); absent inside the detail view itself. */
   onDetail?(prId: string): void
+  /** Whether the repository's alerts are muted; absent until the settings are known. */
+  muted?: boolean
+  onMute?(muted: boolean): void
 }
 
-export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onDetail }: Props) {
+export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onDetail, muted, onMute }: Props) {
   const t = useT()
   const locale = useLocale()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -103,7 +106,8 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
         copy: (text) => void copy(text),
         copyLink: () => void copyLink(),
         open: (url) => void window.prRadar.openExternal(url),
-        onDetail
+        onDetail,
+        setMuted: onMute
       })
     }
     switch (id) {
@@ -119,7 +123,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
         return { id, label: t('action.dismiss'), onSelect: dismiss }
     }
   }
-  const items = reviewMenuActions(pr, canWrite)
+  const items = reviewMenuActions(pr, canWrite, { muted })
     .filter((id) => id !== 'details' || onDetail)
     .map(menuItem)
   const showDetail = (e: MouseEvent) => {

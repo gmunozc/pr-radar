@@ -262,6 +262,8 @@ export interface Settings {
   /** Repositories ("owner/name") and authors never shown. */
   excludeRepos: string[]
   excludeAuthors: string[]
+  /** Repositories ("owner/name") whose PRs stay in the lists but never notify. */
+  muteRepos: string[]
   /** Review requests older than this many days are highlighted; 0 turns it off. */
   staleAfterDays: number
   reviewFilter: ReviewFilter
@@ -301,6 +303,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hideBots: false,
   excludeRepos: [],
   excludeAuthors: [],
+  muteRepos: [],
   staleAfterDays: 3,
   reviewFilter: 'all',
   reviewSort: 'newest',

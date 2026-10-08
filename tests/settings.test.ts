@@ -14,6 +14,7 @@ describe('sanitizeSettingsPatch', () => {
       notifyKinds: { ...DEFAULT_SETTINGS.notifyKinds, approved: false }
     })
     expect(sanitizeSettingsPatch({ notifyKinds: ['approved'] })).toEqual({})
+    expect(sanitizeSettingsPatch({ muteRepos: [' acme/app ', 'nope', 'acme/app', 7] })).toEqual({ muteRepos: ['acme/app'] })
     expect(sanitizeSettingsPatch(null)).toEqual({})
   })
 })

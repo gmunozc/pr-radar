@@ -962,3 +962,26 @@ describe('Engine and updates on your PRs', () => {
     expect(t.events).toEqual([])
   })
 })
+
+describe('Engine and muted repositories', () => {
+  const polls = () => [
+    result(['a']),
+    result(['a', 'b']),
+    result(['a', 'b'], 'me', [], [myPr('m1')]),
+    result(['a', 'b'], 'me', [], [myPr('m1', { status: 'approved', reviews: [{ login: 'ana', avatarUrl: '', state: 'APPROVED' }] })])
+  ]
+
+  it('says nothing about a muted repository, and everything about the others', async () => {
+    const muted = setup(polls(), { settings: { muteRepos: ['acme/app'] } })
+    await muted.engine.poll()
+    muted.events.length = 0
+    for (let i = 0; i < 3; i++) await muted.engine.poll()
+    expect(muted.events).toEqual([])
+
+    const loud = setup(polls(), { settings: { muteRepos: ['other/repo'] } })
+    await loud.engine.poll()
+    loud.events.length = 0
+    for (let i = 0; i < 3; i++) await loud.engine.poll()
+    expect(loud.events.map((e) => e.kind)).toEqual(['review_requested', 'my_pr_approved'])
+  })
+})

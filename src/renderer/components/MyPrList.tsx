@@ -3,6 +3,7 @@ import { PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
+import { muteProps } from '../muteRepos'
 import { MyPrItem } from './MyPrItem'
 
 const MY_PULLS_URL = 'https://github.com/pulls'
@@ -10,6 +11,7 @@ const MY_PULLS_URL = 'https://github.com/pulls'
 export function MyPrList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
   const t = useT()
   const settings = useSettings()
+  const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
 
   if (state.status === 'loading' && state.myPrs.length === 0) {
     return (
@@ -41,6 +43,7 @@ export function MyPrList({ state, onDetail }: { state: AppState; onDetail(prId: 
             armed={state.armedMerges[pr.id]}
             staleDays={settings?.staleAfterDays ?? 0}
             onDetail={onDetail}
+            {...muteProps(settings, pr.repo, saveMuted)}
           />
         ))}
       </main>

@@ -227,6 +227,12 @@ export function SettingsView({ state }: { state: AppState }) {
           value={settings.excludeAuthors}
           onCommit={(excludeAuthors) => void update({ excludeAuthors })}
         />
+        <ListInput
+          label={t('settings.muteRepos')}
+          hint={t('settings.muteReposHint')}
+          value={settings.muteRepos}
+          onCommit={(muteRepos) => void update({ muteRepos })}
+        />
         <label className="setting">
           <div className="setting-text">
             <div className="setting-label">{t('settings.staleDays')}</div>

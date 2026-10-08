@@ -3,6 +3,7 @@ import type { AppState, MyPullRequest, PrDetail as Detail, PullRequest } from '.
 import { useT } from '../i18n'
 import { REVIEW_LOOK } from '../reviews'
 import { useSettings } from '../useSettings'
+import { muteProps } from '../muteRepos'
 import { ChecksRow } from './ChecksRow'
 import { MyPrItem } from './MyPrItem'
 import { PrItem } from './PrItem'
@@ -23,6 +24,7 @@ const isMine = (pr: PullRequest | MyPullRequest): pr is MyPullRequest => 'review
 export function PrDetail({ state, prId, onGone }: Props) {
   const t = useT()
   const settings = useSettings()
+  const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
   const pr = [...state.prs, ...state.myPrs, ...state.involved].find((p) => p.id === prId)
   const [detail, setDetail] = useState<Detail | null | 'loading'>('loading')
 
@@ -44,9 +46,23 @@ export function PrDetail({ state, prId, onGone }: Props) {
   if (!pr) return null
   const staleDays = settings?.staleAfterDays ?? 0
   const row = isMine(pr) ? (
-    <MyPrItem pr={pr} canWrite={state.canWrite} pending={state.pendingActions[pr.id]} armed={state.armedMerges[pr.id]} staleDays={staleDays} />
+    <MyPrItem
+      pr={pr}
+      canWrite={state.canWrite}
+      pending={state.pendingActions[pr.id]}
+      armed={state.armedMerges[pr.id]}
+      staleDays={staleDays}
+      {...muteProps(settings, pr.repo, saveMuted)}
+    />
   ) : (
-    <PrItem pr={pr} snoozeTomorrowAt={state.snoozeTomorrowAt} canWrite={state.canWrite} pending={state.pendingActions[pr.id]} staleDays={staleDays} />
+    <PrItem
+      pr={pr}
+      snoozeTomorrowAt={state.snoozeTomorrowAt}
+      canWrite={state.canWrite}
+      pending={state.pendingActions[pr.id]}
+      staleDays={staleDays}
+      {...muteProps(settings, pr.repo, saveMuted)}
+    />
   )
 
   return (

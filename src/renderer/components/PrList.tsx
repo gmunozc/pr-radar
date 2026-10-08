@@ -5,6 +5,7 @@ import { CheckCircleIcon, PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
+import { muteProps } from '../muteRepos'
 import { PrItem } from './PrItem'
 import { Segmented } from './Segmented'
 
@@ -31,6 +32,7 @@ export function RestoreHidden({ dismissed, snoozed }: { dismissed: number; snooz
 export function PrList({ state, onDetail }: { state: AppState; onDetail(prId: string): void }) {
   const t = useT()
   const settings = useSettings()
+  const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
   const [org, setOrg] = useState<string | null>(null)
   const filter = settings?.reviewFilter ?? 'all'
   const sort = settings?.reviewSort ?? 'newest'
@@ -144,6 +146,7 @@ export function PrList({ state, onDetail }: { state: AppState; onDetail(prId: st
             pending={state.pendingActions[pr.id]}
             staleDays={staleDays}
             onDetail={onDetail}
+            {...muteProps(settings, pr.repo, saveMuted)}
           />
         ))}
       </main>
