@@ -7,6 +7,7 @@ import { filterByQuery } from '../arrange'
 import { useSettings } from '../useSettings'
 import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
+import { CopyListButton } from './CopyListButton'
 import { PrItem } from './PrItem'
 import { RestoreHidden } from './PrList'
 
@@ -75,6 +76,7 @@ export function InvolvedList({ state, onDetail, focusPrId, onFocused, query = ''
         <button className="link" onClick={() => void window.prRadar.openExternal(MENTIONED_URL)}>
           {t('involved.viewAll')}
         </button>
+        <CopyListButton prs={shown} />
         {state.dismissedCount + state.snoozedCount > 0 && (
           <RestoreHidden dismissed={state.dismissedCount} snoozed={state.snoozedCount} />
         )}

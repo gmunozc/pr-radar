@@ -7,6 +7,7 @@ import { arrangeMyPrs, filterByQuery } from '../arrange'
 import { useSettings } from '../useSettings'
 import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
+import { CopyListButton } from './CopyListButton'
 import { MyPrItem } from './MyPrItem'
 import { Segmented } from './Segmented'
 
@@ -117,6 +118,7 @@ export function MyPrList({ state, onDetail, focusPrId, onFocused, query = '', or
         <button className="link" onClick={() => void window.prRadar.openExternal(MY_PULLS_URL)}>
           {t('mine.viewAll')}
         </button>
+        <CopyListButton prs={shown} />
       </footer>
     </>
   )

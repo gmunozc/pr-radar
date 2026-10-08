@@ -17,8 +17,8 @@ import { sanitizeSettingsPatch, type SettingsPatch } from './settings'
 
 type SettingsView = Settings & { openAtLogin: boolean }
 
-/** Longest text the panel may put on the clipboard (branch names, links). */
-export const MAX_COPY_LENGTH = 500
+/** Longest text the panel may put on the clipboard: branch names, links, a whole list of PRs. */
+export const MAX_COPY_LENGTH = 20_000
 const MAX_REVIEW_BODY = 2000
 const MERGE_METHODS: readonly string[] = ['MERGE', 'SQUASH', 'REBASE']
 const SNOOZE_OPTIONS: readonly string[] = ['hour', 'tomorrow', 'push']

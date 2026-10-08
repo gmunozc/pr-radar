@@ -88,6 +88,7 @@ export const es: Record<MessageKey, string> = {
   'search.close': 'Cerrar la búsqueda',
   'search.empty': 'Nada coincide con «{query}»',
   'filter.empty': 'Nada coincide con este filtro.',
+  'list.copy': 'Copiar lista',
   'sort.label': 'Orden',
   'sort.newest': 'Más nuevas primero',
   'sort.oldest': 'Más antiguas primero',

@@ -7,6 +7,7 @@ import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
 import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
+import { CopyListButton } from './CopyListButton'
 import { PrItem } from './PrItem'
 import { Segmented } from './Segmented'
 
@@ -174,6 +175,7 @@ export function PrList({ state, onDetail, focusPrId, onFocused, query = '', org 
         <button className="link" onClick={() => void window.prRadar.openExternal(REVIEW_REQUESTED_URL)}>
           {t('list.viewAll')}
         </button>
+        <CopyListButton prs={shown} />
         {state.dismissedCount + state.snoozedCount > 0 && (
           <RestoreHidden dismissed={state.dismissedCount} snoozed={state.snoozedCount} />
         )}

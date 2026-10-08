@@ -90,6 +90,7 @@ export const en = {
   'search.label': 'Search',
   'search.close': 'Close the search',
   'search.empty': 'Nothing matches “{query}”',
+  'list.copy': 'Copy list',
   'filter.empty': 'Nothing matches this filter.',
   'sort.label': 'Sort',
   'sort.newest': 'Newest first',
