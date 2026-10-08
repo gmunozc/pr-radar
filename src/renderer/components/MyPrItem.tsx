@@ -4,7 +4,7 @@ import type { Translate } from '../../shared/i18n'
 import type { MessageKey } from '../../shared/i18n/en'
 import { myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
 import type { AppState, MergeMethod, MyPullRequest, MyReviewStatus, PrAction } from '../../shared/types'
-import { GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
+import { CopyIcon, GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
 import { REVIEW_LOOK } from '../reviews'
 import { ActionMenu, type MenuItem } from './ActionMenu'
@@ -293,6 +293,18 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail }: 
       </div>
       <div className={`pr-actions ${actionsOpen ? 'pr-actions-open' : ''}`} onKeyDown={(e) => e.stopPropagation()}>
         {copied && <span className="pr-copied">{t('action.copied')}</span>}
+        <button
+          className="pr-action"
+          onClick={(e) => {
+            e.stopPropagation()
+            void copy(pr.url)
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+          title={t('action.copyLink')}
+          aria-label={t('action.copyLink')}
+        >
+          <CopyIcon size={12} />
+        </button>
         <button
           ref={kebab}
           className="pr-action"
