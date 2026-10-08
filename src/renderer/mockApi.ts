@@ -268,6 +268,11 @@ export function createMockApi(): PrRadarApi {
   }
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
   let install: InstallState = { phase: 'idle' }
+  const checkedListeners = new Set<(at: number) => void>()
+  // Fast mode confirms the data every few seconds.
+  setInterval(() => {
+    for (const cb of checkedListeners) cb(Date.now())
+  }, 5000)
   const installListeners = new Set<(s: InstallState) => void>()
   const setInstall = (s: InstallState) => {
     install = s
@@ -326,6 +331,10 @@ export function createMockApi(): PrRadarApi {
     onState: (cb) => {
       stateListeners.add(cb)
       return () => stateListeners.delete(cb)
+    },
+    onChecked: (cb) => {
+      checkedListeners.add(cb)
+      return () => checkedListeners.delete(cb)
     },
     refresh: async () => {
       await sleep(400)

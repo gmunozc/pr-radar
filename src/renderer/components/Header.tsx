@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent } from 'react'
-import { formatClock, formatDayTime, timeAgo } from '../../shared/format'
+import { formatClock, formatDateTime, formatDayTime, timeAgo } from '../../shared/format'
 import type { Translate } from '../../shared/i18n'
 import type { AppState } from '../../shared/types'
 import { AlertIcon, ArrowLeftIcon, GearIcon, SyncIcon } from '../icons'
@@ -12,6 +12,8 @@ interface Props {
   state: AppState
   tab: Tab
   view: View
+  /** Last confirmation that the data is current (a probe or a poll), epoch ms. */
+  checkedAt: number | null
   /** Title while a PR's detail is open, e.g. "acme/app #12". */
   detailTitle?: string
   refreshing: boolean
@@ -61,14 +63,15 @@ function errorText(error: NonNullable<AppState['error']>, t: Translate, locale: 
   }
 }
 
-export function Header({ state, tab, view, detailTitle, refreshing, onRefresh, onBack, onSettings }: Props) {
+export function Header({ state, checkedAt, tab, view, detailTitle, refreshing, onRefresh, onBack, onSettings }: Props) {
   const t = useT()
   const locale = useLocale()
   const now = useNow(5_000)
 
-  const subtitle = state.lastUpdated
-    ? t('header.updated', { time: timeAgo(state.lastUpdated, now, locale) })
-    : t('header.loading')
+  // Fast mode confirms the data every few seconds without a full poll: show the latest confirmation.
+  const freshest = state.lastUpdated ? Math.max(Date.parse(state.lastUpdated), checkedAt ?? 0) : null
+  const subtitle =
+    freshest !== null ? t('header.updated', { time: timeAgo(new Date(freshest).toISOString(), now, locale) }) : t('header.loading')
   const title = view === 'settings' ? t('header.settings') : view === 'detail' ? (detailTitle ?? '') : listTitle(state, tab, t)
 
   return (
@@ -85,7 +88,7 @@ export function Header({ state, tab, view, detailTitle, refreshing, onRefresh, o
         )}
         <div className="header-text">
           <div className="header-title">{title}</div>
-          <div className="header-sub">
+          <div className="header-sub" title={state.lastUpdated ? formatDateTime(state.lastUpdated, locale) : undefined}>
             {state.viewer ? `@${state.viewer.login} · ` : ''}
             {state.quietUntil ? t('header.quietUntil', { when: formatDayTime(state.quietUntil, now, locale) }) : subtitle}
           </div>

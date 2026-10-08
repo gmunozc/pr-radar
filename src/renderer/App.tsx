@@ -29,6 +29,8 @@ function Panel() {
     setDetailId(null)
   }, [])
   const [refreshing, setRefreshing] = useState(false)
+  /** Last time a poll or a probe confirmed the data is current (fast mode). */
+  const [checkedAt, setCheckedAt] = useState<number | null>(null)
   const settings = useSettings()
   const showInvolved = settings?.showInvolved ?? true
   const tabs: Tab[] = showInvolved ? ['review', 'mine', 'involved'] : ['review', 'mine']
@@ -50,9 +52,11 @@ function Panel() {
       setRefreshing(false)
     })
     const offAuth = api.onAuthStatus(setAuth)
+    const offChecked = api.onChecked(setCheckedAt)
     return () => {
       offState()
       offAuth()
+      offChecked()
     }
   }, [])
 
@@ -116,6 +120,7 @@ function Panel() {
     <div className="app">
       <Header
         state={state}
+        checkedAt={checkedAt}
         tab={tab}
         view={view}
         detailTitle={detailPr ? `${detailPr.repo} #${detailPr.number}` : undefined}

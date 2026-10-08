@@ -347,6 +347,8 @@ export interface PrRadarApi {
   platform: string
   getState(): Promise<AppState>
   onState(cb: (state: AppState) => void): () => void
+  /** A poll or a change probe just confirmed the data is current (epoch ms). */
+  onChecked(cb: (atMs: number) => void): () => void
   refresh(): Promise<void>
   dismiss(prId: string): Promise<void>
   snooze(prId: string, option: SnoozeOption): Promise<void>
@@ -411,6 +413,7 @@ export interface PrRadarApi {
 export const IPC = {
   getState: 'state:get',
   state: 'state:update',
+  checked: 'state:checked',
   refresh: 'state:refresh',
   dismiss: 'prs:dismiss',
   snooze: 'prs:snooze',

@@ -99,6 +99,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
   })
   const retireNotifications = vi.fn()
   const clearNotifications = vi.fn()
+  const checked = vi.fn()
   const fetchDetail = vi.fn(async (_token: string, prId: string) => ({ body: `about ${prId}`, changedFiles: 1, commits: 2, comments: 3 }))
   const deps: EngineDeps = {
     now: () => clock,
@@ -112,6 +113,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     fetchDetail,
     stateStore: { read: () => stored, write: (s) => (stored = s), remove: () => (stored = null) },
     notify: (e) => events.push(...e),
+    checked,
     retireNotifications,
     clearNotifications,
     publish: (s) => published.push(s),
@@ -133,6 +135,7 @@ function setup(responses: Array<FetchResult | Error>, opts: Options = {}) {
     requestPoll,
     retireNotifications,
     clearNotifications,
+    checked,
     fetchDetail,
     refresh,
     onSessionEnded,
@@ -914,5 +917,19 @@ describe('Engine change probes', () => {
     await expect(t.engine.probe()).resolves.toEqual({ outcome: 'failed' })
     expect(t.engine.state).toMatchObject({ status: 'logged_out', authNotice: 'session_expired' })
     expect(t.onSessionEnded).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('Engine freshness', () => {
+  it('reports when the data was confirmed current: after a poll and after a probe, never after a failure', async () => {
+    const t = setup([result(['a'])], { fingerprints: ['f1', 'f1', new GithubError('network', 'down')] })
+    await t.engine.poll()
+    expect(t.checked).toHaveBeenCalledTimes(1)
+    expect(t.checked).toHaveBeenLastCalledWith(NOW)
+    await t.engine.probe()
+    await t.engine.probe()
+    expect(t.checked).toHaveBeenCalledTimes(3)
+    await t.engine.probe()
+    expect(t.checked).toHaveBeenCalledTimes(3)
   })
 })

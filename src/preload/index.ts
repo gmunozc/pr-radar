@@ -11,6 +11,7 @@ const api: PrRadarApi = {
   platform: process.platform,
   getState: () => ipcRenderer.invoke(IPC.getState),
   onState: (cb) => subscribe<AppState>(IPC.state, cb),
+  onChecked: (cb) => subscribe<number>(IPC.checked, cb),
   refresh: () => ipcRenderer.invoke(IPC.refresh),
   dismiss: (prId) => ipcRenderer.invoke(IPC.dismiss, prId),
   snooze: (prId, option) => ipcRenderer.invoke(IPC.snooze, prId, option),

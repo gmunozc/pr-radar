@@ -128,6 +128,9 @@ function main(): void {
         tray?.update(state)
         if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.state, state)
       },
+      checked: (at) => {
+        if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.checked, at)
+      },
       onSessionEnded: () => {
         poller.stop()
         deviceLogin.cancel()

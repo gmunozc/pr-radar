@@ -62,6 +62,8 @@ export interface EngineDeps {
   fetchDetail?(token: string, prId: string): Promise<PrDetail | null>
   stateStore: StateStore
   notify(events: NotificationEvent[]): void
+  /** The data was just confirmed current: a full poll, or a probe that compared fingerprints. */
+  checked?(atMs: number): void
   /** Removes delivered notifications that no longer apply (reviewed, merged, dismissed, checks green again). */
   retireNotifications?(ids: string[]): void
   /** Removes every delivered notification (sign-out). */
@@ -247,6 +249,7 @@ export class Engine {
         lastDigestDay: stored?.lastDigestDay ?? null
       })
       this.lastSuccessAt = now
+      this.deps.checked?.(now)
 
       this.publish({
         ...this.current,
@@ -305,6 +308,7 @@ export class Engine {
       const fingerprint = await this.withToken((token) => fetchFingerprint(token, this.deps.settings()))
       const changed = this.fingerprint !== null && fingerprint !== this.fingerprint
       this.fingerprint = fingerprint
+      this.deps.checked?.(this.deps.now())
       if (changed) this.deps.log.debug('probe saw a change')
       return { outcome: changed ? 'changed' : 'same' }
     } catch (err) {
