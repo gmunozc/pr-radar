@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProbeResult } from '../src/main/engine'
-import { Poller, type ProbeOptions } from '../src/main/poller'
+import { Poller, probeIntervalFor, type ProbeOptions } from '../src/main/poller'
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
@@ -163,5 +163,14 @@ describe('Poller change probes', () => {
     expect(run).toHaveBeenCalledTimes(1)
     expect(task).toHaveBeenCalledTimes(2)
     poller.stop()
+  })
+})
+
+describe('probeIntervalFor', () => {
+  it('slows probes down on battery and keeps them off when fast mode is off', () => {
+    expect(probeIntervalFor(5, false)).toBe(5)
+    expect(probeIntervalFor(5, true)).toBe(10)
+    expect(probeIntervalFor(10, true)).toBe(10)
+    expect(probeIntervalFor(0, true)).toBe(0)
   })
 })

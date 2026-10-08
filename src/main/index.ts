@@ -15,7 +15,7 @@ import { applyLanguage, currentLocale } from './i18n'
 import { isKnownCheckUrl, registerIpc } from './ipc'
 import { logger } from './log'
 import { deliverEvents, retire, retireAll } from './notifier'
-import { Poller } from './poller'
+import { Poller, probeIntervalFor } from './poller'
 import { Session, SessionExpiredError } from './session'
 import { normalizeSettings } from './settings'
 import { applyShortcut } from './shortcut'
@@ -140,7 +140,7 @@ function main(): void {
   )
 
   const poller = new Poller(() => engine.poll(), () => settings.pollIntervalSec, {
-    intervalSec: () => settings.fastPoll,
+    intervalSec: () => probeIntervalFor(settings.fastPoll, powerMonitor.isOnBatteryPower()),
     run: () => engine.probe(),
     // Nobody needs a notification within seconds while they are away from the computer.
     paused: () => powerMonitor.getSystemIdleTime() >= PROBE_PAUSE_IDLE_SEC
@@ -409,6 +409,13 @@ function main(): void {
   }
   powerMonitor.on('resume', wake)
   powerMonitor.on('unlock-screen', wake)
+  // Probes slow down on battery: re-arm the timers when the power source changes.
+  const powerChanged = (onBattery: boolean) => () => {
+    logger.info('power source changed', { onBattery })
+    poller.refresh()
+  }
+  powerMonitor.on('on-battery', powerChanged(true))
+  powerMonitor.on('on-ac', powerChanged(false))
 
   app.on('second-instance', showPanel)
 

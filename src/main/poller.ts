@@ -4,6 +4,14 @@ import { logger } from './log'
 
 /** Probes never run closer together than this, whatever the settings say. */
 export const MIN_PROBE_INTERVAL_SEC = 3
+/** On battery, probes slow down to this cadence (seconds) however fast the settings ask for. */
+export const PROBE_INTERVAL_ON_BATTERY_SEC = 10
+
+/** Seconds between probes for the settings' cadence and the power source; 0 keeps probes off. */
+export function probeIntervalFor(fastPoll: number, onBattery: boolean): number {
+  if (fastPoll <= 0) return 0
+  return onBattery ? Math.max(fastPoll, PROBE_INTERVAL_ON_BATTERY_SEC) : fastPoll
+}
 
 /** The fast mode: cheap change probes between full runs. */
 export interface ProbeOptions {

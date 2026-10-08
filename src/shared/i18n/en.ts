@@ -324,7 +324,7 @@ export const en = {
   'settings.intervalHint': 'Seconds between checks (minimum {min}).',
   'settings.fastPoll': 'Fast mode',
   'settings.fastPollHint':
-    'A cheap query spots changes and triggers the full check, which also runs every 2 minutes. Pauses after 10 minutes without using the computer.',
+    'A cheap query spots changes and triggers the full check, which also runs every 2 minutes. On battery it drops to 10 s, and it pauses after 10 minutes without using the computer.',
   'settings.fastPollEvery': 'Every {seconds} s',
   'settings.fastPollOff': 'Off',
   'settings.test': 'Test notification',

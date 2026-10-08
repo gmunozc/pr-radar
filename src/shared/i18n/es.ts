@@ -322,7 +322,7 @@ export const es: Record<MessageKey, string> = {
   'settings.intervalHint': 'Segundos entre consultas (mínimo {min}).',
   'settings.fastPoll': 'Modo rápido',
   'settings.fastPollHint':
-    'Una consulta ligera detecta cambios y dispara la consulta completa, que además se hace cada 2 minutos. Se pausa tras 10 minutos sin usar el equipo.',
+    'Una consulta ligera detecta cambios y dispara la consulta completa, que además se hace cada 2 minutos. Con batería pasa a 10 s y se pausa tras 10 minutos sin usar el equipo.',
   'settings.fastPollEvery': 'Cada {seconds} s',
   'settings.fastPollOff': 'Desactivado',
   'settings.test': 'Probar notificación',
