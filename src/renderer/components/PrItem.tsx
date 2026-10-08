@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { formatClock, formatDateTime, isTomorrow, timeAgo, weekdayName } from '../../shared/format'
-import { isSharedMenuAction, reviewMenuActions, type ReviewMenuAction } from '../../shared/prActions'
+import { isSharedMenuAction, MENU_KEY, quickKeyHint, REVIEW_QUICK_KEYS, reviewMenuActions, type ReviewMenuAction } from '../../shared/prActions'
 import type { PrAction, PullRequest, SnoozeOption } from '../../shared/types'
 import { CheckIcon, CopyIcon, KebabHorizontalIcon, XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
@@ -56,6 +56,21 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
       // ⌘C on a focused row copies its link; with text selected, the system copy wins.
       e.preventDefault()
       void copy(pr.url)
+    } else if (e.target === e.currentTarget && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      // Single letters on the row itself, never while typing in a field inside it. The menu
+      // entries decide what is allowed (approve, snooze, dismiss), so nothing is duplicated.
+      const key = e.key.toLowerCase()
+      if (key === MENU_KEY) {
+        e.preventDefault()
+        setMenuOpen(true)
+        return
+      }
+      const action = REVIEW_QUICK_KEYS[key]
+      const item = action ? items.find((i) => i.id === action) : undefined
+      if (item && !item.disabled) {
+        e.preventDefault()
+        item.onSelect()
+      }
     }
   }
   const onContextMenu = (e: MouseEvent) => {
@@ -112,15 +127,20 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
     }
     switch (id) {
       case 'approve':
-        return { id, label: t('action.approve'), disabled: busy, onSelect: () => setApproving(true) }
+        return { id, label: t('action.approve'), hint: quickKeyHint(id), disabled: busy, onSelect: () => setApproving(true) }
       case 'snooze_hour':
-        return { id, label: t('action.snoozeHour'), onSelect: () => snooze('hour') }
+        return { id, label: t('action.snoozeHour'), hint: quickKeyHint(id), onSelect: () => snooze('hour') }
       case 'snooze_tomorrow':
-        return { id, label: t('action.snoozeTomorrow', { time: tomorrowLabel }), onSelect: () => snooze('tomorrow') }
+        return {
+          id,
+          label: t('action.snoozeTomorrow', { time: tomorrowLabel }),
+          hint: quickKeyHint(id),
+          onSelect: () => snooze('tomorrow')
+        }
       case 'snooze_push':
         return { id, label: t('action.snoozePush'), onSelect: () => snooze('push') }
       case 'dismiss':
-        return { id, label: t('action.dismiss'), onSelect: dismiss }
+        return { id, label: t('action.dismiss'), hint: quickKeyHint(id), onSelect: dismiss }
     }
   }
   const items = reviewMenuActions(pr, canWrite, { muted })
@@ -266,6 +286,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
             <input
               className="input"
               value={comment}
+              autoFocus
               onChange={(e) => setComment(e.target.value)}
               placeholder={t('action.approveComment')}
               maxLength={2000}

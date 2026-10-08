@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { myPrMenuActions, reviewMenuActions } from '../src/shared/prActions'
+import { MENU_KEY, myPrMenuActions, quickKeyHint, REVIEW_QUICK_KEYS, reviewMenuActions } from '../src/shared/prActions'
 import { myPr, pr } from './fixtures'
 
 /** What every row ends with, when the row knows nothing about muting. */
@@ -92,5 +92,17 @@ describe('myPrMenuActions', () => {
     expect(myPrMenuActions(myPr('a', { mergeable: true, can: { ...myPr('a').can, enableAutoMerge: true } }), true)).toEqual(['merge', ...shared])
     expect(myPrMenuActions(myPr('a', { branch: '' }), false)).toEqual(sharedNoBranch)
     expect(myPrMenuActions(myPr('a'), false, false, { muted: true })).toContain('unmute_repo')
+  })
+})
+
+describe('quick keys', () => {
+  it('map to review actions that exist, and hint their letter in the menu', () => {
+    const offered = reviewMenuActions(pr('a'), true)
+    for (const [key, action] of Object.entries(REVIEW_QUICK_KEYS)) {
+      expect(offered).toContain(action)
+      expect(quickKeyHint(action)).toBe(key.toUpperCase())
+    }
+    expect(quickKeyHint('open')).toBeUndefined()
+    expect(MENU_KEY).toBe('m')
   })
 })

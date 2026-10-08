@@ -33,6 +33,21 @@ export type ReviewMenuAction =
   | 'dismiss'
   | SharedMenuAction
 
+/** Single letters that act on a focused review row; the menu shows them as hints. */
+export const REVIEW_QUICK_KEYS: Record<string, ReviewMenuAction> = {
+  a: 'approve',
+  s: 'snooze_hour',
+  t: 'snooze_tomorrow',
+  d: 'dismiss'
+}
+/** Opens the row's menu, on every row. */
+export const MENU_KEY = 'm'
+
+export const quickKeyHint = (id: string): string | undefined =>
+  Object.entries(REVIEW_QUICK_KEYS)
+    .find(([, action]) => action === id)?.[0]
+    .toUpperCase()
+
 export interface MenuContext {
   /** Whether alerts for the PR's repository are muted; absent when the row doesn't know (no toggle offered). */
   muted?: boolean

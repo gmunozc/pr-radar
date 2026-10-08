@@ -2,7 +2,7 @@ import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } fr
 import { formatDateTime, timeAgo } from '../../shared/format'
 import type { Translate } from '../../shared/i18n'
 import type { MessageKey } from '../../shared/i18n/en'
-import { isSharedMenuAction, myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
+import { isSharedMenuAction, MENU_KEY, myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
 import type { AppState, MergeMethod, MyPullRequest, MyReviewStatus, PrAction } from '../../shared/types'
 import { CopyIcon, GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
@@ -107,6 +107,9 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
       // ⌘C on a focused row copies its link; with text selected, the system copy wins.
       e.preventDefault()
       void copy(pr.url)
+    } else if (e.target === e.currentTarget && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === MENU_KEY) {
+      e.preventDefault()
+      setMenuOpen(true)
     }
   }
   const toggleMenu = (e: MouseEvent) => {
