@@ -13,9 +13,11 @@ import {
   shell,
   type DownloadItem
 } from 'electron'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { execFile } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, watch, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { EMPTY_LAUNCHERS, type LaunchersConfig, type LaunchersView, type ProjectResult, type SaveLaunchersResult, type SkillInfo } from '../shared/launchers'
 import { IPC, type AuthMethod, type AuthStatus, type InstallState, type Settings, type Warning } from '../shared/types'
 import { runPrAction } from './actions'
 import { createAuthStore, DeviceLogin } from './auth'
@@ -33,9 +35,12 @@ import {
 } from './github'
 import { applyLanguage, currentLocale, t } from './i18n'
 import { isKnownCheckUrl, registerIpc } from './ipc'
+import { Launcher } from './launcher'
+import { describeLaunchers, LAUNCHERS_FILE, MAX_PROJECTS, parseLaunchers, validateLaunchers, type ParsedLaunchers } from './launcherConfig'
 import { logger } from './log'
 import { deliverEvents, reconnectHistory, retire, retireAll, type NotificationHandlers } from './notifier'
 import { Poller, probeIntervalFor } from './poller'
+import { detectProject, listSkills, type DetectDeps } from './projects'
 import { Session, SessionExpiredError } from './session'
 import { normalizeSettings } from './settings'
 import { applyShortcut } from './shortcut'
@@ -239,6 +244,135 @@ function main(): void {
     if (url && isReleaseUrl(url, updateRepo)) await shell.openExternal(url)
   }
 
+  // "Send to…": Settings writes launchers.json; it is re-read when it changes on disk and
+  // whenever the panel asks.
+  const home = homedir()
+  const launchersPath = join(userData, LAUNCHERS_FILE)
+  const launchersFile = new JsonFile<LaunchersConfig>(launchersPath, () => EMPTY_LAUNCHERS)
+  const readLaunchers = (): ParsedLaunchers => {
+    let text: string | null = null
+    try {
+      text = readFileSync(launchersPath, 'utf8')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logger.warn('could not read launchers.json', err)
+    }
+    return parseLaunchers(text, home)
+  }
+  const viewOf = (parsed: ParsedLaunchers) => describeLaunchers(parsed, launchersPath, existsSync(launchersPath), home)
+  let launchers = readLaunchers()
+  let launchersView = viewOf(launchers)
+  const publishLaunchers = (view: LaunchersView): LaunchersView => {
+    launchersView = view
+    if (!panel.win.isDestroyed()) panel.win.webContents.send(IPC.launchersChanged, view)
+    return view
+  }
+  const reloadLaunchers = (): LaunchersView => {
+    launchers = readLaunchers()
+    const view = viewOf(launchers)
+    if (JSON.stringify(view) === JSON.stringify(launchersView)) return launchersView
+    if (view.errors.length > 0) logger.warn('launchers.json has problems', { codes: view.errors.map((e) => e.code) })
+    return publishLaunchers(view)
+  }
+  const writeLaunchers = (config: LaunchersConfig): LaunchersView => {
+    launchersFile.write(config)
+    launchers = { config, errors: [] }
+    return publishLaunchers(viewOf(launchers))
+  }
+  let reloadTimer: NodeJS.Timeout | null = null
+  try {
+    // Editors save by replacing the file, so watch the folder rather than the file itself.
+    watch(userData, (_event, name) => {
+      if (name !== LAUNCHERS_FILE) return
+      if (reloadTimer) clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(reloadLaunchers, 200)
+    })
+  } catch (err) {
+    logger.warn('could not watch launchers.json', err)
+  }
+  const runProgram: DetectDeps['run'] = (file, args, { cwd, timeoutMs }) =>
+    new Promise((resolve, reject) => {
+      // No credential prompts: a fetch that needs one fails instead of hanging.
+      const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+      execFile(file, args, { cwd, timeout: timeoutMs, env }, (err, stdout, stderr) => {
+        if (err) reject(new Error(String(stderr).trim() || err.message))
+        else resolve(String(stdout))
+      })
+    })
+  const isDir = (path: string) => {
+    try {
+      return statSync(path).isDirectory()
+    } catch {
+      return false
+    }
+  }
+  const newId = (prefix: string) => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+  const redetectProject = async (projectId: string): Promise<ProjectResult> => {
+    const project = launchers.config.projects.find((p) => p.id === projectId)
+    if (!project) return { ok: false, code: 'not_found' }
+    const found = await detectProject(project.path, { run: runProgram, isDir })
+    if (!found.ok) return { ok: false, code: found.code }
+    const projects = launchers.config.projects.map((p) => (p.id === projectId ? { ...p, repos: found.repos } : p))
+    logger.info('project detected again', { repos: Object.keys(found.repos).length })
+    return { ok: true, projectId, view: writeLaunchers({ ...launchers.config, projects }) }
+  }
+  const addProject = async (): Promise<ProjectResult> => {
+    const picked = await panel.keepOpen(() =>
+      dialog.showOpenDialog(panel.win, { properties: ['openDirectory'], message: t('launchers.pickMessage'), buttonLabel: t('launchers.pickButton') })
+    )
+    const path = picked.filePaths[0]
+    if (picked.canceled || !path) return { ok: false, code: 'cancelled' }
+    const found = await detectProject(path, { run: runProgram, isDir })
+    if (!found.ok) return { ok: false, code: found.code }
+    const existing = launchers.config.projects.find((p) => p.path === found.root)
+    if (existing) return redetectProject(existing.id)
+    if (launchers.config.projects.length >= MAX_PROJECTS) return { ok: false, code: 'unknown' }
+    const project = { id: newId('p'), name: found.name, path: found.root, repos: found.repos }
+    logger.info('project added', { repos: Object.keys(found.repos).length })
+    return { ok: true, projectId: project.id, view: writeLaunchers({ ...launchers.config, projects: [...launchers.config.projects, project] }) }
+  }
+  const skillFs = {
+    listDir: (path: string) => readdirSync(path),
+    readFile: (path: string) => {
+      try {
+        return readFileSync(path, 'utf8')
+      } catch {
+        return null
+      }
+    }
+  }
+  const projectSkills = (projectId: string): SkillInfo[] => {
+    const project = launchers.config.projects.find((p) => p.id === projectId)
+    if (!project) return []
+    return [...listSkills(join(project.path, '.claude', 'skills'), 'project', skillFs), ...listSkills(join(home, '.claude', 'skills'), 'user', skillFs)]
+  }
+  const launcher = new Launcher({
+    config: () => launchers.config,
+    findPr: (prId) => {
+      const s = engine.state
+      return [...s.prs, ...s.myPrs, ...s.involved].find((pr) => pr.id === prId) ?? null
+    },
+    redetect: async (projectId) => {
+      const result = await redetectProject(projectId)
+      return result.ok ? (result.view.config.projects.find((p) => p.id === projectId) ?? null) : null
+    },
+    run: runProgram,
+    isDir,
+    mkdir: (path) => mkdirSync(path, { recursive: true }),
+    writeFile: (path, text) => writeFileSync(path, text),
+    listDir: (path) => readdirSync(path),
+    removeFile: (path) => rmSync(path, { force: true }),
+    openUrl: (url) => shell.openExternal(url),
+    worktreesDir: launchersView.worktreesDir,
+    home,
+    now: Date.now,
+    log: logger
+  })
+  launcher.cleanTabConfigs()
+  const openPath = async (path: string) => {
+    const error = await shell.openPath(path)
+    if (error) logger.warn('could not open a path', { error })
+  }
+
   const diagnostics = () =>
     buildDiagnostics({
       app: { version: app.getVersion(), packaged: app.isPackaged },
@@ -258,6 +392,12 @@ function main(): void {
       state: engine.state,
       consecutiveFailures: engine.consecutiveFailures,
       notificationsSupported: Notification.isSupported(),
+      launchers: {
+        terminal: launchers.config.actions.length > 0 ? launchers.config.terminal : null,
+        projects: launchers.config.projects.length,
+        actions: launchers.config.actions.length,
+        errors: launchers.errors.length
+      },
       logs: logger.recent(50, 'warn'),
       now: Date.now()
     })
@@ -456,6 +596,30 @@ function main(): void {
       if (!available || !updates) return
       updates.skip(available.version)
       engine.setUpdate(null)
+    },
+    launchers: reloadLaunchers,
+    saveLaunchers: (config): SaveLaunchersResult => {
+      const parsed = validateLaunchers(config, home)
+      if (parsed.errors.length > 0) {
+        logger.warn('refused to save launchers.json', { codes: parsed.errors.map((e) => e.code) })
+        return { ok: false, errors: parsed.errors }
+      }
+      return { ok: true, view: writeLaunchers(parsed.config) }
+    },
+    addProject,
+    redetectProject,
+    skills: projectSkills,
+    launch: (prId, actionId) => {
+      reloadLaunchers()
+      return launcher.launch(prId, actionId)
+    },
+    openLaunchersFile: async () => {
+      if (!existsSync(launchersPath)) writeLaunchers(launchers.config)
+      await openPath(launchersPath)
+    },
+    openWorktrees: async () => {
+      mkdirSync(launchersView.worktreesDir, { recursive: true })
+      await openPath(launchersView.worktreesDir)
     }
   })
 

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { AppState, AuthStatus } from '../shared/types'
 import { Header, type View } from './components/Header'
 import { InvolvedList } from './components/InvolvedList'
+import { LaunchersView } from './components/LaunchersView'
 import { LoginView } from './components/LoginView'
 import { MyPrList } from './components/MyPrList'
 import { PrDetail } from './components/PrDetail'
@@ -111,6 +112,7 @@ function Panel() {
       if (e.key === 'Escape') {
         if (typing) return
         if (view === 'settings') setView('list')
+        else if (view === 'launchers') setView('settings')
         else if (view === 'detail') closeDetail()
         else void api.hidePanel()
         return
@@ -159,11 +161,13 @@ function Panel() {
         detailTitle={detailPr ? `${detailPr.repo} #${detailPr.number}` : undefined}
         refreshing={refreshing || state.status === 'loading'}
         onRefresh={refresh}
-        onBack={view === 'detail' ? closeDetail : () => setView('list')}
+        onBack={view === 'detail' ? closeDetail : () => setView(view === 'launchers' ? 'settings' : 'list')}
         onSettings={() => setView('settings')}
       />
       {view === 'settings' ? (
-        <SettingsView state={state} />
+        <SettingsView state={state} onOpenLaunchers={() => setView('launchers')} />
+      ) : view === 'launchers' ? (
+        <LaunchersView />
       ) : view === 'detail' && detailId ? (
         <PrDetail state={state} prId={detailId} onGone={closeDetail} />
       ) : (

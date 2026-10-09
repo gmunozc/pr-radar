@@ -22,6 +22,8 @@ export class Panel {
   private loadFailures = 0
   private loadCheck: NodeJS.Timeout | undefined
   private loadStartedAt = 0
+  /** While above 0 (a native dialog is open over the panel), losing focus doesn't hide it. */
+  private keepOpenCount = 0
 
   constructor() {
     const isMac = process.platform === 'darwin'
@@ -61,7 +63,7 @@ export class Panel {
 
     this.win.on('blur', () => {
       logger.debug('panel blur', { visible: this.win.isVisible() })
-      if (this.win.webContents.isDevToolsOpened()) return
+      if (this.win.webContents.isDevToolsOpened() || this.keepOpenCount > 0) return
       this.hide()
     })
 
@@ -157,6 +159,20 @@ export class Panel {
     if (this.win.isVisible()) this.show()
   }
 
+  /**
+   * Runs `fn` (a native dialog) with the panel kept on screen: the dialog takes focus, which
+   * would otherwise hide the panel and the dialog's sheet with it. Focus returns afterwards.
+   */
+  async keepOpen<T>(fn: () => Promise<T>): Promise<T> {
+    this.keepOpenCount++
+    try {
+      return await fn()
+    } finally {
+      this.keepOpenCount--
+      if (!this.win.isDestroyed() && this.win.isVisible() && !this.win.isFocused()) this.win.focus()
+    }
+  }
+
   hide(): void {
     if (!this.win.isVisible()) return
     this.lastHiddenAt = Date.now()
@@ -187,7 +203,7 @@ export class Panel {
   toggle(trayBounds?: Rectangle): void {
     logger.debug('panel toggle', { visible: this.win.isVisible(), sinceHidden: Date.now() - this.lastHiddenAt, trayBounds })
     if (this.win.isVisible()) {
-      this.hide()
+      if (this.keepOpenCount === 0) this.hide()
       return
     }
     // On macOS clicking the tray icon blurs (and hides) the panel right before the

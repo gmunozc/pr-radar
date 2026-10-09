@@ -1,4 +1,5 @@
 import type { LanguagePref, Locale } from './i18n'
+import type { LaunchersConfig, LaunchersView, LaunchResult, ProjectResult, SaveLaunchersResult, SkillInfo } from './launchers'
 
 /** Why a PR is in the review list: asked directly, through a team, or you merely take part in it. */
 export type ReviewSource = { kind: 'direct' } | { kind: 'team'; slug: string } | { kind: 'involved' }
@@ -436,6 +437,24 @@ export interface PrRadarApi {
     installState(): Promise<InstallState>
     onInstallState(cb: (state: InstallState) => void): () => void
   }
+  /** "Send to…": actions that open a terminal tab with Claude Code on a PR. */
+  launchers: {
+    /** Re-reads launchers.json. */
+    get(): Promise<LaunchersView>
+    /** Validates and writes the whole configuration; nothing is written if anything is invalid. */
+    save(config: LaunchersConfig): Promise<SaveLaunchersResult>
+    /** Asks for a folder, detects its GitHub repositories and adds (or updates) that project. */
+    addProject(): Promise<ProjectResult>
+    /** Detects a project's repositories again (e.g. after checking out a submodule). */
+    redetect(projectId: string): Promise<ProjectResult>
+    /** The project's skills, then the user's own (~/.claude/skills). */
+    skills(projectId: string): Promise<SkillInfo[]>
+    /** Prepares the PR's workspace and opens the action's agent in a terminal tab. */
+    launch(prId: string, actionId: string): Promise<LaunchResult>
+    openFile(): Promise<void>
+    openWorktrees(): Promise<void>
+    onChange(cb: (view: LaunchersView) => void): () => void
+  }
 }
 
 export const IPC = {
@@ -483,5 +502,14 @@ export const IPC = {
   updateOpenInstaller: 'update:open-installer',
   updateInstallStateGet: 'update:install-state-get',
   updateInstallState: 'update:install-state',
+  launchersGet: 'launchers:get',
+  launchersChanged: 'launchers:update',
+  launch: 'launchers:launch',
+  launchersOpenFile: 'launchers:open-file',
+  launchersOpenWorktrees: 'launchers:open-worktrees',
+  launchersSave: 'launchers:save',
+  launchersAddProject: 'launchers:add-project',
+  launchersRedetect: 'launchers:redetect',
+  launchersSkills: 'launchers:skills',
   quit: 'app:quit'
 } as const

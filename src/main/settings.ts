@@ -13,7 +13,7 @@ export type SettingsPatch = Partial<Settings> & { openAtLogin?: boolean }
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 /** "owner/name", as GitHub allows them. */
-const REPO = /^[\w.-]+\/[\w.-]+$/
+export const REPO = /^[\w.-]+\/[\w.-]+$/
 /** A user login, or "app/<slug>" for a GitHub App bot as search queries name them. */
 const AUTHOR = /^(app\/)?[A-Za-z0-9-]+$/
 export const MAX_EXCLUSIONS = 30

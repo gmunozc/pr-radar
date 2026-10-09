@@ -5,10 +5,12 @@ import type { PrAction, PullRequest, SnoozeOption } from '../../shared/types'
 import { CheckIcon, CopyIcon, KebabHorizontalIcon, XIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
 import { sharedMenuItem } from '../rowMenu'
+import { useSendTo, withSendTo } from '../useLaunchers'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
 import { CiIcon } from './CiIcon'
 import { ConfirmRow } from './ConfirmRow'
+import { SendToStatus } from './SendToStatus'
 import { Labels } from './Labels'
 
 const DAY_MS = 86_400_000
@@ -39,6 +41,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
   const [copied, setCopied] = useState(false)
   const kebab = useRef<HTMLButtonElement>(null)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
+  const sendTo = useSendTo(pr)
   const busy = pending !== undefined
   const canApprove = canWrite && !pr.viewerDidAuthor
   // A PR you merely take part in can be dismissed, but a snooze reminder would make no sense.
@@ -69,7 +72,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
       const item = action ? items.find((i) => i.id === action) : undefined
       if (item && !item.disabled) {
         e.preventDefault()
-        item.onSelect()
+        item.onSelect?.()
       }
     }
   }
@@ -143,9 +146,12 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
         return { id, label: t('action.dismiss'), hint: quickKeyHint(id), onSelect: dismiss }
     }
   }
-  const items = reviewMenuActions(pr, canWrite, { muted })
-    .filter((id) => id !== 'details' || onDetail)
-    .map(menuItem)
+  const items = withSendTo(
+    reviewMenuActions(pr, canWrite, { muted })
+      .filter((id) => id !== 'details' || onDetail)
+      .map(menuItem),
+    sendTo.item
+  )
   const showDetail = (e: MouseEvent) => {
     if (!onDetail) return
     e.stopPropagation()
@@ -299,6 +305,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
             {error}
           </div>
         )}
+        <SendToStatus sendTo={sendTo} />
       </div>
       {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} anchor={kebab} />}
     </div>

@@ -8,12 +8,14 @@ import { CopyIcon, GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '..
 import { useLocale, useT } from '../i18n'
 import { REVIEW_LOOK } from '../reviews'
 import { sharedMenuItem } from '../rowMenu'
+import { useSendTo, withSendTo } from '../useLaunchers'
 import { ActionMenu, type MenuItem } from './ActionMenu'
 import { ChecksRow } from './ChecksRow'
 import { CiIcon } from './CiIcon'
 import { ConfirmRow } from './ConfirmRow'
 import { Labels } from './Labels'
 import { Segmented } from './Segmented'
+import { SendToStatus } from './SendToStatus'
 
 const DAY_MS = 86_400_000
 
@@ -93,6 +95,7 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
   const [copied, setCopied] = useState(false)
   const [threadLoading, setThreadLoading] = useState(false)
   const kebab = useRef<HTMLButtonElement>(null)
+  const sendTo = useSendTo(pr)
   const closeMenu = useCallback(() => setMenuOpen(false), [])
   const busy = pending !== undefined
 
@@ -185,9 +188,12 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
         }
     }
   }
-  const items = myPrMenuActions(pr, canWrite, armed !== undefined, { muted })
-    .filter((id) => id !== 'details' || onDetail)
-    .map(menuItem)
+  const items = withSendTo(
+    myPrMenuActions(pr, canWrite, armed !== undefined, { muted })
+      .filter((id) => id !== 'details' || onDetail)
+      .map(menuItem),
+    sendTo.item
+  )
   const showDetail = (e: MouseEvent) => {
     if (!onDetail) return
     e.stopPropagation()
@@ -361,6 +367,7 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
             {error}
           </div>
         )}
+        <SendToStatus sendTo={sendTo} />
       </div>
       {menuOpen && <ActionMenu items={items} onClose={closeMenu} label={t('action.menu')} anchor={kebab} />}
     </div>

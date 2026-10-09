@@ -1138,6 +1138,95 @@ code {
   font-size: 11px;
 }
 
+.menu-item-back {
+  color: var(--text-muted);
+}
+
+/* Settings → Send to agent */
+.launcher-intro {
+  margin: 0 2px 6px;
+}
+
+.launcher-message {
+  margin: 4px 2px 0;
+}
+
+.launcher-add {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+.launcher-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.launcher-name {
+  font-weight: 500;
+}
+
+.launcher-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-repos summary {
+  cursor: default;
+}
+
+.launcher-repos ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.launcher-repos code {
+  font-size: 11px;
+}
+
+.launcher-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.launcher-field .input {
+  flex: none;
+  width: 100%;
+}
+
+.launcher-field-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.launcher-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.launcher-preview {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* "Send to…": shown under a PR while its workspace is prepared */
+.launch-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
 /* Inline confirmation under a PR (merge, auto-merge, approve…) */
 .confirm-row {
   display: flex;

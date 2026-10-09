@@ -35,6 +35,7 @@ export function shortcutLabel(accelerator: string, platform: string): string {
   return keys.join(mac ? '' : '+')
 }
 import { useLocale, useT } from '../i18n'
+import { LaunchersSettings } from './LaunchersSettings'
 import { openOrgAccess } from './PrList'
 
 const api = window.prRadar
@@ -116,7 +117,7 @@ function ListInput({ label, hint, value, onCommit }: { label: string; hint: stri
 // Monday first; 0 = Sunday. 2026-01-04 was a Sunday, so 4 + d is weekday d.
 const WEEK = [1, 2, 3, 4, 5, 6, 0]
 
-export function SettingsView({ state }: { state: AppState }) {
+export function SettingsView({ state, onOpenLaunchers }: { state: AppState; onOpenLaunchers(): void }) {
   const t = useT()
   const locale = useLocale()
   const [bothMethods, setBothMethods] = useState(false)
@@ -532,6 +533,9 @@ export function SettingsView({ state }: { state: AppState }) {
           </button>
         </div>
       </section>
+
+      {/* Warp tab configs and /bin/sh: macOS only for now. */}
+      {api.platform === 'darwin' && <LaunchersSettings onOpen={onOpenLaunchers} />}
 
       <section className="group">
         <div className="group-title">{t('settings.help')}</div>

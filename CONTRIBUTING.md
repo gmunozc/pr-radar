@@ -29,6 +29,8 @@ src/main/          main process
                    mapping; deviceFlow.ts / session.ts: sign-in and token renewal
   diff.ts          pure "what changed" logic; schedule.ts: calendar rules; notifications.ts: texts; mute.ts: muted repositories;
                    trayState.ts: what the tray shows
+  launcher.ts      Send to: worktree at the PR head, then a Warp tab with Claude Code;
+                   launcherConfig.ts: launchers.json validation; projects.ts: repos and skills
   index.ts         composition root: wires the engine to Electron (tray, panel, IPC, timers)
 src/preload/       typed bridge exposed to the panel as window.prRadar
 src/renderer/      the panel (React); its pure parts live beside it: arrange.ts (filters, search), markdown.ts (description
