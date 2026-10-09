@@ -104,12 +104,12 @@ Se configura en Ajustes → **Enviar a agente** → **Configurar**:
 - **Terminal:** Warp o Warp Preview.
 - **Proyectos:** **Agregar proyecto…** y elige la carpeta donde debe arrancar Claude Code (la raíz del repositorio, con su `CLAUDE.md` y `.claude/skills`). PR Radar detecta solo sus repositorios de GitHub, submódulos descargados incluidos, y así sabe a qué clon pertenece cada PR. Si descargas un submódulo después, usa **Volver a detectar**.
 - **Acciones:** cada una es una opción de **Enviar a…** en los PRs de su proyecto:
-  - **Ejecutar:** una skill del proyecto, una tuya (`~/.claude/skills`) o un prompt libre que puede usar `{url}`, `{number}`, `{repo}` y `{sha}`. Las skills reciben el link del PR.
-  - **Texto extra** (opcional) va después del link del PR.
+  - **Ejecutar:** una skill del proyecto, una tuya (`~/.claude/skills`) o un prompt libre que puede usar `{url}`, `{number}`, `{repo}` y `{sha}`. Las skills reciben el enlace del PR.
+  - **Texto extra** (opcional) va después del enlace del PR.
   - **Mostrar en:** Mis PRs, Por revisar, Participo o Todos.
   - **Código:** **Worktree del PR** (por defecto) crea un git worktree en el último commit del PR dentro de `~/.pr-radar/worktrees`, y trae `pull/<n>/head` si el commit no está en local. Claude arranca en la raíz del proyecto y recibe el worktree con `--add-dir` y su ruta en el prompt, así lee el código del PR y tu carpeta de trabajo nunca se toca. Se reutiliza para el mismo commit; los viejos se borran con `git worktree remove`. **Proyecto tal cual** no crea worktree.
 
-El nombre de la rama y el título del PR nunca llegan a la línea de comandos: los elige su autor. La configuración se guarda en `launchers.json` (Ajustes → Enviar a agente → launchers.json → Abrir), que puedes compartir con tu equipo; ejecuta comandos en tu Mac, así que revisa sus cambios como si fueran código.
+El nombre de la rama y el título del PR nunca llegan a la línea de comandos: los elige su autor. Claude Code corre después con tus permisos sobre código escrito por ese autor, así que mantén activas sus confirmaciones de permisos con PRs de gente en la que no confías. La configuración se guarda en `launchers.json` (Ajustes → Enviar a agente → launchers.json → Abrir), que puedes compartir con tu equipo; ejecuta comandos en tu Mac, así que revisa sus cambios como si fueran código.
 
 ## Privacidad y seguridad
 

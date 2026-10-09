@@ -114,7 +114,7 @@ Set it up in Settings → **Send to agent** → **Set up**:
   - **Show on:** My PRs, To review, Involved, or All.
   - **Code:** **PR worktree** (default) adds a git worktree at the PR's latest commit under `~/.pr-radar/worktrees`, fetching `pull/<n>/head` when the commit isn't local. Claude starts in the project root and gets the worktree with `--add-dir` and its path in the prompt, so it reads the PR's code while your own checkout is never touched. A worktree is reused for the same commit; remove old ones with `git worktree remove`. **Project as is** skips the worktree.
 
-The branch name and title of a PR never reach the command line: its author chooses them. The settings are stored in `launchers.json` (Settings → Send to agent → launchers.json → Open), which you can share with your team; it runs commands on your Mac, so review changes to it like code.
+The branch name and title of a PR never reach the command line: its author chooses them. Claude Code then runs with your permissions on code written by that author, so keep its permission prompts on for PRs from people you don't trust. The settings are stored in `launchers.json` (Settings → Send to agent → launchers.json → Open), which you can share with your team; it runs commands on your Mac, so review changes to it like code.
 
 ## Privacy and security
 

@@ -15,6 +15,8 @@ export interface MenuItem {
 }
 
 const BACK = '__back'
+/** Distance from a flipped menu's bottom to the row's bottom edge; mirrors `.menu-up` in styles.css. */
+const MENU_UP_OFFSET = 30
 
 /**
  * Index of the next enabled item from `current`, moving by `delta` (±1) and wrapping around.
@@ -49,37 +51,48 @@ interface Props {
 export function ActionMenu({ items, onClose, label, anchor }: Props) {
   const t = useT()
   const ref = useRef<HTMLDivElement>(null)
-  const [parent, setParent] = useState<MenuItem | null>(null)
+  // The open submenu is remembered by id and looked up on every render: rows rebuild their
+  // items whenever the state refreshes, so the parent object itself doesn't survive a poll.
+  const [parentId, setParentId] = useState<string | null>(null)
+  const parent = parentId ? (items.find((item) => item.id === parentId) ?? null) : null
   const shown: MenuItem[] = parent ? [{ id: BACK, label: `‹ ${t('action.back')}` }, ...(parent.children ?? [])] : items
   const enabled = shown.map((item) => !item.disabled)
   const [active, setActive] = useState(() => nextIndex(-1, 1, enabled))
   const [up, setUp] = useState(false)
 
-  // Open upward when the menu would run past the bottom of the list.
+  // Open upward when the menu would run past the bottom of the list, but only if it then fits
+  // above the row: the list scrolls, so a menu past its bottom stays reachable, while one past
+  // its top is cut off. Measured again for each submenu, since their heights differ.
   useLayoutEffect(() => {
     const el = ref.current
     if (!el || up) return
     const container = el.closest('.list')
-    const limit = container ? container.getBoundingClientRect().bottom : window.innerHeight
-    if (el.getBoundingClientRect().bottom > limit) setUp(true)
-  }, [parent, up])
+    const bounds = container ? container.getBoundingClientRect() : { top: 0, bottom: window.innerHeight }
+    const rect = el.getBoundingClientRect()
+    const row = (el.offsetParent as HTMLElement | null)?.getBoundingClientRect()
+    const topIfUp = row ? row.bottom - MENU_UP_OFFSET - rect.height : bounds.top
+    if (rect.bottom > bounds.bottom && topIfUp >= bounds.top) setUp(true)
+  }, [parentId, up])
 
   // Keyboard focus follows the active item (first enabled one on mount).
   useEffect(() => {
     if (active < 0) return
     ref.current?.querySelectorAll<HTMLButtonElement>('.menu-item')[active]?.focus()
-  }, [active, parent])
+  }, [active, parentId])
 
   const openSubmenu = (item: MenuItem) => {
     const children = item.children ?? []
-    setParent(item)
+    setParentId(item.id)
+    setUp(false)
     // Start on the first entry rather than "Back".
     setActive(nextIndex(0, 1, [false, ...children.map((c) => !c.disabled)]))
   }
   const back = () => {
-    if (!parent) return
-    setActive(items.indexOf(parent))
-    setParent(null)
+    if (!parentId) return
+    const at = items.findIndex((item) => item.id === parentId)
+    setActive(at >= 0 ? at : nextIndex(-1, 1, items.map((item) => !item.disabled)))
+    setParentId(null)
+    setUp(false)
   }
   const choose = (item: MenuItem) => {
     if (item.id === BACK) return back()

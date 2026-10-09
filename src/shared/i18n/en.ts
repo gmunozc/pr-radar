@@ -416,6 +416,8 @@ export const en = {
   'launchers.pickButton': 'Add project',
   'launchers.repos.one': '{count} repository',
   'launchers.repos.other': '{count} repositories',
+  'launchers.skills.one': '{count} skill',
+  'launchers.skills.other': '{count} skills',
   'launchers.actionsCount.one': '{count} action',
   'launchers.actionsCount.other': '{count} actions',
   'launchers.projectsCount.one': '{count} project',

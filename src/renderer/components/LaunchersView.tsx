@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import {
   LAUNCHER_SHOW_ON,
   LAUNCHER_TERMINALS,
@@ -163,7 +163,7 @@ export function LaunchersView() {
               <details className="launcher-repos">
                 <summary className="setting-hint">
                   {t('launchers.repos', { count: repos.length })}
-                  {projectSkills ? ` · ${projectSkills.filter((s) => s.scope === 'project').length} skills` : ''}
+                  {projectSkills ? ` · ${t('launchers.skills', { count: projectSkills.filter((s) => s.scope === 'project').length })}` : ''}
                 </summary>
                 <ul>
                   {repos.map(([repo, path]) => (
@@ -302,10 +302,14 @@ export function LaunchersView() {
 function ProjectName({ project, onRename }: { project: LauncherProject; onRename(name: string): void }) {
   const t = useT()
   const [name, setName] = useState(project.name)
+  // Escape discards the edit: the blur it causes must not save the old closure's value.
+  const discard = useRef(false)
   useEffect(() => setName(project.name), [project.name])
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') e.currentTarget.blur()
     if (e.key === 'Escape') {
+      e.stopPropagation()
+      discard.current = true
       setName(project.name)
       e.currentTarget.blur()
     }
@@ -317,7 +321,10 @@ function ProjectName({ project, onRename }: { project: LauncherProject; onRename
       maxLength={60}
       aria-label={t('launchers.projectName')}
       onChange={(e) => setName(e.target.value)}
-      onBlur={() => onRename(name)}
+      onBlur={() => {
+        if (discard.current) discard.current = false
+        else onRename(name)
+      }}
       onKeyDown={onKeyDown}
     />
   )
