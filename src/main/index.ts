@@ -1,6 +1,7 @@
 /** Composition root: wires the engine, session, poller, tray, panel and IPC together. */
 import {
   app,
+  BrowserWindow,
   clipboard,
   ClipboardItem,
   dialog,
@@ -116,7 +117,7 @@ function main(): void {
   const panel = new Panel()
   panel.resize(settings.panelSize)
   const showPanel = () => panel.show(tray?.getBounds())
-  const togglePanel = () => panel.toggle(tray?.getBounds())
+  const togglePanel = () => panel.toggle(tray?.getBounds(), 'shortcut')
   // A click on an alert about one PR: GitHub, or the panel at that row (Settings), when it is
   // still listed. Notifications restored from a previous run carry no URL: the state has it.
   const openPr = (prId: string, url?: string) => {
@@ -450,7 +451,16 @@ function main(): void {
                   logger.warn('manual renewal failed', err)
                 }
               },
-              copyDiagnostics: () => void copyDiagnostics()
+              copyDiagnostics: () => void copyDiagnostics(),
+              fullScreenTest: () => {
+                const win = new BrowserWindow({ width: 900, height: 600, title: 'Full-screen test' })
+                win.once('ready-to-show', () => {
+                  win.show()
+                  setTimeout(() => win.setFullScreen(true), 500)
+                })
+                void win.loadURL('data:text/html,<body style="font:32px sans-serif;margin:60px">Full-screen test window</body>')
+              },
+              logPanelState: () => void panel.logState('state')
             })
         : undefined
     })
@@ -642,6 +652,17 @@ function main(): void {
   powerMonitor.on('on-ac', powerChanged(false))
 
   app.on('second-instance', showPanel)
+  // Opening the running app from Spotlight, Finder or Launchpad shows the panel.
+  app.on('activate', showPanel)
+  // macOS 27 may activate the app when its panel is clicked; the first time is logged to tell.
+  let reportedActive = false
+  app.on('did-become-active', () => {
+    logger[reportedActive ? 'debug' : 'info']('app became active')
+    reportedActive = true
+  })
+  // Development only: open the panel on its own after a while, to test without the mouse.
+  const devShowMs = app.isPackaged ? 0 : Number(process.env.PR_RADAR_DEV_SHOW_PANEL_MS)
+  if (devShowMs > 0) setTimeout(showPanel, devShowMs)
 
   if (!applyShortcut(settings.shortcut, togglePanel)) {
     settings = { ...settings, shortcut: '' }

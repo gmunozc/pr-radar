@@ -31,6 +31,9 @@ export interface DebugActions {
   pollNow(): void
   renewToken(): Promise<void>
   copyDiagnostics(): void
+  /** A plain window in full screen: another "app" over which the panel has to open. */
+  fullScreenTest(): void
+  logPanelState(): void
 }
 
 export function debugMenu(a: DebugActions): MenuItemConstructorOptions[] {
@@ -53,7 +56,10 @@ export function debugMenu(a: DebugActions): MenuItemConstructorOptions[] {
         },
         { type: 'separator' },
         { label: 'Renew token now', click: () => void a.renewToken().then(a.pollNow) },
-        { label: 'Copy diagnostics', click: a.copyDiagnostics }
+        { label: 'Copy diagnostics', click: a.copyDiagnostics },
+        { type: 'separator' },
+        { label: 'Full-screen test window', click: a.fullScreenTest },
+        { label: 'Log panel state', click: a.logPanelState }
       ]
     }
   ]

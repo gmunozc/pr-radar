@@ -74,7 +74,7 @@ export class AppTray {
     this.tray.setToolTip('PR Radar')
     if (isMac) this.tray.setIgnoreDoubleClickEvents(true)
 
-    this.tray.on('click', (_e, bounds) => this.panel.toggle(bounds))
+    this.tray.on('click', (_e, bounds) => this.panel.toggle(bounds, 'tray'))
     this.tray.on('right-click', () => this.tray.popUpContextMenu(this.buildMenu()))
 
     // Most Linux tray hosts (AppIndicator) only support a context menu, not click events.

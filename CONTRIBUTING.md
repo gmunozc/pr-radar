@@ -31,6 +31,7 @@ src/main/          main process
                    trayState.ts: what the tray shows
   launcher.ts      Send to: worktree at the PR head, then a Warp tab with Claude Code;
                    launcherConfig.ts: launchers.json validation; projects.ts: repos and skills
+  panelDecision.ts pure rules for opening and closing the panel (click, blur, check after showing); window.ts applies them
   index.ts         composition root: wires the engine to Electron (tray, panel, IPC, timers)
 src/preload/       typed bridge exposed to the panel as window.prRadar
 src/renderer/      the panel (React); its pure parts live beside it: arrange.ts (filters, search), markdown.ts (description
@@ -55,6 +56,7 @@ Keep logic in Electron-free modules with injected dependencies, so it can be uni
 - `PR_RADAR_DEBUG=1` logs at debug level (panel show/hide, polling details).
 - `PR_RADAR_DEV_VERSION=0.0.1 npm run dev` pretends to be that version, so the new-version banner and the install flow can be exercised against the real releases.
 - Notification buttons need a signed app on macOS. The ad-hoc signature of the release builds is enough (the UNUserNotification framework needs one to show anything at all), so they are always on; `npm run dev` shows them too, since Electron's own binary is signed. Settings → **Test** sends a notification with a button to check.
+- Panel that won't open (macOS full-screen Spaces, several displays): the `panel …` lines of the log say what happened. The installed app logs the anomalies at info and warn (`panel click ignored`, `panel shown again`, `panel shown without focus`, `panel not displayed after showing`); with `PR_RADAR_DEBUG=1` it logs every show, blur, hide and click with the facts the decision used. In development, the tray's Debug menu has **Full-screen test window** and **Log panel state**, `PR_RADAR_DEV_SHOW_PANEL_MS=<ms>` opens the panel by itself after that time and `PR_RADAR_DEV_PANEL_LEVEL=<level>` tries another window level.
 - `PR_RADAR_SMOKE=1 npx electron .` (after `npm run build`) starts the app with an empty data folder and exits 0 once the panel has rendered, 1 after 60 s without it. CI runs it on the unpacked Windows and Linux builds, and the release workflow on the arm64 app before creating the draft.
 - `npm run panel:dev` serves the panel alone at http://localhost:5174 with fictional data (`src/renderer/mockApi.ts`), so the UI can be worked on without Electron or a GitHub session. `npm run panel:shot out.png --dark --step "<js>"` renders that page offscreen with Electron and saves a PNG; the screenshots in `docs/` come from it.
 - `npm run check:graphql` validates every query and mutation against GitHub's live schema through the `gh` CLI (mutations run with an invalid PR id, so nothing is touched). Run it before a release: unit tests can't catch a field GitHub doesn't have. A new GraphQL document needs its own extraction line in `scripts/check-graphql.mjs`.
