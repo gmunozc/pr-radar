@@ -65,8 +65,13 @@ export function decideBlur(b: BlurInput): 'hide' | 'refocus' | 'keep' {
   return b.blursInGrace === 0 ? 'refocus' : 'keep'
 }
 
-/** What a check shortly after showing found: fine, off screen (macOS says so), or on screen without focus. */
+/**
+ * What a check shortly after showing found: fine, off screen, or on screen without focus. macOS
+ * reports a window that reached the screen within a few ms (measured: ~45 ms), so no event by the
+ * check (`unknown`) also means off screen: a key window nobody sees, left on a Space the user is
+ * not on.
+ */
 export function showVerdict(v: { displayed: Displayed; focused: boolean }): 'ok' | 'not_displayed' | 'unfocused' {
-  if (v.displayed === 'no') return 'not_displayed'
+  if (v.displayed !== 'yes') return 'not_displayed'
   return v.focused ? 'ok' : 'unfocused'
 }

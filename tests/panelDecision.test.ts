@@ -81,9 +81,8 @@ describe('decideBlur', () => {
 })
 
 describe('showVerdict', () => {
-  it('is fine when the panel is on screen and focused, or macOS has not said anything', () => {
+  it('is fine when the panel is on screen and focused', () => {
     expect(showVerdict({ displayed: 'yes', focused: true })).toBe('ok')
-    expect(showVerdict({ displayed: 'unknown', focused: true })).toBe('ok')
   })
 
   it('reports a panel macOS says is off screen, whatever its focus', () => {
@@ -91,8 +90,12 @@ describe('showVerdict', () => {
     expect(showVerdict({ displayed: 'no', focused: false })).toBe('not_displayed')
   })
 
+  it('treats a panel macOS said nothing about as off screen: a shown window reports itself within ms', () => {
+    expect(showVerdict({ displayed: 'unknown', focused: true })).toBe('not_displayed')
+    expect(showVerdict({ displayed: 'unknown', focused: false })).toBe('not_displayed')
+  })
+
   it('reports a panel on screen without focus', () => {
     expect(showVerdict({ displayed: 'yes', focused: false })).toBe('unfocused')
-    expect(showVerdict({ displayed: 'unknown', focused: false })).toBe('unfocused')
   })
 })

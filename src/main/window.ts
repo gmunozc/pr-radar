@@ -16,10 +16,10 @@ const MOUNT_CHECK_MS = 1500
 /** A health probe that takes longer than this counts as a failure. */
 const PROBE_TIMEOUT_MS = 3000
 /**
- * Window level on macOS. Reported for macOS 26: a panel is only displayed over another app's
- * full-screen Space at the status level (25, where the menu bar's own windows live), not at the
- * floating level (3) that `alwaysOnTop` gives. Not verified for Electron's panel: when macOS
- * keeps it off screen anyway, the log says so (`panel not displayed after showing`).
+ * Window level on macOS. Measured on macOS 27 with `scripts/spaces-probe.swift`: once the window
+ * is transient (see the constructor), both the floating level (3) and the status level (25, where
+ * the menu bar's own windows live) are displayed over another app's full-screen Space. Status is
+ * kept; the log still says when macOS keeps the panel off screen (`panel not displayed after showing`).
  */
 const PANEL_LEVEL = 'status'
 
@@ -82,6 +82,14 @@ export class Panel {
     // Development only: PR_RADAR_DEV_PANEL_LEVEL tries another level without rebuilding.
     const devLevel = app.isPackaged ? undefined : process.env.PR_RADAR_DEV_PANEL_LEVEL
     if (isMac) this.win.setAlwaysOnTop(true, (devLevel as typeof PANEL_LEVEL | undefined) ?? PANEL_LEVEL)
+    // Chromium marks every always-on-top window "managed" (it takes part in Spaces like a document
+    // window) on top of the all-Spaces tag above. On macOS 26/27, closing a full-screen Space
+    // rebuilds a managed window's Space list down to the one it is on; ordered front on another
+    // Space it then gets the focus but stays off screen, with no occlusion event, or turns up on
+    // the old Space. A transient window (what a real NSPanel is) joins every Space again each time
+    // it is ordered front. This flag is Electron's only way to the transient behaviour, and a menu
+    // bar popover has no business in Mission Control anyway. Measured with scripts/spaces-probe.swift.
+    if (isMac) this.win.setHiddenInMissionControl(true)
 
     this.win.on('show', () => {
       this.displayed = 'yes'
@@ -257,9 +265,11 @@ export class Panel {
     })
     this.lastDisplayId = target.displayId
     this.win.setPosition(target.x, target.y, false)
+    // A window already on screen gets no new occlusion event when shown again (resize, activate,
+    // a notification click): keep what macOS last said in that case.
+    if (!this.open || this.displayed !== 'yes') this.displayed = 'unknown'
     this.open = true
     this.shownAt = Date.now()
-    this.displayed = 'unknown'
     this.blursInGrace = 0
     this.reshownOnce = false
     // show() makes the window key without activating the app (it is a panel); focus() would do
@@ -284,7 +294,9 @@ export class Panel {
       logger.info('panel shown without focus', { displayed: this.displayed })
       this.win.show()
     } else if (verdict === 'not_displayed') {
-      logger.warn('panel not displayed after showing', { focused, level: PANEL_LEVEL })
+      logger.warn('panel not displayed after showing', { focused, displayed: this.displayed, level: PANEL_LEVEL })
+      // The next click brings it back (once) instead of hiding something nobody sees.
+      this.displayed = 'no'
     }
   }
 
