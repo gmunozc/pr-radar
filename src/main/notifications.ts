@@ -67,7 +67,7 @@ export type NotificationAction =
   | { kind: 'open_panel' }
   | { kind: 'snooze'; prId: string; option: SnoozeOption }
   | { kind: 'dismiss'; prId: string }
-  /** Title and link of the PR to the clipboard, as the panel's "copy title and link". */
+  /** The PR's URL to the clipboard, as the panel's copy-link button on a row. */
   | { kind: 'copy_link'; prId: string }
   /** Approve the PR, as the panel's A key: the main process answers with `approved` or `approve_failed`. */
   | { kind: 'approve'; prId: string }

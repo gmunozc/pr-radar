@@ -84,7 +84,7 @@ Si una organización usa **SAML SSO**, autoriza la app para ella; el panel avisa
 
 - **La primera vez:** un solo resumen en lugar de un aviso por PR.
 - **Reviews nuevas:** hasta tres avisos individuales; si son más, se agrupan en uno.
-- **Botones:** las reviews y los recordatorios llevan **Posponer 1 h**, **Hasta mañana**, **Descartar**, **Copiar enlace** (título y enlace, como en el panel) y **Aprobar**, que responde con un aviso "Aprobado" o con el motivo si no pudo. En macOS, pasa el ratón por encima del aviso y abre **Opciones**.
+- **Botones:** las reviews y los recordatorios llevan **Posponer 1 h**, **Hasta mañana**, **Descartar**, **Copiar enlace** (la URL del PR) y **Aprobar**, que responde con un aviso "Aprobado" o con el motivo si no pudo. En macOS, pasa el ratón por encima del aviso y abre **Opciones**.
 - **Tus PRs:** "aprobado", "cambios solicitados", "comentarios nuevos", "listo para merge" y "fallan los checks" (estos dos una vez por cada push), "conflictos", y "mergeado" o "cerrado" cuando lo hizo otra persona (los merges que PR Radar hizo por ti se avisan igual; los que haces tú en GitHub, no). Se desactivan, todos o uno a uno, en Ajustes → **Novedades en mis PRs**.
 - **Repositorios silenciados** (en Ajustes o desde el menú de la fila): siguen en las listas pero no avisan; los merges que PR Radar hizo por ti sí se avisan.
 - **Al pulsar un aviso** sobre un PR se abre en GitHub; en Ajustes → **Al pulsar un aviso** puedes elegir que se abra el panel en esa fila.

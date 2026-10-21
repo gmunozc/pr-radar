@@ -35,7 +35,7 @@ import {
   fetchPullRequests
 } from './github'
 import { applyLanguage, currentLocale, t } from './i18n'
-import { isKnownCheckUrl, linkClipboard, registerIpc } from './ipc'
+import { isKnownCheckUrl, registerIpc } from './ipc'
 import { Launcher } from './launcher'
 import { describeLaunchers, LAUNCHERS_FILE, MAX_PROJECTS, parseLaunchers, validateLaunchers, type ParsedLaunchers } from './launcherConfig'
 import { logger } from './log'
@@ -142,9 +142,8 @@ function main(): void {
   const copyPrLink = async (prId: string) => {
     const pr = listedReview(prId, 'copy link')
     if (!pr) return
-    const { text, html } = linkClipboard(pr.title, pr.url)
     try {
-      await clipboard.write([new ClipboardItem({ 'text/plain': text, 'text/html': html })])
+      await clipboard.writeText(pr.url)
     } catch (err) {
       logger.warn('could not copy the link', err)
       return
