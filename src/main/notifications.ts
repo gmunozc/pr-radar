@@ -26,6 +26,9 @@ export type NotificationEvent =
   /** PR Radar merged a PR the user had armed. */
   | { kind: 'my_pr_merged'; pr: MyPullRequest; method: MergeMethod }
   | { kind: 'merge_failed'; pr: MyPullRequest; code: ActionErrorCode; detail?: string }
+  /** The Approve button of a review notification did its job, or could not. */
+  | { kind: 'approved'; pr: PullRequest }
+  | { kind: 'approve_failed'; pr: PullRequest; code: ActionErrorCode; detail?: string }
   /** One of your PRs left the list because someone else merged or closed it. */
   | { kind: 'my_pr_merged_by'; pr: PrRef; by: string | null }
   | { kind: 'my_pr_closed_by'; pr: PrRef; by: string | null }
@@ -62,6 +65,10 @@ export type NotificationAction =
   | { kind: 'open_panel' }
   | { kind: 'snooze'; prId: string; option: SnoozeOption }
   | { kind: 'dismiss'; prId: string }
+  /** Title and link of the PR to the clipboard, as the panel's "copy title and link". */
+  | { kind: 'copy_link'; prId: string }
+  /** Approve the PR, as the panel's A key: the main process answers with `approved` or `approve_failed`. */
+  | { kind: 'approve'; prId: string }
 
 export interface RenderedNotification {
   /** Posting again with the same id replaces the previous notification. */
@@ -156,12 +163,18 @@ const picture = (url: string | undefined): Pick<RenderedNotification, 'imageUrl'
 
 const reviewerAvatar = (pr: MyPullRequest, by: string[]) => pr.reviews.find((r) => r.login === by[0])?.avatarUrl || undefined
 
-/** Buttons on a review request or reminder: the same choices as the panel, minus "until new commits". */
+/**
+ * Buttons on a review request or reminder: the same choices as the panel, minus "until new
+ * commits". New buttons go at the end: a notification left by an earlier version keeps its own
+ * list, and the system reports a press by position.
+ */
 function reviewButtons(prId: string, t: Translate): RenderedNotification['buttons'] {
   return [
     { label: t('notif.actionSnooze'), action: { kind: 'snooze', prId, option: 'hour' } },
     { label: t('notif.actionSnoozeTomorrow'), action: { kind: 'snooze', prId, option: 'tomorrow' } },
-    { label: t('notif.actionDismiss'), action: { kind: 'dismiss', prId } }
+    { label: t('notif.actionDismiss'), action: { kind: 'dismiss', prId } },
+    { label: t('notif.actionCopyLink'), action: { kind: 'copy_link', prId } },
+    { label: t('notif.actionApprove'), action: { kind: 'approve', prId } }
   ]
 }
 
@@ -178,7 +191,7 @@ function staleLine(prs: PullRequest[], days: number, t: Translate): string {
  */
 export function restoredAction(id: string, t: Translate): Pick<RenderedNotification, 'action' | 'buttons'> {
   if (id.startsWith('pr-radar-')) return { action: openPanel, buttons: [{ label: t('notif.actionOpen'), action: openPanel }] }
-  const topic = /^(?:mine|ci|conflicts|comments|merged|closed)-(.+)$/.exec(id)
+  const topic = /^(?:mine|ci|conflicts|comments|merged|closed|approved)-(.+)$/.exec(id)
   if (topic) return { action: { kind: 'open_pr', prId: topic[1] } }
   return { action: { kind: 'open_pr', prId: id }, buttons: reviewButtons(id, t) }
 }
@@ -314,6 +327,25 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         groupId: event.pr.repo,
         title: t('notif.mergeFailed'),
         subtitle: where(event.pr),
+        body: `${event.pr.title} · ${t(`action.error.${event.code}`, { detail: event.detail ?? '' })}`,
+        action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
+      }
+    case 'approved':
+      return {
+        id: `approved-${event.pr.id}`,
+        groupId: event.pr.repo,
+        title: t('notif.approvedByYou'),
+        subtitle: where(event.pr, authorOf(event.pr)),
+        body: event.pr.title,
+        ...picture(event.pr.author?.avatarUrl),
+        action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
+      }
+    case 'approve_failed':
+      return {
+        id: `approved-${event.pr.id}`,
+        groupId: event.pr.repo,
+        title: t('notif.approveFailed'),
+        subtitle: where(event.pr, authorOf(event.pr)),
         body: `${event.pr.title} · ${t(`action.error.${event.code}`, { detail: event.detail ?? '' })}`,
         action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
       }

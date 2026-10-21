@@ -35,7 +35,7 @@ import {
   fetchPullRequests
 } from './github'
 import { applyLanguage, currentLocale, t } from './i18n'
-import { isKnownCheckUrl, registerIpc } from './ipc'
+import { isKnownCheckUrl, linkClipboard, registerIpc } from './ipc'
 import { Launcher } from './launcher'
 import { describeLaunchers, LAUNCHERS_FILE, MAX_PROJECTS, parseLaunchers, validateLaunchers, type ParsedLaunchers } from './launcherConfig'
 import { logger } from './log'
@@ -132,12 +132,37 @@ function main(): void {
     if (target) void shell.openExternal(target)
     else showPanel()
   }
+  // The buttons of a review notification work on the PR as the state lists it: a notification
+  // left by a previous run carries only the id.
+  const listedReview = (prId: string, what: string) => {
+    const pr = engine.state.prs.find((p) => p.id === prId)
+    if (!pr) logger.warn(`${what} from a notification: PR no longer listed`, { prId })
+    return pr
+  }
+  const copyPrLink = async (prId: string) => {
+    const pr = listedReview(prId, 'copy link')
+    if (!pr) return
+    const { text, html } = linkClipboard(pr.title, pr.url)
+    try {
+      await clipboard.write([new ClipboardItem({ 'text/plain': text, 'text/html': html })])
+    } catch (err) {
+      logger.warn('could not copy the link', err)
+    }
+  }
+  const approveFromNotification = async (prId: string) => {
+    const pr = listedReview(prId, 'approve')
+    if (!pr) return
+    const result = await engine.runAction(prId, { kind: 'approve' })
+    deliverEvents([result.ok ? { kind: 'approved', pr } : { kind: 'approve_failed', pr, code: result.code, detail: result.detail }], handlers)
+  }
   const handlers: NotificationHandlers = {
     openPanel: showPanel,
     openPr,
     perform: (action) => {
       if (action.kind === 'snooze') engine.snooze(action.prId, action.option)
       else if (action.kind === 'dismiss') engine.dismiss(action.prId)
+      else if (action.kind === 'copy_link') void copyPrLink(action.prId)
+      else if (action.kind === 'approve') void approveFromNotification(action.prId)
     }
   }
 

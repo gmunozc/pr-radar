@@ -15,7 +15,7 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 
 - **Menu bar count** of the pull requests waiting for your review, and a mark when one of your PRs is ready to merge. The icon dims when GitHub can't be reached, shows a badge when you need to sign in again, and is highlighted while the panel is open.
 - **Native notifications:**
-  - a new review request, or a review requested again after the author pushed new commits, with buttons to snooze or dismiss it;
+  - a new review request, or a review requested again after the author pushed new commits, with buttons to snooze or dismiss it, copy its link or approve it;
   - one of your PRs is approved, gets changes requested, gets new comments, becomes ready to merge, fails its checks, gets merge conflicts, or is merged or closed by someone else; pick which in Settings;
   - a daily reminder of the review requests that have waited longer than you like.
 - **To review** tab:
@@ -89,7 +89,7 @@ If an organization uses **SAML SSO**, authorize the app for it; the panel tells 
 
 - **First run:** a single summary instead of one notification per PR.
 - **New review requests:** up to three individual notifications; more than that become one grouped notification.
-- **Buttons:** review requests and reminders carry **Snooze 1 h**, **Until tomorrow** and **Dismiss**. On macOS, hover over the notification and open **Options**.
+- **Buttons:** review requests and reminders carry **Snooze 1 h**, **Until tomorrow**, **Dismiss**, **Copy link** (title and link, as in the panel) and **Approve**, which answers with an "Approved" notification, or the reason it could not. On macOS, hover over the notification and open **Options**.
 - **Your PRs:** "approved", "changes requested", "new comments", "ready to merge" and "checks failed" (the last two once per push), "conflicts", and "merged" or "closed" when someone else did it (merges PR Radar made for you are reported in any case; the ones you make yourself on GitHub are not). Turn them off, all or one by one, in Settings → **Updates on my PRs**.
 - **Muted repositories** (Settings, or the row's menu) stay in the lists but never notify; merges PR Radar did for you are still reported.
 - **A click** on an alert about a PR opens it on GitHub; Settings → **When you click an alert** can open the panel at that row instead.

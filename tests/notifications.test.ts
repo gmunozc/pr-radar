@@ -32,7 +32,9 @@ const renderNotification = (event: NotificationEvent) => render(event, es)
 const reviewButtons = [
   { label: 'Posponer 1 h', action: { kind: 'snooze', prId: 'PR_1', option: 'hour' } },
   { label: 'Hasta mañana', action: { kind: 'snooze', prId: 'PR_1', option: 'tomorrow' } },
-  { label: 'Descartar', action: { kind: 'dismiss', prId: 'PR_1' } }
+  { label: 'Descartar', action: { kind: 'dismiss', prId: 'PR_1' } },
+  { label: 'Copiar enlace', action: { kind: 'copy_link', prId: 'PR_1' } },
+  { label: 'Aprobar', action: { kind: 'approve', prId: 'PR_1' } }
 ]
 
 describe('renderNotification', () => {
@@ -81,7 +83,7 @@ describe('renderNotification', () => {
 describe('renderNotification in English', () => {
   it('translates every notification', () => {
     expect(render({ kind: 'review_requested', pr: pr() }, en).title).toBe('New review requested')
-    expect(render({ kind: 'review_requested', pr: pr() }, en).buttons?.map((b) => b.label)).toEqual(['Snooze 1 h', 'Until tomorrow', 'Dismiss'])
+    expect(render({ kind: 'review_requested', pr: pr() }, en).buttons?.map((b) => b.label)).toEqual(['Snooze 1 h', 'Until tomorrow', 'Dismiss', 'Copy link', 'Approve'])
     expect(render({ kind: 'review_requested', pr: pr({ source: { kind: 'team', slug: 'core' } }) }, en).title).toBe(
       'Review requested from your team core'
     )
@@ -297,10 +299,28 @@ describe('filterMyPrEvents', () => {
   })
 })
 
+describe('approve from a notification', () => {
+  it('confirms an approval and reports a failure with the error text, both opening the PR', () => {
+    expect(renderNotification({ kind: 'approved', pr: pr() })).toEqual({
+      id: 'approved-PR_1',
+      groupId: 'acme/app',
+      title: 'Aprobado',
+      subtitle: 'acme/app#12 · @octo',
+      body: 'Add feature',
+      action: { kind: 'open_pr', prId: 'PR_1', url: 'https://github.com/acme/app/pull/12' }
+    })
+    const failed = renderNotification({ kind: 'approve_failed', pr: pr(), code: 'stale' })
+    expect(failed.id).toBe('approved-PR_1')
+    expect(failed.title).toBe('No se pudo aprobar')
+    expect(failed.body).toBe('Add feature · El PR cambió desde que se cargó. Actualiza e inténtalo de nuevo.')
+  })
+})
+
 describe('restoredAction', () => {
   it('wires review ids to the PR with the snooze buttons, topic ids to the PR, and app ids to the panel', () => {
     expect(restoredAction('PR_1', es)).toEqual({ action: { kind: 'open_pr', prId: 'PR_1' }, buttons: reviewButtons })
     expect(restoredAction('ci-MY_1', es)).toEqual({ action: { kind: 'open_pr', prId: 'MY_1' } })
+    expect(restoredAction('approved-MY_1', es)).toEqual({ action: { kind: 'open_pr', prId: 'MY_1' } })
     expect(restoredAction('merged-MY_1', es).action).toEqual({ kind: 'open_pr', prId: 'MY_1' })
     expect(restoredAction('pr-radar-digest', es)).toEqual({
       action: { kind: 'open_panel' },
