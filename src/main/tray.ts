@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { formatClock } from '../shared/format'
 import type { AppState } from '../shared/types'
 import { currentLocale, t } from './i18n'
-import { logger } from './log'
 import { trayVisual, type TrayIcon, type TrayStatus } from './trayState'
 import type { Panel } from './window'
 
@@ -30,8 +29,8 @@ const ICON_FILES: Record<TrayIcon, string> = isMac
       alert: 'trayAlertTemplate.png'
     }
   : { idle: 'tray.png', active: 'trayActive.png', ready: 'trayReady.png', offline: 'trayOffline.png', alert: 'trayAlert.png' }
-// macOS, while the panel is open: the same glyphs over the highlight the system draws behind an
-// open status item (which Electron can't request for a window of its own).
+// macOS, while the panel is open: the same glyphs over a rounded highlight. The system draws its
+// own around the whole item only while the icon is pressed, and nothing lets an app keep it.
 const OPEN_ICON_FILES: Record<TrayIcon, string> = {
   idle: 'trayOpenTemplate.png',
   active: 'trayOpenTemplate.png',
@@ -78,8 +77,6 @@ export class AppTray {
       >)
     : null
   private open = false
-  /** The pointer is over the icon: macOS then draws its own highlight (on dark menu bars). */
-  private hovered = false
   private count = 0
   private status: TrayStatus = { kind: 'signed_out' }
   private updateVersion: string | null = null
@@ -95,12 +92,6 @@ export class AppTray {
 
     this.tray.on('click', (_e, bounds) => this.panel.toggle(bounds, 'tray'))
     this.tray.on('right-click', () => this.tray.popUpContextMenu(this.buildMenu()))
-    if (this.openIcons) {
-      // Under the pointer the system draws its own highlight around the whole item; the drawn
-      // one would show as a second, smaller one inside it.
-      this.tray.on('mouse-enter', () => this.setHovered(true))
-      this.tray.on('mouse-leave', () => this.setHovered(false))
-    }
 
     // Most Linux tray hosts (AppIndicator) only support a context menu, not click events.
     if (isLinux) this.tray.setContextMenu(this.buildMenu())
@@ -141,15 +132,8 @@ export class AppTray {
     if (this.openIcons) this.applyIcon()
   }
 
-  private setHovered(hovered: boolean): void {
-    if (hovered === this.hovered) return
-    this.hovered = hovered
-    logger.debug('tray hover', { hovered, open: this.open })
-    if (this.open) this.applyIcon()
-  }
-
   private applyIcon(): void {
-    const highlighted = this.open && !this.hovered && this.openIcons
+    const highlighted = this.open && this.openIcons
     this.tray.setImage(highlighted ? this.openIcons[this.iconKind] : this.icons[this.iconKind])
   }
 

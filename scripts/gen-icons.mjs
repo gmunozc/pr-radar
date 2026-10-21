@@ -13,13 +13,15 @@ const PR_PATH =
 // macOS template images: pure black + alpha; the system tints them for light/dark menu bars.
 // Every glyph (16×16) sits on a 24×22 canvas, so the status item keeps its width when the open
 // variant swaps in: that one adds the rounded highlight macOS draws behind an open status item,
-// which Electron has no way to ask for (AppKit's `highlight:` no longer draws it on macOS 26+).
-// The system's own highlight also covers the 9 pt the status item adds on each side of the
-// image, which no image can reach; the canvas is kept narrow so the icon keeps its spacing.
+// which Electron has no way to ask for: macOS 26+ draws it only while the icon is pressed. It
+// also covers the 9 pt the status item adds on each side of the image, which no image can reach;
+// the canvas is kept narrow so the icon keeps its spacing. One alpha serves both menu bars (black
+// on light ones, white on dark ones): 12% is a little darker than the system's on light bars
+// and a little lighter than it on dark ones, where 9% was invisible.
 const TRAY_W = 24
 const TRAY_H = 22
 const onTrayCanvas = (glyph, { open = false } = {}) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${TRAY_W} ${TRAY_H}">
-  ${open ? `<rect x="0" y="0.5" width="${TRAY_W}" height="${TRAY_H - 1}" rx="7" fill="#000" fill-opacity="0.09"/>` : ''}
+  ${open ? `<rect x="0" y="0.5" width="${TRAY_W}" height="${TRAY_H - 1}" rx="7" fill="#000" fill-opacity="0.12"/>` : ''}
   <g transform="translate(${(TRAY_W - 16) / 2} ${(TRAY_H - 16) / 2})">${glyph}</g>
 </svg>`
 
