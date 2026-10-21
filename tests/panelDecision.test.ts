@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { decideBlur, decideClick, showVerdict, SHOW_GRACE_MS, type BlurInput, type ClickInput } from '../src/main/panelDecision'
+import {
+  decideBlur,
+  decideClick,
+  decideOffScreen,
+  showVerdict,
+  SHOW_GRACE_MS,
+  type BlurInput,
+  type ClickInput,
+  type OffScreenInput
+} from '../src/main/panelDecision'
 
 const click = (over: Partial<ClickInput> = {}): ClickInput => ({
   source: 'tray',
@@ -77,6 +86,27 @@ describe('decideBlur', () => {
 
   it('ignores a blur right after showing when the window is still the key window', () => {
     expect(decideBlur(blur({ msSinceShow: 50, focused: true }))).toBe('keep')
+  })
+})
+
+const offScreen = (over: Partial<OffScreenInput> = {}): OffScreenInput => ({
+  open: true,
+  wasDisplayed: true,
+  keepOpen: false,
+  devToolsOpen: false,
+  ...over
+})
+
+describe('decideOffScreen', () => {
+  it('closes a panel the user was looking at when macOS takes it off the screen (a Space switch starting)', () => {
+    expect(decideOffScreen(offScreen())).toBe('hide')
+  })
+
+  it('leaves alone a panel that is closed, never got on screen, or holds a dialog or DevTools', () => {
+    expect(decideOffScreen(offScreen({ open: false }))).toBe('keep')
+    expect(decideOffScreen(offScreen({ wasDisplayed: false }))).toBe('keep')
+    expect(decideOffScreen(offScreen({ keepOpen: true }))).toBe('keep')
+    expect(decideOffScreen(offScreen({ devToolsOpen: true }))).toBe('keep')
   })
 })
 

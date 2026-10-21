@@ -6,7 +6,7 @@
 
 /** Whether macOS reports the window as on screen; "unknown" until its first `show`/`hide` event. */
 export type Displayed = 'yes' | 'no' | 'unknown'
-export type HideReason = 'user' | 'blur' | 'none'
+export type HideReason = 'user' | 'blur' | 'offscreen' | 'none'
 export type ClickSource = 'tray' | 'shortcut'
 export type ClickDecision = 'show' | 'hide' | 'refocus' | 'ignore'
 
@@ -63,6 +63,26 @@ export function decideBlur(b: BlurInput): 'hide' | 'refocus' | 'keep' {
   if (b.msSinceShow >= SHOW_GRACE_MS) return 'hide'
   if (b.focused) return 'keep'
   return b.blursInGrace === 0 ? 'refocus' : 'keep'
+}
+
+export interface OffScreenInput {
+  open: boolean
+  /** macOS had reported the panel on screen before taking it off. */
+  wasDisplayed: boolean
+  keepOpen: boolean
+  devToolsOpen: boolean
+}
+
+/**
+ * What to do when macOS takes the panel off the screen. A panel the user was looking at goes off
+ * screen when a Space switch starts (measured: ~50 ms after the gesture, while the switch itself
+ * ends a second later with the blur), when Mission Control opens or when the display sleeps:
+ * close it then, instead of letting it pop up again on the next Space for the blur to hide. A
+ * panel that never got on screen is left to the check after showing.
+ */
+export function decideOffScreen(o: OffScreenInput): 'hide' | 'keep' {
+  if (!o.open || !o.wasDisplayed || o.keepOpen || o.devToolsOpen) return 'keep'
+  return 'hide'
 }
 
 /**

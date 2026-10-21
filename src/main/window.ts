@@ -2,7 +2,7 @@ import { app, BrowserWindow, screen, type Rectangle } from 'electron'
 import { join } from 'node:path'
 import type { PanelSize } from '../shared/types'
 import { logger } from './log'
-import { decideBlur, decideClick, showVerdict, VERIFY_MS, type ClickSource, type Displayed, type HideReason } from './panelDecision'
+import { decideBlur, decideClick, decideOffScreen, showVerdict, VERIFY_MS, type ClickSource, type Displayed, type HideReason } from './panelDecision'
 import { displayNearest, placePanel } from './position'
 
 export const PANEL_WIDTH = 380
@@ -96,8 +96,17 @@ export class Panel {
       logger.debug('panel displayed', { msSinceShow: Date.now() - this.shownAt })
     })
     this.win.on('hide', () => {
+      const facts = {
+        open: this.open,
+        wasDisplayed: this.displayed === 'yes',
+        keepOpen: this.keepOpenCount > 0,
+        devToolsOpen: this.win.webContents.isDevToolsOpened()
+      }
       this.displayed = 'no'
-      logger.debug('panel off screen', { msSinceShow: Date.now() - this.shownAt })
+      const decision = decideOffScreen(facts)
+      logger.debug('panel off screen', { decision, msSinceShow: Date.now() - this.shownAt, ...facts })
+      // Not from inside the occlusion notification: let AppKit finish with the window first.
+      if (decision === 'hide') setImmediate(() => this.hide('offscreen'))
     })
 
     this.win.on('blur', () => {
