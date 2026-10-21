@@ -96,7 +96,12 @@ function attach(
   notification.on('click', () => run(action))
   notification.on('action', (details) => {
     const button = buttons[details.actionIndex]
-    if (button) run(button.action)
+    if (button) {
+      logger.info('notification button', { id: notification.id, index: details.actionIndex, kind: button.action.kind })
+      run(button.action)
+    } else {
+      logger.warn('notification button without a handler', { id: notification.id, index: details.actionIndex, buttons: buttons.length })
+    }
   })
   notification.on('close', () => live.delete(notification))
 }

@@ -26,6 +26,8 @@ export type NotificationEvent =
   /** PR Radar merged a PR the user had armed. */
   | { kind: 'my_pr_merged'; pr: MyPullRequest; method: MergeMethod }
   | { kind: 'merge_failed'; pr: MyPullRequest; code: ActionErrorCode; detail?: string }
+  /** The Copy link button of a review notification did its job: macOS gives no other feedback. */
+  | { kind: 'link_copied'; pr: PullRequest }
   /** The Approve button of a review notification did its job, or could not. */
   | { kind: 'approved'; pr: PullRequest }
   | { kind: 'approve_failed'; pr: PullRequest; code: ActionErrorCode; detail?: string }
@@ -191,7 +193,7 @@ function staleLine(prs: PullRequest[], days: number, t: Translate): string {
  */
 export function restoredAction(id: string, t: Translate): Pick<RenderedNotification, 'action' | 'buttons'> {
   if (id.startsWith('pr-radar-')) return { action: openPanel, buttons: [{ label: t('notif.actionOpen'), action: openPanel }] }
-  const topic = /^(?:mine|ci|conflicts|comments|merged|closed|approved)-(.+)$/.exec(id)
+  const topic = /^(?:mine|ci|conflicts|comments|merged|closed|approved|copied)-(.+)$/.exec(id)
   if (topic) return { action: { kind: 'open_pr', prId: topic[1] } }
   return { action: { kind: 'open_pr', prId: id }, buttons: reviewButtons(id, t) }
 }
@@ -328,6 +330,15 @@ export function renderNotification(event: NotificationEvent, t: Translate): Rend
         title: t('notif.mergeFailed'),
         subtitle: where(event.pr),
         body: `${event.pr.title} · ${t(`action.error.${event.code}`, { detail: event.detail ?? '' })}`,
+        action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
+      }
+    case 'link_copied':
+      return {
+        id: `copied-${event.pr.id}`,
+        groupId: event.pr.repo,
+        title: t('notif.linkCopied'),
+        subtitle: where(event.pr, authorOf(event.pr)),
+        body: event.pr.title,
         action: { kind: 'open_pr', prId: event.pr.id, url: event.pr.url }
       }
     case 'approved':

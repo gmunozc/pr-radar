@@ -147,7 +147,10 @@ function main(): void {
       await clipboard.write([new ClipboardItem({ 'text/plain': text, 'text/html': html })])
     } catch (err) {
       logger.warn('could not copy the link', err)
+      return
     }
+    logger.info('link copied from a notification', { repo: pr.repo, number: pr.number })
+    deliverEvents([{ kind: 'link_copied', pr }], handlers)
   }
   const approveFromNotification = async (prId: string) => {
     const pr = listedReview(prId, 'approve')

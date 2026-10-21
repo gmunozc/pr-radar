@@ -309,6 +309,8 @@ describe('approve from a notification', () => {
       body: 'Add feature',
       action: { kind: 'open_pr', prId: 'PR_1', url: 'https://github.com/acme/app/pull/12' }
     })
+    expect(renderNotification({ kind: 'link_copied', pr: pr() })).toMatchObject({ id: 'copied-PR_1', title: 'Enlace copiado', body: 'Add feature' })
+    expect(restoredAction('copied-PR_1', es)).toEqual({ action: { kind: 'open_pr', prId: 'PR_1' } })
     const failed = renderNotification({ kind: 'approve_failed', pr: pr(), code: 'stale' })
     expect(failed.id).toBe('approved-PR_1')
     expect(failed.title).toBe('No se pudo aprobar')

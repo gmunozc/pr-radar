@@ -287,6 +287,7 @@ export const es: Record<MessageKey, string> = {
   'notif.actionCopyLink': 'Copiar enlace',
   'notif.actionApprove': 'Aprobar',
   'notif.approvedByYou': 'Aprobado',
+  'notif.linkCopied': 'Enlace copiado',
   'notif.approveFailed': 'No se pudo aprobar',
   'settings.panelSize': 'Tamaño del panel',
   'settings.panelSize.compact': 'Compacto',

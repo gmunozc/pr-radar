@@ -289,6 +289,7 @@ export const en = {
   'notif.actionCopyLink': 'Copy link',
   'notif.actionApprove': 'Approve',
   'notif.approvedByYou': 'Approved',
+  'notif.linkCopied': 'Link copied',
   'notif.approveFailed': 'Could not approve',
   'settings.panelSize': 'Panel size',
   'settings.panelSize.compact': 'Compact',
