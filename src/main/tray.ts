@@ -29,6 +29,15 @@ const ICON_FILES: Record<TrayIcon, string> = isMac
       alert: 'trayAlertTemplate.png'
     }
   : { idle: 'tray.png', active: 'trayActive.png', ready: 'trayReady.png', offline: 'trayOffline.png', alert: 'trayAlert.png' }
+// macOS, while the panel is open: the same glyphs over the highlight the system draws behind an
+// open status item (which Electron can't request for a window of its own).
+const OPEN_ICON_FILES: Record<TrayIcon, string> = {
+  idle: 'trayOpenTemplate.png',
+  active: 'trayOpenTemplate.png',
+  ready: 'trayReadyOpenTemplate.png',
+  offline: 'trayOfflineOpenTemplate.png',
+  alert: 'trayAlertOpenTemplate.png'
+}
 
 export interface TrayActions {
   refresh(): void
@@ -61,6 +70,13 @@ export class AppTray {
   private readonly icons = Object.fromEntries(
     (Object.keys(ICON_FILES) as TrayIcon[]).map((k) => [k, icon(ICON_FILES[k])])
   ) as Record<TrayIcon, Electron.NativeImage>
+  private readonly openIcons = isMac
+    ? (Object.fromEntries((Object.keys(OPEN_ICON_FILES) as TrayIcon[]).map((k) => [k, icon(OPEN_ICON_FILES[k])])) as Record<
+        TrayIcon,
+        Electron.NativeImage
+      >)
+    : null
+  private open = false
   private count = 0
   private status: TrayStatus = { kind: 'signed_out' }
   private updateVersion: string | null = null
@@ -88,7 +104,7 @@ export class AppTray {
     this.status = visual.status
     if (visual.icon !== this.iconKind) {
       this.iconKind = visual.icon
-      this.tray.setImage(this.icons[visual.icon])
+      this.applyIcon()
     }
     if (isMac) this.tray.setTitle(visual.count ? ` ${visual.count}` : '', { fontType: 'monospacedDigit' })
 
@@ -107,6 +123,17 @@ export class AppTray {
 
   getBounds() {
     return this.tray.getBounds()
+  }
+
+  /** The panel opened or closed: on macOS the icon shows the highlight of an open status item. */
+  setOpen(open: boolean): void {
+    if (open === this.open) return
+    this.open = open
+    if (this.openIcons) this.applyIcon()
+  }
+
+  private applyIcon(): void {
+    this.tray.setImage(this.open && this.openIcons ? this.openIcons[this.iconKind] : this.icons[this.iconKind])
   }
 
   private buildMenu(): Menu {

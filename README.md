@@ -13,7 +13,7 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 
 ## Features
 
-- **Menu bar count** of the pull requests waiting for your review, and a mark when one of your PRs is ready to merge. The icon dims when GitHub can't be reached and shows a badge when you need to sign in again.
+- **Menu bar count** of the pull requests waiting for your review, and a mark when one of your PRs is ready to merge. The icon dims when GitHub can't be reached, shows a badge when you need to sign in again, and is highlighted while the panel is open.
 - **Native notifications:**
   - a new review request, or a review requested again after the author pushed new commits, with buttons to snooze or dismiss it;
   - one of your PRs is approved, gets changes requested, gets new comments, becomes ready to merge, fails its checks, gets merge conflicts, or is merged or closed by someone else; pick which in Settings;

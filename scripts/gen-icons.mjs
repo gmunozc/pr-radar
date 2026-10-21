@@ -10,24 +10,34 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PR_PATH =
   'M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z'
 
-// macOS template image: pure black + alpha; the system tints it for light/dark menu bars.
-const trayTemplate = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#000" d="${PR_PATH}"/></svg>`
+// macOS template images: pure black + alpha; the system tints them for light/dark menu bars.
+// Every glyph (16×16) sits on a 36×22 canvas, so the status item keeps its width when the open
+// variant swaps in: that one adds the rounded highlight macOS draws behind an open status item
+// (Electron has no way to ask for the real one). The system highlight also covers the 9 pt the
+// status item adds on each side of the image, which no image can reach; the wide canvas gets the
+// drawn one as close as the spacing of the menu bar allows, at the alpha of the real one.
+const TRAY_W = 36
+const TRAY_H = 22
+const onTrayCanvas = (glyph, { open = false } = {}) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${TRAY_W} ${TRAY_H}">
+  ${open ? `<rect x="0" y="0.5" width="${TRAY_W}" height="${TRAY_H - 1}" rx="7" fill="#000" fill-opacity="0.10"/>` : ''}
+  <g transform="translate(${(TRAY_W - 16) / 2} ${(TRAY_H - 16) / 2})">${glyph}</g>
+</svg>`
+
+const prGlyph = `<path fill="#000" d="${PR_PATH}"/>`
 
 // Offline / rate limited: the same glyph, faded (template images use alpha).
-const trayOfflineTemplate = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#000" fill-opacity="0.38" d="${PR_PATH}"/></svg>`
+const offlineGlyph = `<path fill="#000" fill-opacity="0.38" d="${PR_PATH}"/>`
 
 // Session expired: the glyph shrunk towards the bottom-left, with a solid badge in the freed corner.
-const trayAlertTemplate = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
-  <g transform="translate(0 3.4) scale(0.79)"><path fill="#000" d="${PR_PATH}"/></g>
-  <circle cx="13.1" cy="2.9" r="2.75" fill="#000"/>
-</svg>`
+const alertGlyph = `<g transform="translate(0 3.4) scale(0.79)"><path fill="#000" d="${PR_PATH}"/></g>
+  <circle cx="13.1" cy="2.9" r="2.75" fill="#000"/>`
 
 // A PR of yours is ready to merge: the glyph shrunk towards the top-left, with a dot in the
 // bottom-right corner (the mirror of the alert badge, so both read as one family).
-const trayReadyTemplate = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
-  <g transform="scale(0.79)"><path fill="#000" d="${PR_PATH}"/></g>
-  <circle cx="13.1" cy="13.1" r="2.75" fill="#000"/>
-</svg>`
+const readyGlyph = `<g transform="scale(0.79)"><path fill="#000" d="${PR_PATH}"/></g>
+  <circle cx="13.1" cy="13.1" r="2.75" fill="#000"/>`
+
+const TRAY_TEMPLATES = { tray: prGlyph, trayOffline: offlineGlyph, trayAlert: alertGlyph, trayReady: readyGlyph }
 
 // Windows/Linux: a filled badge readable on both light and dark taskbars.
 const trayColor = (dot, { bg = '#2f81f7', dotColor = '#f85149', bang = false } = {}) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
@@ -59,14 +69,12 @@ function render(svg, width, out) {
 }
 
 console.log('Generating icons:')
-render(trayTemplate, 16, 'resources/trayTemplate.png')
-render(trayTemplate, 32, 'resources/trayTemplate@2x.png')
-render(trayOfflineTemplate, 16, 'resources/trayOfflineTemplate.png')
-render(trayOfflineTemplate, 32, 'resources/trayOfflineTemplate@2x.png')
-render(trayAlertTemplate, 16, 'resources/trayAlertTemplate.png')
-render(trayAlertTemplate, 32, 'resources/trayAlertTemplate@2x.png')
-render(trayReadyTemplate, 16, 'resources/trayReadyTemplate.png')
-render(trayReadyTemplate, 32, 'resources/trayReadyTemplate@2x.png')
+for (const [name, glyph] of Object.entries(TRAY_TEMPLATES)) {
+  render(onTrayCanvas(glyph), TRAY_W, `resources/${name}Template.png`)
+  render(onTrayCanvas(glyph), TRAY_W * 2, `resources/${name}Template@2x.png`)
+  render(onTrayCanvas(glyph, { open: true }), TRAY_W, `resources/${name}OpenTemplate.png`)
+  render(onTrayCanvas(glyph, { open: true }), TRAY_W * 2, `resources/${name}OpenTemplate@2x.png`)
+}
 render(trayColor(false), 32, 'resources/tray.png')
 render(trayColor(true), 32, 'resources/trayActive.png')
 render(trayColor(false, { bg: '#6e7781' }), 32, 'resources/trayOffline.png')

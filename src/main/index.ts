@@ -467,6 +467,7 @@ function main(): void {
   } catch (err) {
     logger.error('could not create the tray icon', err)
   }
+  panel.onOpenChange = (open) => tray?.setOpen(open)
 
   registerIpc({
     getState: () => engine.state,

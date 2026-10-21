@@ -13,7 +13,7 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 
 ## Funciones
 
-- **Contador en la barra de menú** con los pull requests que esperan tu review, y una marca cuando un PR tuyo está listo para merge. El icono se atenúa si no hay conexión con GitHub y muestra un punto cuando tienes que volver a conectar.
+- **Contador en la barra de menú** con los pull requests que esperan tu review, y una marca cuando un PR tuyo está listo para merge. El icono se atenúa si no hay conexión con GitHub, muestra un punto cuando tienes que volver a conectar y se resalta mientras el panel está abierto.
 - **Notificaciones nativas:**
   - cuando te piden una review nueva, o te la vuelven a pedir después de que el autor subiera commits nuevos, con botones para posponerla o descartarla;
   - cuando aprueban un PR tuyo, te piden cambios, comentan, queda listo para merge, fallan sus checks, tiene conflictos, o alguien lo mergea o lo cierra; en Ajustes eliges cuáles;

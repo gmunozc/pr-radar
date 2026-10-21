@@ -42,6 +42,8 @@ export class Panel {
   private displayed: Displayed = 'unknown'
   private blursInGrace = 0
   private reshownOnce = false
+  /** Told when the panel opens or closes (the tray icon follows). */
+  onOpenChange?: (open: boolean) => void
 
   constructor() {
     const isMac = process.platform === 'darwin'
@@ -242,6 +244,7 @@ export class Panel {
     this.displayed = 'no'
     this.lastHide = { at: Date.now(), by }
     this.win.hide()
+    this.onOpenChange?.(false)
     logger.debug('panel hidden', { by })
   }
 
@@ -277,6 +280,7 @@ export class Panel {
     // A window already on screen gets no new occlusion event when shown again (resize, activate,
     // a notification click): keep what macOS last said in that case.
     if (!this.open || this.displayed !== 'yes') this.displayed = 'unknown'
+    const opening = !this.open
     this.open = true
     this.shownAt = Date.now()
     this.blursInGrace = 0
@@ -284,6 +288,7 @@ export class Panel {
     // show() makes the window key without activating the app (it is a panel); focus() would do
     // nothing before the window is visible.
     this.win.show()
+    if (opening) this.onOpenChange?.(true)
     logger.debug('panel shown', { visible: this.win.isVisible(), focused: this.win.isFocused(), target })
     setTimeout(() => this.verify(), VERIFY_MS)
     // If the panel is somehow blank, fix it now that the user is looking at it.
