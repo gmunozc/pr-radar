@@ -65,6 +65,8 @@ function fake(
     fetchFails?: boolean
     tabConfigs?: string[]
     worktreeHead?: string
+    /** The worktree's HEAD descends from the PR's commit (commits made there, not pushed). */
+    worktreeAhead?: boolean
     redetected?: LauncherProject | null
   } = {}
 ): Fake {
@@ -84,6 +86,10 @@ function fake(
       const [cmd] = args
       if (cmd === 'rev-parse' && args[1] === 'HEAD') return `${opts.worktreeHead ?? SHA}\n`
       if (cmd === 'rev-parse') return '.git\n'
+      if (cmd === 'merge-base') {
+        if (opts.worktreeAhead) return ''
+        throw new Error('not an ancestor')
+      }
       if (cmd === 'cat-file') {
         if (commits.has(args[2].replace('^{commit}', ''))) return ''
         throw new Error('missing')
@@ -141,20 +147,20 @@ describe('command building', () => {
     const values = launchValues(prA)!
     expect(promptFor(triage, values, null)).toBe('/triage-review https://github.com/Acme/Core/pull/42')
     expect(promptFor({ ...triage, extra: "don't fix anything" }, values, '/w')).toBe(
-      "/triage-review https://github.com/Acme/Core/pull/42 don't fix anything (PR code at commit a1b2c3d: /w)"
+      "/triage-review https://github.com/Acme/Core/pull/42 don't fix anything (PR code at commit a1b2c3d, in the current folder: /w. It is a detached checkout: to push commits, git push origin HEAD:<branch>, the branch from gh pr view 42 --json headRefName)"
     )
     expect(promptFor(here, values, null)).toBe('look at #42')
     expect(worktreePath('/wt', values)).toBe('/wt/Acme__Core/pr-42-a1b2c3d')
   })
 
-  it('runs claude with the worktree added and the prompt as one argument', () => {
-    expect(agentCommand("it's", '/w/a b')).toBe(`claude --add-dir '/w/a b' 'it'\\''s'`)
-    expect(agentCommand('x', null)).toBe(`claude 'x'`)
+  it('runs claude with the project added and the prompt as one argument after --', () => {
+    expect(agentCommand("it's", '/p/a b')).toBe(`CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir '/p/a b' -- 'it'\\''s'`)
+    expect(agentCommand('-x', null)).toBe(`claude -- '-x'`)
   })
 })
 
 describe('Launcher', () => {
-  it('adds a worktree of the PR repository and opens Warp in the project root', async () => {
+  it('adds a worktree of the PR repository and opens Warp in it, with the project added', async () => {
     const w = fake()
     expect(await new Launcher(w.deps).launch('PR_1', 'triage')).toEqual({ ok: true })
     expect(w.git).toEqual([
@@ -165,7 +171,7 @@ describe('Launcher', () => {
     ])
     const name = `pr_radar_${NOW}_1`
     expect(w.urls).toEqual([`warp://tab_config/${name}`])
-    const prompt = `/triage-review https://github.com/Acme/Core/pull/42 (PR code at commit a1b2c3d: ${WORKTREE})`
+    const prompt = `/triage-review https://github.com/Acme/Core/pull/42 (PR code at commit a1b2c3d, in the current folder: ${WORKTREE}. It is a detached checkout: to push commits, git push origin HEAD:<branch>, the branch from gh pr view 42 --json headRefName)`
     expect(w.files.get(`/Users/me/.warp/tab_configs/${name}.toml`)).toBe(
       [
         '# Written by PR Radar for one "Send to" launch; removed after a few minutes.',
@@ -174,8 +180,8 @@ describe('Launcher', () => {
         '[[panes]]',
         'id = "main"',
         'type = "terminal"',
-        `directory = "${ROOT}"`,
-        `commands = ["claude --add-dir '${WORKTREE}' '${prompt}'"]`,
+        `directory = "${WORKTREE}"`,
+        `commands = ["CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir '${ROOT}' -- '${prompt}'"]`,
         ''
       ].join('\n')
     )
@@ -202,12 +208,22 @@ describe('Launcher', () => {
     })
   })
 
+  it('reuses a worktree with commits made there and not pushed yet', async () => {
+    const w = fake({ dirs: [ROOT, CORE, WORKTREE], worktreeHead: 'b'.repeat(40), worktreeAhead: true })
+    expect(await new Launcher(w.deps).launch('PR_1', 'triage')).toEqual({ ok: true })
+    expect(w.git).toEqual([
+      [WORKTREE, 'rev-parse', 'HEAD'],
+      [WORKTREE, 'merge-base', '--is-ancestor', SHA, 'HEAD']
+    ])
+    expect(tabConfig(w)).toContain(`directory = "${WORKTREE}"`)
+  })
+
   it('opens the project as it is for folder actions, without git', async () => {
     const w = fake()
     expect(await new Launcher(w.deps).launch('PR_1', 'here')).toEqual({ ok: true })
     expect(w.git).toEqual([])
     expect(tabConfig(w)).toContain(`directory = "${ROOT}"`)
-    expect(tabConfig(w)).toContain(`commands = ["claude 'look at #42'"]`)
+    expect(tabConfig(w)).toContain(`commands = ["claude -- 'look at #42'"]`)
   })
 
   it('detects the project again when the repository is missing from it', async () => {

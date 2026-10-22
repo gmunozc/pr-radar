@@ -97,7 +97,7 @@ El **modo rápido** (activado por defecto) lanza cada 5 segundos una consulta li
 
 ## Enviar a un agente (macOS)
 
-Clic derecho en un PR → **Enviar a…** y elige una acción: PR Radar abre una pestaña nueva de Warp con Claude Code ya trabajando en ese PR, por ejemplo `claude --add-dir <worktree> '/triage-review https://github.com/acme/app/pull/42 …'`. PR Radar solo lanza; tus skills y tus reglas siguen donde están.
+Clic derecho en un PR → **Enviar a…** y elige una acción: PR Radar abre una pestaña nueva de Warp con Claude Code ya trabajando en ese PR, por ejemplo `claude --add-dir <proyecto> -- '/triage-review https://github.com/acme/app/pull/42 …'` dentro del worktree del PR. PR Radar solo lanza; tus skills y tus reglas siguen donde están.
 
 Se configura en Ajustes → **Enviar a agente** → **Configurar**:
 
@@ -107,7 +107,7 @@ Se configura en Ajustes → **Enviar a agente** → **Configurar**:
   - **Ejecutar:** una skill del proyecto, una tuya (`~/.claude/skills`) o un prompt libre que puede usar `{url}`, `{number}`, `{repo}` y `{sha}`. Las skills reciben el enlace del PR.
   - **Texto extra** (opcional) va después del enlace del PR.
   - **Mostrar en:** Mis PRs, Por revisar, Participo o Todos.
-  - **Código:** **Worktree del PR** (por defecto) crea un git worktree en el último commit del PR dentro de `~/.pr-radar/worktrees`, y trae `pull/<n>/head` si el commit no está en local. Claude arranca en la raíz del proyecto y recibe el worktree con `--add-dir` y su ruta en el prompt, así lee el código del PR y tu carpeta de trabajo nunca se toca. Se reutiliza para el mismo commit; los viejos se borran con `git worktree remove`. **Proyecto tal cual** no crea worktree.
+  - **Código:** **Worktree del PR** (por defecto) crea un git worktree en el último commit del PR dentro de `~/.pr-radar/worktrees`, y trae `pull/<n>/head` si el commit no está en local. Claude arranca dentro del worktree, así su carpeta, git y los comandos que ejecuta son el código del PR y tu carpeta de trabajo no se toca; el proyecto se agrega con `--add-dir`, así sus skills y su `CLAUDE.md` siguen cargando. El worktree está en el commit, sin rama: para subir cambios hechos ahí, haz push de `HEAD` a la rama del PR (el prompt le explica a Claude cómo). Se reutiliza para el mismo commit, también si tiene commits hechos ahí que aún no se subieron; los viejos se borran con `git worktree remove`. **Proyecto tal cual** no crea worktree.
 
 El nombre de la rama y el título del PR nunca llegan a la línea de comandos: los elige su autor. Claude Code corre después con tus permisos sobre código escrito por ese autor, así que mantén activas sus confirmaciones de permisos con PRs de gente en la que no confías. La configuración se guarda en `launchers.json` (Ajustes → Enviar a agente → launchers.json → Abrir), que puedes compartir con tu equipo; ejecuta comandos en tu Mac, así que revisa sus cambios como si fueran código.
 

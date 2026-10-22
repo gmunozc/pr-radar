@@ -1,6 +1,8 @@
 /**
  * "Send to…": prepares a workspace for a PR (a git worktree at its head commit, or the project
- * as it is) and opens a Warp tab in the project's root running Claude Code on it.
+ * as it is) and opens a Warp tab there running Claude Code on it. In a worktree, the project
+ * is added with --add-dir so its skills and CLAUDE.md still load, while the agent's folder, git
+ * and shell commands are the PR's code and never the user's own checkout.
  *
  * Only validated PR values (URL, number, owner/name, hex SHA) ever reach a command line, and
  * each one shell-quoted: branch names and titles are chosen by the PR's author and are never used.
@@ -38,6 +40,8 @@ export const TAB_CONFIG_TTL_MS = 10 * 60_000
 const PR_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/
 const SHA = /^[0-9a-f]{40}$/
 const TAB_CONFIG = /^pr_radar_(\d+)_\d+\.toml$/
+/** Makes Claude Code read CLAUDE.md in folders added with --add-dir, too. */
+const ADDED_DIRS_CLAUDE_MD = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD'
 
 /** The values prompts may use, or null when any of them doesn't look like GitHub's. */
 export function launchValues(pr: LaunchPr): LaunchValues | null {
@@ -75,18 +79,28 @@ export function worktreePath(worktreesDir: string, values: LaunchValues): string
 
 /**
  * What Claude is asked: `/skill <url>` or the hand-written prompt, then the extra text, then
- * where the PR's code is when it has a worktree (the agent starts in the project root).
+ * a note that the current folder is the PR's code when it runs in a worktree, and how to push
+ * from it: the worktree is detached, and the branch name is left for the agent to look up.
  */
 export function promptFor(action: LauncherAction, values: LaunchValues, worktree: string | null): string {
   const base = action.run.kind === 'skill' ? `/${action.run.skill} ${values.url}` : fillTemplate(action.run.text, values)
   const extra = action.extra ? ` ${action.extra}` : ''
-  const where = worktree ? ` (PR code at commit ${values.sha.slice(0, 7)}: ${worktree})` : ''
+  const where = worktree
+    ? ` (PR code at commit ${values.sha.slice(0, 7)}, in the current folder: ${worktree}. It is a detached checkout: to push commits, ` +
+      `git push origin HEAD:<branch>, the branch from gh pr view ${values.number} --json headRefName)`
+    : ''
   return `${base}${extra}${where}`
 }
 
-/** The command typed in the terminal. */
-export function agentCommand(prompt: string, worktree: string | null): string {
-  return worktree ? `claude --add-dir ${shellQuote(worktree)} ${shellQuote(prompt)}` : `claude ${shellQuote(prompt)}`
+/**
+ * The command typed in the terminal. `project` is added when the agent runs in a worktree, with
+ * its CLAUDE.md (skills of added folders load on their own). `--` ends the options: --add-dir
+ * takes several folders and would otherwise swallow the prompt, and a prompt may start with "-".
+ */
+export function agentCommand(prompt: string, project: string | null): string {
+  return project
+    ? `${ADDED_DIRS_CLAUDE_MD}=1 claude --add-dir ${shellQuote(project)} -- ${shellQuote(prompt)}`
+    : `claude -- ${shellQuote(prompt)}`
 }
 
 export function warpTabConfig(title: string, dir: string, command: string): string {
@@ -156,8 +170,8 @@ export class Launcher {
       const repoPath = await this.repoPath(project, values.repo)
       const worktree = action.workspace === 'worktree' ? await this.worktree(repoPath, values) : null
       if (!worktree && !this.deps.isDir(project.path)) throw new LaunchError('repo_not_found', 'the project folder does not exist')
-      const command = agentCommand(promptFor(action, values, worktree), worktree)
-      await this.openTerminal(config.terminal, project.path, command, `${values.repo}#${values.number} · ${action.label}`)
+      const command = agentCommand(promptFor(action, values, worktree), worktree && project.path)
+      await this.openTerminal(config.terminal, worktree ?? project.path, command, `${values.repo}#${values.number} · ${action.label}`)
       this.deps.log.info('launched an agent', { ...context, workspace: action.workspace, terminal: config.terminal })
       return { ok: true }
     } catch (err) {
@@ -192,6 +206,12 @@ export class Launcher {
     if (this.deps.isDir(dir)) {
       const head = await git(['rev-parse', 'HEAD'], dir).catch(() => '')
       if (head.trim() === values.sha) return dir
+      // Commits made there and not pushed yet: the PR's commit is still in its history.
+      const ahead = await git(['merge-base', '--is-ancestor', values.sha, 'HEAD'], dir).then(
+        () => true,
+        () => false
+      )
+      if (ahead) return dir
       throw new LaunchError('git_failed', 'the worktree folder exists but is not at the PR head')
     }
     await git(['rev-parse', '--git-dir']).catch((err) => {
