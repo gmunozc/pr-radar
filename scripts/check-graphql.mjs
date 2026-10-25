@@ -46,6 +46,8 @@ const result = run(query, {
   first: 5,
   login,
   withMyReview: true,
+  withRequested: true,
+  withMine: true,
   withInvolved: true
 })
 report('PULL_REQUESTS_QUERY', result.errors ?? [])
@@ -54,6 +56,8 @@ const probed = run(probe, {
   mine: `${base} author:@me`,
   involved: `${base} involves:@me -author:@me -review-requested:@me`,
   first: 5,
+  withRequested: true,
+  withMine: true,
   withInvolved: true
 })
 report('PROBE_QUERY', probed.errors ?? [])

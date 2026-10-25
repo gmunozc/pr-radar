@@ -311,11 +311,13 @@ describe('Engine errors', () => {
     ])
     await t.engine.poll()
     await expect(t.engine.poll()).resolves.toEqual({ retryAt: undefined })
-    expect(t.engine.state).toMatchObject({ status: 'ready', error: { code: 'network', detail: 'offline' } })
+    // One failure is a blip the next poll usually undoes: the data stays and no banner yet.
+    expect(t.engine.state).toMatchObject({ status: 'ready', error: null })
     expect(t.engine.state.prs.map((p) => p.id)).toEqual(['a'])
     expect(t.engine.consecutiveFailures).toBe(1)
 
     await expect(t.engine.poll()).resolves.toEqual({ retryAt: NOW + 600_000 })
+    expect(t.engine.state).toMatchObject({ error: { code: 'rate_limited', detail: 'slow down', retryAt: NOW + 600_000 } })
     expect(t.engine.consecutiveFailures).toBe(2)
   })
 

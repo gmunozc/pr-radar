@@ -24,7 +24,15 @@ import type {
 } from '../shared/types'
 
 export const GRAPHQL_URL = 'https://api.github.com/graphql'
-export const PAGE_SIZE = 50
+/**
+ * PRs per request. GitHub cuts a GraphQL query off at about 10 s with a 502, and a page of your
+ * own PRs costs ~0.25 s each (measured: 36 of them, 11 s); lists are read page by page instead.
+ */
+export const PAGE_SIZE = 20
+/** PRs read per list at most; beyond this the list is truncated and the panel says so. */
+export const MAX_PRS = 100
+/** A 502/503/504 is retried once after this long before the poll counts as failed. */
+export const RETRY_DELAY_MS = 1500
 
 /**
  * The cheap "did anything change?" document, 2 rate-limit points against ~6 for the full one:
@@ -42,10 +50,31 @@ export const PROBE_QUERY = /* GraphQL */ `
     commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   }
 
-  query PullRequestsProbe($requested: String!, $mine: String!, $involved: String!, $first: Int!, $withInvolved: Boolean!) {
-    requested: search(query: $requested, type: ISSUE, first: $first) { issueCount nodes { ...ProbeFields } }
-    mine: search(query: $mine, type: ISSUE, first: $first) { issueCount nodes { ...ProbeFields } }
-    involved: search(query: $involved, type: ISSUE, first: $first) @include(if: $withInvolved) { issueCount nodes { ...ProbeFields } }
+  query PullRequestsProbe(
+    $requested: String!
+    $mine: String!
+    $involved: String!
+    $first: Int!
+    $after: String
+    $withRequested: Boolean!
+    $withMine: Boolean!
+    $withInvolved: Boolean!
+  ) {
+    requested: search(query: $requested, type: ISSUE, first: $first, after: $after) @include(if: $withRequested) {
+      issueCount
+      pageInfo { hasNextPage endCursor }
+      nodes { ...ProbeFields }
+    }
+    mine: search(query: $mine, type: ISSUE, first: $first, after: $after) @include(if: $withMine) {
+      issueCount
+      pageInfo { hasNextPage endCursor }
+      nodes { ...ProbeFields }
+    }
+    involved: search(query: $involved, type: ISSUE, first: $first, after: $after) @include(if: $withInvolved) {
+      issueCount
+      pageInfo { hasNextPage endCursor }
+      nodes { ...ProbeFields }
+    }
   }
 `
 
@@ -90,13 +119,17 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
     $mine: String!
     $involved: String!
     $first: Int!
+    $after: String
     $login: String!
     $withMyReview: Boolean!
+    $withRequested: Boolean!
+    $withMine: Boolean!
     $withInvolved: Boolean!
   ) {
     viewer { login avatarUrl }
-    involved: search(query: $involved, type: ISSUE, first: $first) @include(if: $withInvolved) {
+    involved: search(query: $involved, type: ISSUE, first: $first, after: $after) @include(if: $withInvolved) {
       issueCount
+      pageInfo { hasNextPage endCursor }
       nodes {
         ... on PullRequest {
           ...PrFields
@@ -104,8 +137,9 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
         }
       }
     }
-    requested: search(query: $requested, type: ISSUE, first: $first) {
+    requested: search(query: $requested, type: ISSUE, first: $first, after: $after) @include(if: $withRequested) {
       issueCount
+      pageInfo { hasNextPage endCursor }
       nodes {
         ... on PullRequest {
           ...PrFields
@@ -126,8 +160,9 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
         }
       }
     }
-    mine: search(query: $mine, type: ISSUE, first: $first) {
+    mine: search(query: $mine, type: ISSUE, first: $first, after: $after) @include(if: $withMine) {
       issueCount
+      pageInfo { hasNextPage endCursor }
       nodes {
         ... on PullRequest {
           ...PrFields
@@ -296,6 +331,15 @@ interface RawReview {
 interface RawSearch<T> {
   issueCount: number
   nodes: T[]
+  pageInfo?: { hasNextPage: boolean; endCursor: string | null }
+}
+
+type RawError = { type?: string; message: string; path?: Array<string | number> }
+type ListKind = 'requested' | 'mine' | 'involved'
+/** One request of a paged list: the asked-for search, plus whatever else the document returns. */
+interface PagedBody<T> {
+  data?: ({ viewer?: Viewer } & Partial<Record<ListKind, RawSearch<T>>>) | null
+  errors?: RawError[]
 }
 
 interface RawResponse {
@@ -690,14 +734,14 @@ export function mapResponse(body: RawResponse): FetchResult {
     warnings.push(saml ? { code: 'saml' } : { code: 'partial', params: { detail: otherErrors[0].message } })
   }
   // GitHub's search count can exceed the results it returns for a poll or two (right after a
-  // merge, say): only a real page overflow is worth a banner.
-  if (data.requested.issueCount > PAGE_SIZE) {
+  // merge, say): only a list longer than what is ever read is worth a banner.
+  if (data.requested.issueCount > MAX_PRS) {
     warnings.push({ code: 'truncated_requested', params: { shown: prs.length, total: data.requested.issueCount } })
   }
-  if (data.mine.issueCount > PAGE_SIZE) {
+  if (data.mine.issueCount > MAX_PRS) {
     warnings.push({ code: 'truncated_mine', params: { shown: myPrs.length, total: data.mine.issueCount } })
   }
-  if (data.involved && data.involved.issueCount > PAGE_SIZE) {
+  if (data.involved && data.involved.issueCount > MAX_PRS) {
     warnings.push({ code: 'truncated_involved', params: { shown: involved.length, total: data.involved.issueCount } })
   }
   return { viewer, prs, myPrs, involved, warnings }
@@ -722,20 +766,29 @@ export async function graphqlRequest<T>(
   fetchFn: FetchFn = fetch
 ): Promise<{ body: T; response: Response }> {
   let res: Response
-  try {
-    res = await fetchFn(GRAPHQL_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'User-Agent': 'pr-radar'
-      },
-      body: JSON.stringify({ query, variables }),
-      signal: AbortSignal.timeout(20_000)
-    })
-  } catch (err) {
-    throw new GithubError('network', `Could not reach GitHub (${(err as Error).message})`)
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetchFn(GRAPHQL_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'User-Agent': 'pr-radar'
+        },
+        body: JSON.stringify({ query, variables }),
+        signal: AbortSignal.timeout(20_000)
+      })
+    } catch (err) {
+      throw new GithubError('network', `Could not reach GitHub (${(err as Error).message})`)
+    }
+    // A gateway error is usually GitHub's side having a slow moment (or a query at its time
+    // limit); one more try a moment later gets through more often than not.
+    if (attempt === 0 && (res.status === 502 || res.status === 503 || res.status === 504)) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
+      continue
+    }
+    break
   }
 
   if (res.status === 401) {
@@ -806,20 +859,66 @@ export function probeFingerprint(data: NonNullable<RawProbeResponse['data']>): s
 /** Runs the probe (PROBE_QUERY). GraphQL errors without data are failures; partial data is fine. */
 export async function fetchFingerprint(token: string, settings: SearchSettings, fetchFn: FetchFn = fetch): Promise<string> {
   const queries = searchQueries(settings)
-  const { body } = await graphqlRequest<RawProbeResponse>(
-    token,
-    PROBE_QUERY,
-    {
-      requested: queries.requested,
-      mine: queries.mine,
-      involved: queries.involved,
-      first: PAGE_SIZE,
-      withInvolved: settings.showInvolved ?? true
-    },
-    fetchFn
-  )
-  if (!body.data) throw new GithubError('unknown', body.errors?.[0]?.message ?? 'GitHub returned no data')
-  return probeFingerprint(body.data)
+  const variables = { requested: queries.requested, mine: queries.mine, involved: queries.involved }
+  const [requested, mine, involved] = await Promise.all([
+    fetchPages<RawProbePr>(token, PROBE_QUERY, 'requested', variables, fetchFn),
+    fetchPages<RawProbePr>(token, PROBE_QUERY, 'mine', variables, fetchFn),
+    (settings.showInvolved ?? true) ? fetchPages<RawProbePr>(token, PROBE_QUERY, 'involved', variables, fetchFn) : null
+  ])
+  return probeFingerprint({ requested: requested.list, mine: mine.list, ...(involved ? { involved: involved.list } : {}) })
+}
+
+/** What a response without the list asked for means: GitHub's rate limit, or something unexpected. */
+function errorFor(body: { errors?: RawError[] }): GithubError {
+  const first = body.errors?.[0]
+  if (first?.type === 'RATE_LIMITED') return new GithubError('rate_limited', first.message)
+  return new GithubError('unknown', first?.message ?? 'Unexpected response from GitHub')
+}
+
+/**
+ * Reads one list of `document` page by page (PAGE_SIZE at a time, MAX_PRS at most): each request
+ * asks for that list alone, so no single request runs long enough for GitHub to cut it off, and
+ * the lists can be read side by side. GraphQL errors of every page are kept for the caller.
+ */
+async function fetchPages<T>(
+  token: string,
+  document: string,
+  kind: ListKind,
+  variables: Record<string, unknown>,
+  fetchFn: FetchFn
+): Promise<{ list: RawSearch<T>; errors: RawError[]; first: { body: PagedBody<T>; response: Response } }> {
+  type Page = { body: PagedBody<T>; response: Response }
+  const nodes: T[] = []
+  const errors: RawError[] = []
+  let issueCount = 0
+  let after: string | null = null
+  let first: Page | undefined
+  for (;;) {
+    const page: Page = await graphqlRequest<PagedBody<T>>(
+      token,
+      document,
+      {
+        ...variables,
+        first: PAGE_SIZE,
+        after,
+        withRequested: kind === 'requested',
+        withMine: kind === 'mine',
+        withInvolved: kind === 'involved'
+      },
+      fetchFn
+    )
+    first ??= page
+    if (!page.body.data) throw errorFor(page.body)
+    // A list GitHub left out of an otherwise fine answer counts as empty.
+    const list: RawSearch<T> = page.body.data[kind] ?? { issueCount: 0, nodes: [] }
+    if (page.body.errors) errors.push(...page.body.errors)
+    issueCount = list.issueCount
+    nodes.push(...list.nodes)
+    const next: string | null = list.pageInfo?.hasNextPage ? list.pageInfo.endCursor : null
+    if (!next || nodes.length >= MAX_PRS) break
+    after = next
+  }
+  return { list: { issueCount, nodes }, errors, first: first as Page }
 }
 
 export async function fetchPullRequests(
@@ -830,23 +929,31 @@ export async function fetchPullRequests(
   fetchFn: FetchFn = fetch
 ): Promise<FetchResult> {
   const queries = searchQueries(settings)
-  const { body, response } = await graphqlRequest<RawResponse>(
-    token,
-    PULL_REQUESTS_QUERY,
-    {
-      requested: queries.requested,
-      mine: queries.mine,
-      involved: queries.involved,
-      first: PAGE_SIZE,
-      login: login ?? '',
-      withMyReview: Boolean(login),
-      withInvolved: settings.showInvolved ?? true
+  const variables = {
+    requested: queries.requested,
+    mine: queries.mine,
+    involved: queries.involved,
+    login: login ?? '',
+    withMyReview: Boolean(login)
+  }
+  const [requested, mine, involved] = await Promise.all([
+    fetchPages<RawPr>(token, PULL_REQUESTS_QUERY, 'requested', variables, fetchFn),
+    fetchPages<RawMyPr>(token, PULL_REQUESTS_QUERY, 'mine', variables, fetchFn),
+    (settings.showInvolved ?? true) ? fetchPages<RawPr>(token, PULL_REQUESTS_QUERY, 'involved', variables, fetchFn) : null
+  ])
+  const errors = [...requested.errors, ...mine.errors, ...(involved?.errors ?? [])]
+  const body: RawResponse = {
+    data: {
+      viewer: requested.first.body.data?.viewer as Viewer,
+      requested: requested.list,
+      mine: mine.list,
+      ...(involved ? { involved: involved.list } : {})
     },
-    fetchFn
-  )
+    ...(errors.length ? { errors } : {})
+  }
   const result = mapResponse(body)
   if (queries.truncated) result.warnings.push({ code: 'filters_truncated' })
-  return { ...result, tokenExpiration: response.headers.get('github-authentication-token-expiration') }
+  return { ...result, tokenExpiration: requested.first.response.headers.get('github-authentication-token-expiration') }
 }
 
 const PR_DETAIL_QUERY = /* GraphQL */ `

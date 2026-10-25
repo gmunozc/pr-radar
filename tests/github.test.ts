@@ -111,22 +111,44 @@ describe('search exclusions', () => {
         viewer: { login: 'me', avatarUrl: 'x' },
         requested: search([]),
         mine: search([]),
-        involved: search([rawPr({ id: 'I1', reviewRequests: undefined })], 60)
+        involved: search([rawPr({ id: 'I1', reviewRequests: undefined })], 160)
       }
     })
-    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(body))
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => body.clone()))
     expect(result.involved[0]).toMatchObject({ id: 'I1', source: { kind: 'involved' }, viewerDidAuthor: false })
-    expect(result.warnings).toContainEqual({ code: 'truncated_involved', params: { shown: 1, total: 60 } })
+    expect(result.warnings).toContainEqual({ code: 'truncated_involved', params: { shown: 1, total: 160 } })
   })
 
-  it('asks for the involved search only while the tab is on', async () => {
+  it('reads each list in its own request, the involved one only while the tab is on', async () => {
     const fetchFn = vi.fn().mockImplementation(async () => ok([]))
+    const asked = () => fetchFn.mock.calls.map((c) => JSON.parse(c[1].body).variables)
     await fetchPullRequests('tok', { ...settings, showInvolved: false }, 'me', fetchFn)
-    const variables = JSON.parse(fetchFn.mock.calls[0][1].body).variables
-    expect(variables.withInvolved).toBe(false)
-    expect(variables.involved).toBe('is:pr is:open archived:false involves:@me -author:@me -review-requested:@me')
+    expect(asked().map((v) => [v.withRequested, v.withMine, v.withInvolved])).toEqual([
+      [true, false, false],
+      [false, true, false]
+    ])
+    expect(asked()[0].involved).toBe('is:pr is:open archived:false involves:@me -author:@me -review-requested:@me')
+    fetchFn.mockClear()
     await fetchPullRequests('tok', settings, 'me', fetchFn)
-    expect(JSON.parse(fetchFn.mock.calls[1][1].body).variables.withInvolved).toBe(true)
+    expect(asked().map((v) => v.withInvolved)).toEqual([false, false, true])
+  })
+
+  it('follows the pages of a list and stops at the last one', async () => {
+    const page = (ids: string[], endCursor: string | null) => ({
+      issueCount: 3,
+      pageInfo: { hasNextPage: endCursor !== null, endCursor },
+      nodes: ids.map((id) => rawMyPr({ id }))
+    })
+    const fetchFn = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      const v = JSON.parse(init.body as string).variables
+      const mine = v.withMine ? (v.after === 'c1' ? page(['M3'], null) : page(['M1', 'M2'], 'c1')) : search([])
+      return jsonResponse({ data: { viewer: { login: 'me', avatarUrl: 'x' }, requested: search([]), mine, involved: search([]) } })
+    })
+    const result = await fetchPullRequests('tok', settings, 'me', fetchFn)
+    expect(result.myPrs.map((p) => p.id).sort()).toEqual(['M1', 'M2', 'M3'])
+    expect(result.warnings).toEqual([])
+    const mineCalls = fetchFn.mock.calls.map((c) => JSON.parse(c[1].body).variables).filter((v) => v.withMine)
+    expect(mineCalls.map((v) => v.after)).toEqual([null, 'c1'])
   })
 
   it("stays quiet when GitHub's count and its results disagree by a few, as happens right after a merge", async () => {
@@ -136,15 +158,15 @@ describe('search exclusions', () => {
       mine: search(Array.from({ length: n }, (_, i) => rawMyPr({ id: `M${i}` })), issueCount),
       involved: search([])
     })
-    const few = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(jsonResponse({ data: page(13, 14) })))
+    const few = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => jsonResponse({ data: page(13, 14) })))
     expect(few.warnings).toEqual([])
-    const overflow = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(jsonResponse({ data: page(50, 51) })))
-    expect(overflow.warnings).toContainEqual({ code: 'truncated_mine', params: { shown: 50, total: 51 } })
+    const overflow = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => jsonResponse({ data: page(100, 101) })))
+    expect(overflow.warnings).toContainEqual({ code: 'truncated_mine', params: { shown: 100, total: 101 } })
   })
 
   it('warns when exclusions were truncated', async () => {
     const excludeRepos = Array.from({ length: 30 }, (_, i) => `acme/repository-number-${i}`)
-    const result = await fetchPullRequests('tok', { ...settings, excludeRepos }, 'me', vi.fn().mockResolvedValue(ok([])))
+    const result = await fetchPullRequests('tok', { ...settings, excludeRepos }, 'me', vi.fn().mockImplementation(async () => ok([])))
     expect(result.warnings).toEqual([{ code: 'filters_truncated' }])
   })
 })
@@ -188,7 +210,7 @@ describe('fetchPullRequests', () => {
         ]
       }
     })
-    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockResolvedValue(ok([], {}, [older, newer])))
+    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockImplementation(async () => ok([], {}, [older, newer])))
 
     expect(result.myPrs.map((p) => p.id)).toEqual(['MY_2', 'MY_1'])
     expect(result.myPrs[0]).toMatchObject({
@@ -212,7 +234,7 @@ describe('fetchPullRequests', () => {
       createdAt: '2026-09-01T00:00:00Z',
       reviewRequests: { nodes: [{ requestedReviewer: { __typename: 'Team', slug: 'frontend' } }] }
     })
-    const fetchFn = vi.fn().mockResolvedValue(ok([rawPr(), team, {}]))
+    const fetchFn = vi.fn().mockImplementation(async () => ok([rawPr(), team, {}]))
 
     const result = await fetchPullRequests('tok', settings, undefined, fetchFn)
 
@@ -233,12 +255,12 @@ describe('fetchPullRequests', () => {
 
   it('labels a hidden team reviewer as an unnamed team', async () => {
     const pr = rawPr({ reviewRequests: { nodes: [{ requestedReviewer: null }] } })
-    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockResolvedValue(ok([pr])))
+    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockImplementation(async () => ok([pr])))
     expect(result.prs[0].source).toEqual({ kind: 'team', slug: '' })
   })
 
   it('surfaces SAML partial results as a warning', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
+    const fetchFn = vi.fn().mockImplementation(async () => 
       ok([rawPr()], {
         errors: [{ type: 'FORBIDDEN', message: 'Resource protected by organization SAML enforcement.' }]
       })
@@ -250,20 +272,20 @@ describe('fetchPullRequests', () => {
 
   it('warns when results are truncated', async () => {
     const res = jsonResponse({
-      data: { viewer: { login: 'me', avatarUrl: 'x' }, requested: search([rawPr()], 80), mine: search([]) }
+      data: { viewer: { login: 'me', avatarUrl: 'x' }, requested: search([rawPr()], 180), mine: search([]) }
     })
-    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockResolvedValue(res))
-    expect(result.warnings).toContainEqual({ code: 'truncated_requested', params: { shown: 1, total: 80 } })
+    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockImplementation(async () => res.clone()))
+    expect(result.warnings).toContainEqual({ code: 'truncated_requested', params: { shown: 1, total: 180 } })
   })
 
   it('classifies 401 as unauthorized', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ message: 'Bad credentials' }, { status: 401 }))
+    const fetchFn = vi.fn().mockImplementation(async () => jsonResponse({ message: 'Bad credentials' }, { status: 401 }))
     await expect(fetchPullRequests('tok', settings, undefined, fetchFn)).rejects.toMatchObject({ kind: 'unauthorized' })
   })
 
   it('classifies rate limits and exposes the reset time', async () => {
     const reset = Math.floor(Date.now() / 1000) + 600
-    const fetchFn = vi.fn().mockResolvedValue(
+    const fetchFn = vi.fn().mockImplementation(async () => 
       jsonResponse(
         { message: 'API rate limit exceeded' },
         { status: 403, headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(reset) } }
@@ -281,7 +303,7 @@ describe('fetchPullRequests', () => {
   })
 
   it('throws when GraphQL returns only errors', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: null, errors: [{ message: 'boom' }] }))
+    const fetchFn = vi.fn().mockImplementation(async () => jsonResponse({ data: null, errors: [{ message: 'boom' }] }))
     await expect(fetchPullRequests('tok', settings, undefined, fetchFn)).rejects.toMatchObject({
       kind: 'unknown',
       message: 'boom'
@@ -350,8 +372,9 @@ describe('fetchPullRequests details', () => {
     const fetchFn = vi.fn().mockImplementation(async () => ok([]))
     await fetchPullRequests('tok', settings, undefined, fetchFn)
     expect(JSON.parse(fetchFn.mock.calls[0][1].body).variables).toMatchObject({ login: '', withMyReview: false })
+    fetchFn.mockClear()
     await fetchPullRequests('tok', settings, 'me', fetchFn)
-    expect(JSON.parse(fetchFn.mock.calls[1][1].body).variables).toMatchObject({ login: 'me', withMyReview: true })
+    expect(JSON.parse(fetchFn.mock.calls[0][1].body).variables).toMatchObject({ login: 'me', withMyReview: true })
   })
 
   it('maps CI, head commit, review freshness and merge readiness', async () => {
@@ -367,7 +390,7 @@ describe('fetchPullRequests details', () => {
       mergeStateStatus: 'CLEAN',
       commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] }
     })
-    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([reviewed], {}, [mine])))
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => ok([reviewed], {}, [mine])))
     expect(result.prs[0]).toMatchObject({ ci: 'failure', headOid: 'new', newCommitsSinceReview: true, lastReviewAt: '2026-09-30T12:00:00Z' })
     expect(result.myPrs[0]).toMatchObject({ ci: 'success', readyToMerge: true, blocker: null, conflicts: false })
   })
@@ -378,7 +401,7 @@ describe('fetchPullRequests details', () => {
       { type: 'FORBIDDEN', message: 'Resource not accessible by integration', path: ['mine', 'nodes', 0, 'commits', 'nodes', 0, 'commit', 'statusCheckRollup'] },
       { type: 'FORBIDDEN', message: 'Resource not accessible by integration', path: ['mine', 'nodes', 0, 'mergeable'] }
     ]
-    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([rawPr()], { errors }, [mine])))
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => ok([rawPr()], { errors }, [mine])))
     expect(result.prs[0].ci).toBe('unknown')
     expect(result.myPrs[0]).toMatchObject({ ci: 'unknown', readyToMerge: false, blocker: null })
     expect(result.warnings).toEqual([
@@ -413,7 +436,7 @@ describe('fetchPullRequests merge details', () => {
       reviewThreads: { totalCount: 3, nodes: [{ isResolved: true }, { isResolved: false }, { isResolved: false }] },
       latestOpinionatedReviews: { nodes: [{ state: 'APPROVED', author: { id: 'U_1', login: 'ana', avatarUrl: 'a' } }] }
     })
-    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], {}, [mine])))
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => ok([], {}, [mine])))
     expect(result.myPrs[0]).toMatchObject({
       branch: 'feature/x',
       baseBranch: 'main',
@@ -432,7 +455,7 @@ describe('fetchPullRequests merge details', () => {
     const clean = rawMyPr({ mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' })
     const draft = rawMyPr({ id: 'D', isDraft: true, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN' })
     const blocked = rawMyPr({ id: 'B', mergeable: 'MERGEABLE', mergeStateStatus: 'BLOCKED' })
-    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], {}, [clean, draft, blocked])))
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => ok([], {}, [clean, draft, blocked])))
     const byId = Object.fromEntries(result.myPrs.map((p) => [p.id, p]))
     expect(byId.PR_1).toMatchObject({ mergeable: true, readyToMerge: false, status: 'no_reviewers' })
     expect(byId.D.mergeable).toBe(false)
@@ -440,7 +463,7 @@ describe('fetchPullRequests merge details', () => {
   })
 
   it('reports nothing when the repository fields are missing', async () => {
-    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], {}, [rawMyPr()])))
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => ok([], {}, [rawMyPr()])))
     expect(result.myPrs[0]).toMatchObject({
       branch: '',
       baseBranch: '',
@@ -482,7 +505,7 @@ describe('fetchPullRequests merge details', () => {
         ]
       }
     })
-    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([pr])))
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => ok([pr])))
     expect(result.prs[0]).toMatchObject({
       branch: 'fix/login',
       viewerDidAuthor: true,
@@ -505,7 +528,7 @@ describe('fetchPullRequests merge details', () => {
       { type: 'FORBIDDEN', message: 'Resource not accessible', path: ['mine', 'nodes', 0, 'reviewThreads'] }
     ]
     const mine = rawMyPr({ baseRef: null, reviewThreads: null })
-    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], { errors }, [mine])))
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => ok([], { errors }, [mine])))
     expect(result.warnings).toEqual([])
     expect(result.myPrs[0]).toMatchObject({ requiredApprovals: null, unresolvedThreads: null })
   })
@@ -544,7 +567,7 @@ describe('mergeOptions', () => {
 
 describe('graphqlRequest', () => {
   it('posts the document and returns the parsed body with the response', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
+    const fetchFn = vi.fn().mockImplementation(async () => 
       jsonResponse({ data: { ok: true } }, { headers: { 'content-type': 'application/json', 'x-test': '1' } })
     )
     const { body, response } = await graphqlRequest<{ data: { ok: boolean } }>('tok', 'query { x }', { a: 1 }, fetchFn)
@@ -557,19 +580,19 @@ describe('graphqlRequest', () => {
   })
 
   it('turns a server error into an unknown GithubError', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({}, { status: 502, statusText: 'Bad Gateway' }))
+    const fetchFn = vi.fn().mockImplementation(async () => jsonResponse({}, { status: 502, statusText: 'Bad Gateway' }))
     await expect(graphqlRequest('tok', 'query { x }', {}, fetchFn)).rejects.toMatchObject({ kind: 'unknown' })
   })
 })
 
 describe('fetchPullRequestDetail', () => {
   it('maps the description and counts, and reports a missing PR as null', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
+    const fetchFn = vi.fn().mockImplementation(async () => 
       jsonResponse({ data: { node: { body: ' Hello ', changedFiles: 3, totalCommentsCount: 2, commits: { totalCount: 4 } } } })
     )
     await expect(fetchPullRequestDetail('tok', 'PR_1', fetchFn)).resolves.toEqual({ body: 'Hello', changedFiles: 3, commits: 4, comments: 2 })
     expect(JSON.parse(fetchFn.mock.calls[0][1].body).variables).toEqual({ id: 'PR_1' })
-    await expect(fetchPullRequestDetail('tok', 'PR_x', vi.fn().mockResolvedValue(jsonResponse({ data: { node: null } })))).resolves.toBeNull()
+    await expect(fetchPullRequestDetail('tok', 'PR_x', vi.fn().mockImplementation(async () => jsonResponse({ data: { node: null } })))).resolves.toBeNull()
   })
 })
 
@@ -577,7 +600,7 @@ describe('GitHub App installations', () => {
   const full = { pull_requests: 'read', checks: 'read', statuses: 'read', metadata: 'read' }
 
   it('lists the accounts where the app is installed', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
+    const fetchFn = vi.fn().mockImplementation(async () => 
       jsonResponse({
         total_count: 2,
         installations: [
@@ -607,7 +630,7 @@ describe('GitHub App installations', () => {
   })
 
   it('reports an expired token as unauthorized', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ message: 'Bad credentials' }, { status: 401 }))
+    const fetchFn = vi.fn().mockImplementation(async () => jsonResponse({ message: 'Bad credentials' }, { status: 401 }))
     await expect(fetchInstallations('ghu_x', fetchFn)).rejects.toMatchObject({ kind: 'unauthorized' })
   })
 })
@@ -652,12 +675,12 @@ describe('change probes', () => {
   })
 
   it('asks for the same searches as the full query and fails without data', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(jsonResponse({ data: data([probePr('a')]) }))
+    const fetchFn = vi.fn().mockImplementation(async () => jsonResponse({ data: data([probePr('a')]) }))
     await expect(fetchFingerprint('tok', { ...settings, showInvolved: false }, fetchFn)).resolves.toHaveLength(16)
     const { query, variables } = JSON.parse(fetchFn.mock.calls[0][1].body)
     expect(query).toBe(PROBE_QUERY)
-    expect(variables).toMatchObject({ requested: searchQueries(settings).requested, withInvolved: false, first: 50 })
-    const noData = vi.fn().mockResolvedValue(jsonResponse({ data: null, errors: [{ message: 'nope' }] }))
+    expect(variables).toMatchObject({ requested: searchQueries(settings).requested, withRequested: true, withInvolved: false, first: 20 })
+    const noData = vi.fn().mockImplementation(async () => jsonResponse({ data: null, errors: [{ message: 'nope' }] }))
     await expect(fetchFingerprint('tok', settings, noData)).rejects.toMatchObject({ kind: 'unknown', message: 'nope' })
   })
 })
@@ -687,7 +710,7 @@ describe('mergeReviews', () => {
 
   it('turns "no reviewers" into "waiting" once someone has commented', async () => {
     const mine = rawMyPr({ reviewDecision: 'REVIEW_REQUIRED', latestReviews: { nodes: [review('claude', 'COMMENTED'), review('dan', 'COMMENTED')] } })
-    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockResolvedValue(ok([], {}, [mine])))
+    const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => ok([], {}, [mine])))
     expect(result.myPrs[0]).toMatchObject({ status: 'waiting', reviews: [{ login: 'claude', state: 'COMMENTED' }, { login: 'dan', state: 'COMMENTED' }] })
   })
 })
@@ -698,9 +721,9 @@ describe('fetchFirstUnresolvedThread', () => {
 
   it("returns the first unresolved thread's first comment, null when all are resolved or the PR is unknown", async () => {
     const mixed = threads([thread(true, 'https://x/1'), null, thread(false, 'https://x/2'), thread(false, 'https://x/3')])
-    await expect(fetchFirstUnresolvedThread('tok', 'PR_1', vi.fn().mockResolvedValue(mixed))).resolves.toBe('https://x/2')
-    await expect(fetchFirstUnresolvedThread('tok', 'PR_1', vi.fn().mockResolvedValue(threads([thread(true, 'https://x/1')])))).resolves.toBeNull()
-    await expect(fetchFirstUnresolvedThread('tok', 'PR_x', vi.fn().mockResolvedValue(jsonResponse({ data: { node: null } })))).resolves.toBeNull()
+    await expect(fetchFirstUnresolvedThread('tok', 'PR_1', vi.fn().mockImplementation(async () => mixed))).resolves.toBe('https://x/2')
+    await expect(fetchFirstUnresolvedThread('tok', 'PR_1', vi.fn().mockImplementation(async () => threads([thread(true, 'https://x/1')])))).resolves.toBeNull()
+    await expect(fetchFirstUnresolvedThread('tok', 'PR_x', vi.fn().mockImplementation(async () => jsonResponse({ data: { node: null } })))).resolves.toBeNull()
   })
 })
 
@@ -724,11 +747,11 @@ describe('fetchPrOutcome', () => {
   const ref = { id: 'M1', number: 7, title: 'Done', url: 'https://github.com/acme/app/pull/7', repo: 'acme/app' }
 
   it('tells merged from closed and open, naming who did it', async () => {
-    const merged = vi.fn().mockResolvedValue(node({ state: 'MERGED', mergedBy: { login: 'ana' } }))
+    const merged = vi.fn().mockImplementation(async () => node({ state: 'MERGED', mergedBy: { login: 'ana' } }))
     await expect(fetchPrOutcome('tok', 'M1', merged)).resolves.toEqual({ state: 'merged', pr: ref, by: 'ana' })
-    const closed = vi.fn().mockResolvedValue(node({ state: 'CLOSED', timelineItems: { nodes: [{ actor: { login: 'bob' } }] } }))
+    const closed = vi.fn().mockImplementation(async () => node({ state: 'CLOSED', timelineItems: { nodes: [{ actor: { login: 'bob' } }] } }))
     await expect(fetchPrOutcome('tok', 'M1', closed)).resolves.toEqual({ state: 'closed', pr: ref, by: 'bob' })
-    await expect(fetchPrOutcome('tok', 'M1', vi.fn().mockResolvedValue(node({})))).resolves.toEqual({ state: 'open' })
-    await expect(fetchPrOutcome('tok', 'M1', vi.fn().mockResolvedValue(jsonResponse({ data: { node: null } })))).resolves.toBeNull()
+    await expect(fetchPrOutcome('tok', 'M1', vi.fn().mockImplementation(async () => node({})))).resolves.toEqual({ state: 'open' })
+    await expect(fetchPrOutcome('tok', 'M1', vi.fn().mockImplementation(async () => jsonResponse({ data: { node: null } })))).resolves.toBeNull()
   })
 })

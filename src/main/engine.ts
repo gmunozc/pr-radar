@@ -318,10 +318,14 @@ export class Engine {
       const code = err instanceof GithubError ? err.kind : 'network'
       const retryAt = err instanceof GithubError ? err.retryAt : undefined
       this.connection = this.connectionAfterFailure(code)
+      // One failed poll is a blip (GitHub's gateway, a dropped connection) that the next poll,
+      // seconds away, usually undoes: the banner waits for a second one. A rate limit is told
+      // right away, since it says when to retry.
+      const shown = code === 'rate_limited' || this.failures >= OFFLINE_AFTER_FAILURES || !this.current.viewer
       this.publish({
         ...this.current,
         status: this.current.viewer ? 'ready' : 'error',
-        error: { code, detail: (err as Error).message, retryAt },
+        error: shown ? { code, detail: (err as Error).message, retryAt } : this.current.error,
         connection: this.connection
       })
       return { retryAt }
@@ -335,7 +339,7 @@ export class Engine {
    */
   async probe(): Promise<ProbeResult> {
     const fetchFingerprint = this.deps.fetchFingerprint
-    if (!fetchFingerprint || !this.deps.session.current || this.current.status !== 'ready' || this.current.error) {
+    if (!fetchFingerprint || !this.deps.session.current || this.current.status !== 'ready' || this.failures > 0) {
       return { outcome: 'skipped' }
     }
     try {
