@@ -40,7 +40,7 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **Teclado:** las flechas recorren los PRs, Enter abre, ⌘C copia el enlace, A aprueba, S pospone 1 hora, T hasta mañana, D descarta, M abre el menú (también clic derecho o Shift+F10), ⌘F busca, Escape cierra el panel, ⌘R actualiza, ⌘1/⌘2/⌘3 cambian de pestaña y ⌘, abre Ajustes. Un atajo global (Ajustes → General) abre el panel desde cualquier app.
 - **Horario laboral (opcional):** fuera de él, los avisos esperan y llegan juntos en un solo resumen "Mientras no estabas".
 - **Resumen diario** con lo pendiente, en días laborables y a la hora que elijas, con las reviews que llevan demasiados días esperando; con el resumen apagado, ese recordatorio llega igual, solo.
-- **Copiar la lista** en Markdown desde el pie de cada pestaña: los PRs que se muestran, con su enlace, autor o estado y antigüedad, listos para un stand-up o un mensaje de Slack.
+- **Pie del panel:** en Por revisar, filtra por uno o varios de los repositorios que te piden review; en todas las pestañas, abre la lista en GitHub o copia los enlaces de los PRs que se muestran, uno por línea, listos para un mensaje.
 - **En inglés y en español**, según el idioma del sistema o lo que elijas en Ajustes.
 - **Aviso de versión nueva.** En macOS, **Instalar** descarga el dmg, lo comprueba contra el `SHA256SUMS.txt` de la Release y lo abre; en otros sistemas enlaza a la Release.
 - **Tamaño del panel** (compacto, normal, grande) en Ajustes → General.

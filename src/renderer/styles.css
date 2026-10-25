@@ -668,16 +668,102 @@ html[data-platform='darwin'] .tab-active {
 
 .footer {
   display: flex;
-  justify-content: center;
-  align-items: baseline;
-  gap: 14px;
-  padding: 8px 14px 10px;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 7px 10px;
   border-top: 1px solid var(--border);
 }
 
 .dismissed {
   font-size: 12px;
   color: var(--text-faint);
+}
+
+.footer .dismissed {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.footer-actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  margin-left: auto;
+}
+
+/* Repository filter: a select-like button and a list that opens upwards */
+.repo-filter {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.repo-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.repo-filter-btn:hover {
+  background: var(--surface-hover);
+}
+
+.repo-filter-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* More specific than `.menu` below, which places row menus under their row. */
+.menu.repo-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: auto;
+  min-width: 230px;
+  max-width: 320px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.repo-option {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+}
+
+.repo-option-check {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  flex: none;
+  color: var(--accent);
+}
+
+.repo-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-option-count {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Controls */

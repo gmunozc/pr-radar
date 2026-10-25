@@ -35,7 +35,7 @@ src/main/          main process
   index.ts         composition root: wires the engine to Electron (tray, panel, IPC, timers)
 src/preload/       typed bridge exposed to the panel as window.prRadar
 src/renderer/      the panel (React); its pure parts live beside it: arrange.ts (filters, search), markdown.ts (description
-                   parser), listMarkdown.ts (copy list), rowMenu.ts (shared menu entries), muteRepos.ts
+                   parser), rowMenu.ts (shared menu entries), muteRepos.ts
 src/shared/        types and i18n dictionaries shared by both sides
 tests/             vitest unit tests (run with TZ=UTC)
 ```

@@ -8,18 +8,37 @@ const byOldest = (a: Dated, b: Dated) => a.createdAt.localeCompare(b.createdAt)
 const byUpdated = (a: Dated, b: Dated) => b.updatedAt.localeCompare(a.updatedAt)
 
 const inOrg = (pr: { repo: string }, org: string | null) => org === null || pr.repo.split('/')[0] === org
+const inRepos = (pr: { repo: string }, repos: readonly string[]) => repos.length === 0 || repos.includes(pr.repo)
 
 /** A sorted copy; the sort names are the ones the settings store. */
 export function sortPrs<T extends Dated>(prs: T[], sort: ReviewSort): T[] {
   return [...prs].sort(sort === 'oldest' ? byOldest : sort === 'updated' ? byUpdated : byNewest)
 }
 
-/** Review requests after the filter, organization and sort chosen by the user. */
-export function arrangePrs(prs: PullRequest[], filter: ReviewFilter, org: string | null, sort: ReviewSort): PullRequest[] {
+/** Review requests after the filter, organization, repositories (none = all) and sort chosen by the user. */
+export function arrangePrs(
+  prs: PullRequest[],
+  filter: ReviewFilter,
+  org: string | null,
+  sort: ReviewSort,
+  repos: readonly string[] = []
+): PullRequest[] {
   return sortPrs(
-    prs.filter((pr) => (filter === 'all' || pr.source.kind === filter) && inOrg(pr, org)),
+    prs.filter((pr) => (filter === 'all' || pr.source.kind === filter) && inOrg(pr, org) && inRepos(pr, repos)),
     sort
   )
+}
+
+/** The repositories of a list with how many PRs each has, by name: the footer's filter. */
+export function reposOf(prs: ReadonlyArray<{ repo: string }>): Array<{ repo: string; count: number }> {
+  const counts = new Map<string, number>()
+  for (const pr of prs) counts.set(pr.repo, (counts.get(pr.repo) ?? 0) + 1)
+  return [...counts].map(([repo, count]) => ({ repo, count })).sort((a, b) => a.repo.localeCompare(b.repo))
+}
+
+/** The links of the PRs shown, one per line: the footer's copy button. */
+export function linksText(prs: ReadonlyArray<{ url: string }>): string {
+  return prs.map((pr) => pr.url).join('\n')
 }
 
 const MINE_MATCH: Record<MyPrFilter, (pr: MyPullRequest) => boolean> = {

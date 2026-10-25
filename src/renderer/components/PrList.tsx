@@ -1,14 +1,15 @@
 import { useMemo, useRef } from 'react'
 import type { AppState, ReviewFilter, ReviewSort } from '../../shared/types'
-import { arrangePrs, filterByQuery } from '../arrange'
+import { arrangePrs, filterByQuery, reposOf } from '../arrange'
 import { CheckCircleIcon, PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
 import { useSettings } from '../useSettings'
 import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
-import { CopyListButton } from './CopyListButton'
+import { FooterActions } from './FooterActions'
 import { PrItem } from './PrItem'
+import { RepoFilter } from './RepoFilter'
 import { Segmented } from './Segmented'
 
 const REVIEW_REQUESTED_URL = 'https://github.com/pulls/review-requested'
@@ -42,9 +43,12 @@ interface ListProps {
   /** The organization filter, kept by App so it survives tab switches. */
   org?: string | null
   onOrg?(org: string | null): void
+  /** The footer's repository filter (none = all), kept by App so it survives tab switches. */
+  repos?: readonly string[]
+  onRepos?(repos: string[]): void
 }
 
-export function PrList({ state, onDetail, focusPrId, onFocused, query = '', org = null, onOrg }: ListProps) {
+export function PrList({ state, onDetail, focusPrId, onFocused, query = '', org = null, onOrg, repos = [], onRepos }: ListProps) {
   const listRef = useRef<HTMLElement>(null)
   useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
@@ -56,9 +60,12 @@ export function PrList({ state, onDetail, focusPrId, onFocused, query = '', org 
   const orgs = useMemo(() => [...new Set(state.prs.map((pr) => pr.repo.split('/')[0]))].sort(), [state.prs])
   // An organization chosen on another tab may not exist here: then it filters nothing.
   const activeOrg = org && orgs.includes(org) ? org : null
+  const repoOptions = useMemo(() => reposOf(state.prs), [state.prs])
+  // A repository chosen earlier may have no request left: then it filters nothing.
+  const activeRepos = useMemo(() => repos.filter((r) => repoOptions.some((o) => o.repo === r)), [repos, repoOptions])
   const shown = useMemo(
-    () => filterByQuery(arrangePrs(state.prs, filter, activeOrg, sort), query),
-    [state.prs, filter, activeOrg, sort, query]
+    () => filterByQuery(arrangePrs(state.prs, filter, activeOrg, sort, activeRepos), query),
+    [state.prs, filter, activeOrg, sort, activeRepos, query]
   )
 
   if (state.status === 'loading' && state.prs.length === 0) {
@@ -172,13 +179,11 @@ export function PrList({ state, onDetail, focusPrId, onFocused, query = '', org 
         ))}
       </main>
       <footer className="footer">
-        <button className="link" onClick={() => void window.prRadar.openExternal(REVIEW_REQUESTED_URL)}>
-          {t('list.viewAll')}
-        </button>
-        <CopyListButton prs={shown} />
+        <RepoFilter options={repoOptions} selected={activeRepos} onChange={(next) => onRepos?.(next)} />
         {state.dismissedCount + state.snoozedCount > 0 && (
           <RestoreHidden dismissed={state.dismissedCount} snoozed={state.snoozedCount} />
         )}
+        <FooterActions prs={shown} githubUrl={REVIEW_REQUESTED_URL} githubLabel={t('list.viewAll')} />
       </footer>
     </>
   )

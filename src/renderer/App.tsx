@@ -40,6 +40,8 @@ function Panel() {
   const focused = useCallback(() => setFocusPrId(null), [])
   /** The organization filter, shared by the review and mine lists so it survives tab switches. */
   const [org, setOrg] = useState<string | null>(null)
+  /** The review tab's repository filter (none = all); kept here so it survives tab switches. */
+  const [reviewRepos, setReviewRepos] = useState<string[]>([])
   /** The ⌘F text filter, shared by the three tabs. */
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -95,6 +97,7 @@ function Panel() {
       setView('list')
       setTab('review')
       setOrg(null)
+      setReviewRepos([])
     }
   }, [state?.status])
 
@@ -181,7 +184,17 @@ function Panel() {
           />
           {(searchOpen || query) && <SearchRow value={query} onChange={setQuery} onClose={closeSearch} focusToken={searchFocus} />}
           {tab === 'review' ? (
-            <PrList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} query={query} org={org} onOrg={setOrg} />
+            <PrList
+              state={state}
+              onDetail={openDetail}
+              focusPrId={focusPrId}
+              onFocused={focused}
+              query={query}
+              org={org}
+              onOrg={setOrg}
+              repos={reviewRepos}
+              onRepos={setReviewRepos}
+            />
           ) : tab === 'mine' ? (
             <MyPrList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} query={query} org={org} onOrg={setOrg} />
           ) : (

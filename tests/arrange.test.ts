@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { arrangeMyPrs, arrangePrs, filterByQuery, matchesQuery, tabFor } from '../src/renderer/arrange'
+import { arrangeMyPrs, arrangePrs, filterByQuery, linksText, matchesQuery, reposOf, tabFor } from '../src/renderer/arrange'
 import { myPr, pr } from './fixtures'
 
 const a = pr('a', { createdAt: '2026-01-03T00:00:00Z', updatedAt: '2026-01-03T00:00:00Z', repo: 'acme/app' })
@@ -24,6 +24,28 @@ describe('arrangePrs', () => {
     const input = [a, b, c]
     arrangePrs(input, 'all', null, 'oldest')
     expect(input.map((p) => p.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('keeps only the chosen repositories, all of them when none is chosen', () => {
+    expect(arrangePrs([a, b, c], 'all', null, 'newest', ['acme/web', 'globex/api']).map((p) => p.id)).toEqual(['c', 'b'])
+    expect(arrangePrs([a, b, c], 'all', null, 'newest', []).map((p) => p.id)).toEqual(['a', 'c', 'b'])
+    expect(arrangePrs([a, b, c], 'team', 'acme', 'newest', ['acme/app'])).toEqual([])
+  })
+})
+
+describe('footer helpers', () => {
+  it('lists the repositories of a list with their counts, by name', () => {
+    expect(reposOf([a, b, c, pr('d', { repo: 'acme/web' })])).toEqual([
+      { repo: 'acme/app', count: 1 },
+      { repo: 'acme/web', count: 2 },
+      { repo: 'globex/api', count: 1 }
+    ])
+    expect(reposOf([])).toEqual([])
+  })
+
+  it('copies the links shown, one per line', () => {
+    expect(linksText([a, c])).toBe(`${a.url}\n${c.url}`)
+    expect(linksText([])).toBe('')
   })
 })
 

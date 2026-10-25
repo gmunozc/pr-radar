@@ -40,7 +40,7 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 - **Keyboard:** arrows move between PRs, Enter opens, ⌘C copies the link, A approves, S snoozes for an hour, T until tomorrow, D dismisses, M opens the menu (right-click or Shift+F10 too), ⌘F searches, Escape closes the panel, ⌘R refreshes, ⌘1/⌘2/⌘3 switch tabs, ⌘, opens Settings. A global shortcut (Settings → General) opens the panel from any app.
 - **Working hours (optional):** outside them, notifications wait and arrive together as one "While you were away" summary.
 - **Daily summary** of what's pending, on working days at the time you choose, with the review requests that have waited too long; with the summary off, that reminder still arrives on its own.
-- **Copy the list** as Markdown from the footer of each tab: the PRs shown, with their links, authors or status and age, ready for a stand-up or a Slack message.
+- **Footer:** on the Review tab, filter by one or several of the repositories asking for your review; on every tab, open the list on GitHub or copy the links of the PRs shown, one per line, ready for a message.
 - **English and Spanish**, following the system language or your choice in Settings.
 - **New version notice.** On macOS, **Install** downloads the dmg, checks it against the release's `SHA256SUMS.txt` and opens it; elsewhere it links to the release.
 - **Panel size** (compact, default, large) in Settings → General.

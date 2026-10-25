@@ -7,7 +7,7 @@ import { arrangeMyPrs, filterByQuery } from '../arrange'
 import { useSettings } from '../useSettings'
 import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
-import { CopyListButton } from './CopyListButton'
+import { FooterActions } from './FooterActions'
 import { MyPrItem } from './MyPrItem'
 import { Segmented } from './Segmented'
 
@@ -115,10 +115,7 @@ export function MyPrList({ state, onDetail, focusPrId, onFocused, query = '', or
         ))}
       </main>
       <footer className="footer">
-        <button className="link" onClick={() => void window.prRadar.openExternal(MY_PULLS_URL)}>
-          {t('mine.viewAll')}
-        </button>
-        <CopyListButton prs={shown} />
+        <FooterActions prs={shown} githubUrl={MY_PULLS_URL} githubLabel={t('mine.viewAll')} />
       </footer>
     </>
   )
