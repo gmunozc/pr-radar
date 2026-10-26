@@ -412,14 +412,21 @@ export function reviewSource(pr: RawPr, viewerLogin: string): ReviewSource {
   return { kind: 'team', slug: team?.slug ?? '' }
 }
 
-/** Summarizes where one of your PRs stands, using GitHub's review decision when the repo has one. */
+/**
+ * Summarizes where one of your PRs stands, using GitHub's review decision when the repo has one.
+ * `reviewStates` are the reviews that stand for you (see `mergeReviews`): when the only change
+ * requests come from reviewers you asked to review again, GitHub's "changes requested" decision
+ * means the PR waits on them, not on you.
+ */
 export function myReviewStatus(
   decision: ReviewDecision,
   pendingCount: number,
   reviewStates: ReviewState[]
 ): MyReviewStatus {
   if (decision === 'APPROVED') return 'approved'
-  if (decision === 'CHANGES_REQUESTED') return 'changes_requested'
+  if (decision === 'CHANGES_REQUESTED') {
+    return pendingCount > 0 && !reviewStates.includes('CHANGES_REQUESTED') ? 'waiting' : 'changes_requested'
+  }
   if (decision === null && reviewStates.includes('CHANGES_REQUESTED')) return 'changes_requested'
   if (pendingCount > 0) return 'waiting'
   // REVIEW_REQUIRED: branch protection still needs approvals.
@@ -432,15 +439,31 @@ export function myReviewStatus(
 /** Review states worth showing: decisions, comments, and dismissed decisions (the person did review). */
 const SHOWN_REVIEW_STATES: readonly ReviewState[] = ['APPROVED', 'CHANGES_REQUESTED', 'COMMENTED', 'DISMISSED']
 
+/** Logins of the users with a pending review request, lower case (teams aside). */
+const requestedLogins = (n: Pick<RawPr, 'reviewRequests'>): Set<string> =>
+  new Set(
+    (n.reviewRequests?.nodes ?? []).flatMap((x) =>
+      x.requestedReviewer?.__typename === 'User' && x.requestedReviewer.login ? [x.requestedReviewer.login.toLowerCase()] : []
+    )
+  )
+
 /**
  * One entry per reviewer. A standing decision (latest approval or change request) wins over a
  * later comment, the way GitHub's review decision does; comment-only and dismissed reviews come
- * from `latestReviews`. Your own comment reviews on your own PR are not reviews.
+ * from `latestReviews`. A reviewer you asked to review again is pending, whatever they said
+ * before: GitHub keeps their decision in `latestOpinionatedReviews` (and in the review decision)
+ * until they review again, but it is theirs to settle now. Your own comment reviews on your own
+ * PR are not reviews.
  */
-export function mergeReviews(n: Pick<RawMyPr, 'latestReviews' | 'latestOpinionatedReviews'>, viewerLogin: string): MyPullRequest['reviews'] {
+export function mergeReviews(
+  n: Pick<RawMyPr, 'latestReviews' | 'latestOpinionatedReviews' | 'reviewRequests'>,
+  viewerLogin: string
+): MyPullRequest['reviews'] {
+  const requested = requestedLogins(n)
   const out = new Map<string, MyPullRequest['reviews'][number]>()
   const add = (r: RawReview, states: readonly ReviewState[]) => {
-    if (!r.author || r.author.login === viewerLogin || !states.includes(r.state) || out.has(r.author.login)) return
+    if (!r.author || r.author.login === viewerLogin || requested.has(r.author.login.toLowerCase())) return
+    if (!states.includes(r.state) || out.has(r.author.login)) return
     out.set(r.author.login, {
       login: r.author.login,
       avatarUrl: r.author.avatarUrl,
@@ -452,6 +475,10 @@ export function mergeReviews(n: Pick<RawMyPr, 'latestReviews' | 'latestOpinionat
   for (const r of n.latestReviews?.nodes ?? []) add(r, SHOWN_REVIEW_STATES)
   return [...out.values()]
 }
+
+/** Approvals GitHub counts toward the branch protection: the standing ones, from reviewers asked again or not. */
+const standingApprovals = (n: Pick<RawMyPr, 'latestOpinionatedReviews'>, viewerLogin: string): number =>
+  (n.latestOpinionatedReviews?.nodes ?? []).filter((r) => r.state === 'APPROVED' && r.author && r.author.login !== viewerLogin).length
 
 export function ciFromRollup(state: string | null | undefined): CiState {
   switch (state) {
@@ -644,6 +671,7 @@ function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boo
     status,
     pendingReviewers,
     reviews,
+    approvals: standingApprovals(n, viewerLogin),
     readyToMerge: isReadyToMerge(merge),
     blocker: mergeBlocker(merge),
     conflicts: hasConflicts(merge),

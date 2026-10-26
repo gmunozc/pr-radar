@@ -140,6 +140,7 @@ const myBase = {
   author: people.you,
   viewerDidAuthor: true,
   pendingReviewers: [],
+  approvals: 0,
   readyToMerge: false,
   blocker: null,
   conflicts: false,
@@ -166,6 +167,7 @@ const mine: MyPullRequest[] = [
     headOid: 'm1',
     status: 'approved',
     reviews: [{ login: 'ana', avatarUrl: people.ana.avatarUrl, state: 'APPROVED', id: 'U_ana' }],
+    approvals: 1,
     readyToMerge: true,
     mergeable: true,
     labels: [{ name: 'frontend', color: '1d76db' }]
@@ -186,6 +188,7 @@ const mine: MyPullRequest[] = [
       { login: 'cris', avatarUrl: people.cris.avatarUrl, state: 'APPROVED', id: 'U_cris' },
       { login: 'ana', avatarUrl: people.ana.avatarUrl, state: 'COMMENTED', id: 'U_ana' }
     ],
+    approvals: 1,
     unresolvedThreads: 3,
     can: { ...myBase.can, updateBranch: true },
     blocker: null

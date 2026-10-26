@@ -179,6 +179,14 @@ describe('myReviewStatus', () => {
     expect(myReviewStatus('REVIEW_REQUIRED', 0, [])).toBe('no_reviewers')
   })
 
+  it('waits on a reviewer you asked again after their change request', () => {
+    // GitHub keeps "changes requested" until they review again; the request alone takes it off your plate.
+    expect(myReviewStatus('CHANGES_REQUESTED', 1, [])).toBe('waiting')
+    expect(myReviewStatus('CHANGES_REQUESTED', 1, ['COMMENTED'])).toBe('waiting')
+    expect(myReviewStatus('CHANGES_REQUESTED', 1, ['CHANGES_REQUESTED'])).toBe('changes_requested')
+    expect(myReviewStatus('CHANGES_REQUESTED', 0, [])).toBe('changes_requested')
+  })
+
   it('uses pending requests and reviews when there is no decision', () => {
     expect(myReviewStatus(null, 2, [])).toBe('waiting')
     expect(myReviewStatus(null, 1, ['APPROVED'])).toBe('waiting')
@@ -223,8 +231,38 @@ describe('fetchPullRequests', () => {
     })
     expect(result.myPrs[1]).toMatchObject({
       status: 'approved',
-      reviews: [{ login: 'ana', avatarUrl: 'a', state: 'APPROVED' }]
+      reviews: [{ login: 'ana', avatarUrl: 'a', state: 'APPROVED' }],
+      approvals: 1
     })
+  })
+
+  it('puts a PR back to waiting once you ask the reviewer who requested changes again', async () => {
+    const dan = { login: 'dan', avatarUrl: 'd' }
+    const mine = rawMyPr({
+      reviewDecision: 'CHANGES_REQUESTED',
+      reviewRequests: { nodes: [{ requestedReviewer: { __typename: 'User', ...dan } }] },
+      latestOpinionatedReviews: { nodes: [{ state: 'CHANGES_REQUESTED', author: dan }] },
+      // GitHub already leaves a re-requested reviewer out of latestReviews.
+      latestReviews: { nodes: [{ state: 'COMMENTED', author: { login: 'claude', avatarUrl: 'c' } }] }
+    })
+    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockImplementation(async () => ok([], {}, [mine])))
+    expect(result.myPrs[0]).toMatchObject({
+      status: 'waiting',
+      pendingReviewers: [{ kind: 'user', ...dan }],
+      reviews: [{ login: 'claude', state: 'COMMENTED' }],
+      approvals: 0
+    })
+  })
+
+  it('still counts the approval of a reviewer you asked again, shown as pending', async () => {
+    const ana = { login: 'ana', avatarUrl: 'a' }
+    const mine = rawMyPr({
+      reviewDecision: 'APPROVED',
+      reviewRequests: { nodes: [{ requestedReviewer: { __typename: 'User', ...ana } }] },
+      latestOpinionatedReviews: { nodes: [{ state: 'APPROVED', author: ana }] }
+    })
+    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockImplementation(async () => ok([], {}, [mine])))
+    expect(result.myPrs[0]).toMatchObject({ status: 'approved', pendingReviewers: [{ kind: 'user', ...ana }], reviews: [], approvals: 1 })
   })
 
   it('maps PRs, labels direct vs team requests and sorts newest first', async () => {
@@ -701,6 +739,17 @@ describe('mergeReviews', () => {
       { login: 'bob', avatarUrl: 'b', state: 'COMMENTED' },
       { login: 'dan', avatarUrl: 'd', state: 'DISMISSED' }
     ])
+  })
+
+  it('lists a reviewer you asked again as pending only, whatever they said before', () => {
+    const n = {
+      reviewRequests: {
+        nodes: [{ requestedReviewer: { __typename: 'User', login: 'dan', avatarUrl: 'd' } }, { requestedReviewer: { __typename: 'Team', slug: 'web' } }]
+      },
+      latestOpinionatedReviews: { nodes: [review('dan', 'CHANGES_REQUESTED', 'U_2'), review('ana', 'APPROVED')] },
+      latestReviews: { nodes: [review('dan', 'COMMENTED'), review('bob', 'COMMENTED')] }
+    }
+    expect(mergeReviews(n as never, 'me').map((r) => `${r.login}:${r.state}`)).toEqual(['ana:APPROVED', 'bob:COMMENTED'])
   })
 
   it('ignores your own comment reviews and copes without the latestReviews field', () => {

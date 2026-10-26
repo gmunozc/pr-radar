@@ -25,7 +25,7 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
   - un botón de copiar enlace y un menú ⋯ en cada fila (también con clic derecho) para aprobar, posponer, descartar, copiar el enlace, el título con el enlace o el nombre de la rama, silenciar el repositorio, abrir el detalle, los cambios, los checks o GitHub.
 - **Pestaña Mis PRs:**
   - en qué punto está cada PR (esperando, aprobado, cambios solicitados, sin reviewers);
-  - quién aprobó, quién pidió cambios, quién solo comentó y quién falta por revisar;
+  - quién aprobó, quién pidió cambios, quién solo comentó y quién falta por revisar (a quien vuelves a pedir review queda pendiente, y la PR vuelve a esperando);
   - **Listo para merge**, o qué lo bloquea (conflictos, desactualizado, bloqueado);
   - una etiqueta **Auto-merge** cuando GitHub lo va a mergear solo.
 - **Actúa sobre tus PRs** desde el panel (sesiones con la OAuth App): mergear ahora con el método del repositorio, actualizar la rama cuando está desactualizada, activar o desactivar el auto-merge de GitHub, volver a pedir revisión a quien pidió cambios, copiar el nombre de la rama o el enlace.

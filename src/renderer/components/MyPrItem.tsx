@@ -206,7 +206,6 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
   const blockerChip = pr.blocker ? BLOCKER_CHIPS[pr.blocker] : undefined
   const { avatars, teams } = people(pr, t)
   const extra = avatars.length - MAX_AVATARS
-  const approvals = pr.reviews.filter((r) => r.state === 'APPROVED').length
   const actionsOpen = menuOpen || confirming !== null || busy
   const now = Date.now()
   const ageDays = Math.floor((now - Date.parse(pr.createdAt)) / DAY_MS)
@@ -322,8 +321,8 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
           </span>
           <span className="reviewers">
             {pr.requiredApprovals !== null && pr.requiredApprovals > 0 && (
-              <span className="reviewers-count" title={t('mine.approvalsHint', { have: approvals, need: pr.requiredApprovals })}>
-                {approvals}/{pr.requiredApprovals}
+              <span className="reviewers-count" title={t('mine.approvalsHint', { have: pr.approvals, need: pr.requiredApprovals })}>
+                {pr.approvals}/{pr.requiredApprovals}
               </span>
             )}
             {teams.map((team) => (

@@ -34,6 +34,7 @@ export const myPr = (id = 'MY_1', over: Partial<MyPullRequest> = {}): MyPullRequ
     status: 'waiting',
     pendingReviewers: [],
     reviews: [],
+    approvals: 0,
     readyToMerge: false,
     blocker: null,
     conflicts: false,

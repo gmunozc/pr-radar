@@ -102,7 +102,10 @@ export interface MergeOptions {
 export interface MyPullRequest extends PullRequestBase {
   status: MyReviewStatus
   pendingReviewers: Reviewer[]
+  /** One per reviewer, as they stand: a reviewer asked to review again is only in `pendingReviewers`. */
   reviews: Array<{ login: string; avatarUrl: string; state: ReviewState; id?: string }>
+  /** Approvals GitHub counts toward the branch protection (one from a reviewer asked again still counts). */
+  approvals: number
   /** Approved, checks green, no conflicts and mergeable per branch protection. */
   readyToMerge: boolean
   /** Set when approved but not ready; null otherwise (or while GitHub is still computing). */
