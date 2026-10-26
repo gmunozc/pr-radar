@@ -11,11 +11,13 @@ import {
   type AppState,
   type NotifyResult,
   type PanelSize,
+  type PanelWidth,
   type Settings
 } from '../../shared/types'
 import { ConfirmRow } from './ConfirmRow'
 
 const PANEL_SIZES: PanelSize[] = ['compact', 'default', 'large']
+const PANEL_WIDTHS: PanelWidth[] = ['default', 'wide', 'wider']
 const KIND_LABEL: Record<NotifyKind, MessageKey> = {
   approved: 'settings.notify.approved',
   changes: 'settings.notify.changes',
@@ -471,6 +473,18 @@ export function SettingsView({ state, onOpenLaunchers }: { state: AppState; onOp
             {PANEL_SIZES.map((size) => (
               <option key={size} value={size}>
                 {t(`settings.panelSize.${size}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="setting">
+          <div className="setting-text">
+            <div className="setting-label">{t('settings.panelWidth')}</div>
+          </div>
+          <select className="input select" value={settings.panelWidth} onChange={(e) => void update({ panelWidth: e.target.value as PanelWidth })}>
+            {PANEL_WIDTHS.map((width) => (
+              <option key={width} value={width}>
+                {t(`settings.panelWidth.${width}`)}
               </option>
             ))}
           </select>

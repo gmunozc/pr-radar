@@ -160,6 +160,9 @@ export type ActionResult = { ok: true } | { ok: false; code: ActionErrorCode; de
 
 export type PanelSize = 'compact' | 'default' | 'large'
 
+/** Settings → Panel width; the pixels live in PANEL_WIDTHS (main/window.ts). */
+export type PanelWidth = 'default' | 'wide' | 'wider'
+
 /** What the detail view loads on demand (one extra query per PR, cached per head commit). */
 export interface PrDetail {
   /** The description as Markdown ('' when empty). */
@@ -282,6 +285,7 @@ export interface Settings {
   /** Electron accelerator that opens the panel from anywhere; '' for none (see SHORTCUT_OPTIONS). */
   shortcut: string
   panelSize: PanelSize
+  panelWidth: PanelWidth
   pollIntervalSec: number
   /** Seconds between cheap change probes that trigger a full check; 0 turns them off (FAST_POLL_OPTIONS). */
   fastPoll: number
@@ -323,6 +327,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showInvolved: true,
   shortcut: '',
   panelSize: 'default',
+  panelWidth: 'default',
   pollIntervalSec: 30,
   fastPoll: 5,
   clientId: '',

@@ -73,6 +73,7 @@ export function sanitizeSettingsPatch(patch: unknown): SettingsPatch {
   if (p.mineSort === 'newest' || p.mineSort === 'oldest' || p.mineSort === 'updated') out.mineSort = p.mineSort
   if (typeof p.shortcut === 'string' && (SHORTCUT_OPTIONS as readonly string[]).includes(p.shortcut)) out.shortcut = p.shortcut
   if (p.panelSize === 'compact' || p.panelSize === 'default' || p.panelSize === 'large') out.panelSize = p.panelSize
+  if (p.panelWidth === 'default' || p.panelWidth === 'wide' || p.panelWidth === 'wider') out.panelWidth = p.panelWidth
   if (p.notificationClick === 'github' || p.notificationClick === 'panel') out.notificationClick = p.notificationClick
   if (typeof p.clientId === 'string') out.clientId = p.clientId.trim()
   if (p.language === 'system' || p.language === 'en' || p.language === 'es') out.language = p.language

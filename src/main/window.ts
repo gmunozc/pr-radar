@@ -1,14 +1,16 @@
 import { app, BrowserWindow, screen, type Rectangle } from 'electron'
 import { join } from 'node:path'
-import type { PanelSize } from '../shared/types'
+import type { PanelSize, PanelWidth } from '../shared/types'
 import { logger } from './log'
 import { decideBlur, decideClick, decideOffScreen, showVerdict, VERIFY_MS, type ClickSource, type Displayed, type HideReason } from './panelDecision'
 import { displayNearest, placePanel } from './position'
 
 export const PANEL_WIDTH = 380
 export const PANEL_HEIGHT = 540
-/** Heights per Settings → Panel size; the width stays the same. */
+/** Heights per Settings → Panel size. */
 export const PANEL_HEIGHTS: Record<PanelSize, number> = { compact: 460, default: PANEL_HEIGHT, large: 680 }
+/** Widths per Settings → Panel width. */
+export const PANEL_WIDTHS: Record<PanelWidth, number> = { default: PANEL_WIDTH, wide: 460, wider: 540 }
 /** Check the panel this long after a load starts; a load still running by then is stuck. */
 const LOAD_CHECK_MS = 5000
 /** After the page loads, give React this long to mount before checking. */
@@ -216,12 +218,17 @@ export class Panel {
     return this.lastDisplayId
   }
 
-  /** Applies Settings → Panel size; a visible panel is placed again so it stays on screen. */
-  resize(size: PanelSize): void {
-    const height = PANEL_HEIGHTS[size] ?? PANEL_HEIGHT
-    if (this.win.getSize()[1] === height) return
-    this.win.setSize(PANEL_WIDTH, height, false)
-    if (this.open) this.show()
+  /**
+   * Applies Settings → Panel size and width; a visible panel is placed again (next to the tray
+   * icon when its bounds are given) so it stays on screen.
+   */
+  resize(size: PanelSize, width: PanelWidth = 'default', trayBounds?: Rectangle): void {
+    const w = PANEL_WIDTHS[width] ?? PANEL_WIDTH
+    const h = PANEL_HEIGHTS[size] ?? PANEL_HEIGHT
+    const [currentW, currentH] = this.win.getSize()
+    if (currentW === w && currentH === h) return
+    this.win.setSize(w, h, false)
+    if (this.open) this.show(trayBounds)
   }
 
   /**

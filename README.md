@@ -43,7 +43,7 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 - **Footer:** on every tab, filter by one or several of the list's repositories, open the list on GitHub, or copy the links of the PRs shown, one per line, ready for a message.
 - **English and Spanish**, following the system language or your choice in Settings.
 - **New version notice.** On macOS, **Install** downloads the dmg, checks it against the release's `SHA256SUMS.txt` and opens it; elsewhere it links to the release.
-- **Panel size** (compact, default, large) in Settings → General.
+- **Panel size** (compact, default, large) and **panel width** (default, wide, extra wide) in Settings → General.
 - **PR details** inside the panel: click a title to see the checks, who reviewed, files, commits, comments and the description, rendered from Markdown.
 - **Send to an agent** (macOS): right-click a PR → Send to… opens Claude Code on that PR in a Warp tab, with a skill or prompt you pick in Settings and the PR's code in a git worktree. See [Send to an agent](#send-to-an-agent-macos).
 - **Copy diagnostics:** a report you can attach to an issue, with tokens removed.

@@ -43,7 +43,7 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **Pie del panel:** en cada pestaña, filtra por uno o varios de los repositorios de la lista, abre la lista en GitHub o copia los enlaces de los PRs que se muestran, uno por línea, listos para un mensaje.
 - **En inglés y en español**, según el idioma del sistema o lo que elijas en Ajustes.
 - **Aviso de versión nueva.** En macOS, **Instalar** descarga el dmg, lo comprueba contra el `SHA256SUMS.txt` de la Release y lo abre; en otros sistemas enlaza a la Release.
-- **Tamaño del panel** (compacto, normal, grande) en Ajustes → General.
+- **Tamaño del panel** (compacto, normal, grande) y **ancho del panel** (normal, ancho, muy ancho) en Ajustes → General.
 - **Detalle del PR** dentro del panel: pulsa un título para ver los checks, quién revisó, archivos, commits, comentarios y la descripción con su formato Markdown.
 - **Enviar a un agente** (macOS): clic derecho en un PR → Enviar a… abre Claude Code sobre ese PR en una pestaña de Warp, con la skill o el prompt que elijas en Ajustes y el código del PR en un git worktree. Mira [Enviar a un agente](#enviar-a-un-agente-macos).
 - **Copiar diagnóstico:** un informe para adjuntar a un issue, sin tokens.

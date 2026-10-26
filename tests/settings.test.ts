@@ -59,6 +59,8 @@ describe('exclusions and list settings', () => {
     expect(sanitizeSettingsPatch({ shortcut: 'Control+Q' })).toEqual({})
     expect(sanitizeSettingsPatch({ panelSize: 'large' })).toEqual({ panelSize: 'large' })
     expect(sanitizeSettingsPatch({ panelSize: 'huge' })).toEqual({})
+    expect(sanitizeSettingsPatch({ panelWidth: 'wide' })).toEqual({ panelWidth: 'wide' })
+    expect(sanitizeSettingsPatch({ panelWidth: 900 })).toEqual({})
   })
 
   it('clamps stale days and only accepts known filter and sort values', () => {

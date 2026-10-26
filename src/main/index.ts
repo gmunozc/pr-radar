@@ -115,7 +115,7 @@ function main(): void {
 
   const faults = app.isPackaged ? null : new FaultInjector()
   const panel = new Panel()
-  panel.resize(settings.panelSize)
+  panel.resize(settings.panelSize, settings.panelWidth)
   const showPanel = () => panel.show(tray?.getBounds())
   const togglePanel = () => panel.toggle(tray?.getBounds(), 'shortcut')
   // A click on an alert about one PR: GitHub, or the panel at that row (Settings), when it is
@@ -594,7 +594,9 @@ function main(): void {
       settings = { ...settings, ...rest }
       // A shortcut another app owns can't be registered: fall back to none so the UI says so.
       if (rest.shortcut !== undefined && !applyShortcut(settings.shortcut, togglePanel)) settings = { ...settings, shortcut: '' }
-      if (rest.panelSize !== undefined) panel.resize(settings.panelSize)
+      if (rest.panelSize !== undefined || rest.panelWidth !== undefined) {
+        panel.resize(settings.panelSize, settings.panelWidth, tray?.getBounds())
+      }
       settingsFile.write(settings)
       if (applyLanguage(settings.language, app.getPreferredSystemLanguages())) {
         logger.info('language changed', { locale: currentLocale() })
