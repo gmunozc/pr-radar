@@ -48,12 +48,23 @@ const MINE_MATCH: Record<MyPrFilter, (pr: MyPullRequest) => boolean> = {
   changes: (pr) => pr.status === 'changes_requested'
 }
 
-/** Your PRs after the filter, organization and sort chosen by the user. */
-export function arrangeMyPrs(prs: MyPullRequest[], filter: MyPrFilter, org: string | null, sort: ReviewSort): MyPullRequest[] {
+/** Your PRs after the filter, organization, repositories (none = all) and sort chosen by the user. */
+export function arrangeMyPrs(
+  prs: MyPullRequest[],
+  filter: MyPrFilter,
+  org: string | null,
+  sort: ReviewSort,
+  repos: readonly string[] = []
+): MyPullRequest[] {
   return sortPrs(
-    prs.filter((pr) => MINE_MATCH[filter](pr) && inOrg(pr, org)),
+    prs.filter((pr) => MINE_MATCH[filter](pr) && inOrg(pr, org) && inRepos(pr, repos)),
     sort
   )
+}
+
+/** The PRs of the chosen repositories; all of them when none is chosen. */
+export function filterByRepos<T extends { repo: string }>(prs: T[], repos: readonly string[]): T[] {
+  return repos.length === 0 ? prs : prs.filter((pr) => inRepos(pr, repos))
 }
 
 /** The tab that lists a PR, or null when it is in none (merged, closed, dismissed…). */

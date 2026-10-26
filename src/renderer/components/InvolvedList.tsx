@@ -1,13 +1,14 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import type { AppState } from '../../shared/types'
 import { PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
-import { filterByQuery } from '../arrange'
+import { filterByQuery, filterByRepos, reposOf } from '../arrange'
 import { useSettings } from '../useSettings'
 import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
 import { FooterActions } from './FooterActions'
+import { RepoFilter } from './RepoFilter'
 import { PrItem } from './PrItem'
 import { RestoreHidden } from './PrList'
 
@@ -22,15 +23,20 @@ interface ListProps {
   onFocused?(): void
   /** The ⌘F text filter. */
   query?: string
+  /** The footer's repository filter (none = all), kept by App so it survives tab switches. */
+  repos?: readonly string[]
+  onRepos?(repos: string[]): void
 }
 
-export function InvolvedList({ state, onDetail, focusPrId, onFocused, query = '' }: ListProps) {
+export function InvolvedList({ state, onDetail, focusPrId, onFocused, query = '', repos = [], onRepos }: ListProps) {
   const listRef = useRef<HTMLElement>(null)
   useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
   const settings = useSettings()
   const saveMuted = (muteRepos: string[]) => void window.prRadar.settings.set({ muteRepos })
-  const shown = filterByQuery(state.involved, query)
+  const repoOptions = useMemo(() => reposOf(state.involved), [state.involved])
+  const activeRepos = useMemo(() => repos.filter((r) => repoOptions.some((o) => o.repo === r)), [repos, repoOptions])
+  const shown = filterByQuery(filterByRepos(state.involved, activeRepos), query)
 
   if (state.status === 'loading' && state.involved.length === 0) {
     return (
@@ -73,6 +79,7 @@ export function InvolvedList({ state, onDetail, focusPrId, onFocused, query = ''
         ))}
       </main>
       <footer className="footer">
+        <RepoFilter options={repoOptions} selected={activeRepos} onChange={(next) => onRepos?.(next)} />
         {state.dismissedCount + state.snoozedCount > 0 && (
           <RestoreHidden dismissed={state.dismissedCount} snoozed={state.snoozedCount} />
         )}

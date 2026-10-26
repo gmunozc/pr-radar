@@ -3,11 +3,12 @@ import { MINE_FILTERS, type AppState, type ReviewSort } from '../../shared/types
 import { PullRequestIcon } from '../icons'
 import { useT } from '../i18n'
 import { onListKeyDown } from '../keyboard'
-import { arrangeMyPrs, filterByQuery } from '../arrange'
+import { arrangeMyPrs, filterByQuery, reposOf } from '../arrange'
 import { useSettings } from '../useSettings'
 import { useFocusRow } from '../focusRow'
 import { muteProps } from '../muteRepos'
 import { FooterActions } from './FooterActions'
+import { RepoFilter } from './RepoFilter'
 import { MyPrItem } from './MyPrItem'
 import { Segmented } from './Segmented'
 
@@ -25,9 +26,12 @@ interface ListProps {
   /** The organization filter, kept by App so it survives tab switches. */
   org?: string | null
   onOrg?(org: string | null): void
+  /** The footer's repository filter (none = all), kept by App so it survives tab switches. */
+  repos?: readonly string[]
+  onRepos?(repos: string[]): void
 }
 
-export function MyPrList({ state, onDetail, focusPrId, onFocused, query = '', org = null, onOrg }: ListProps) {
+export function MyPrList({ state, onDetail, focusPrId, onFocused, query = '', org = null, onOrg, repos = [], onRepos }: ListProps) {
   const listRef = useRef<HTMLElement>(null)
   useFocusRow(listRef, focusPrId, onFocused)
   const t = useT()
@@ -37,9 +41,12 @@ export function MyPrList({ state, onDetail, focusPrId, onFocused, query = '', or
   const sort = settings?.mineSort ?? 'newest'
   const orgs = useMemo(() => [...new Set(state.myPrs.map((pr) => pr.repo.split('/')[0]))].sort(), [state.myPrs])
   const activeOrg = org && orgs.includes(org) ? org : null
+  const repoOptions = useMemo(() => reposOf(state.myPrs), [state.myPrs])
+  // A repository chosen earlier may have no PR left: then it filters nothing.
+  const activeRepos = useMemo(() => repos.filter((r) => repoOptions.some((o) => o.repo === r)), [repos, repoOptions])
   const shown = useMemo(
-    () => filterByQuery(arrangeMyPrs(state.myPrs, filter, activeOrg, sort), query),
-    [state.myPrs, filter, activeOrg, sort, query]
+    () => filterByQuery(arrangeMyPrs(state.myPrs, filter, activeOrg, sort, activeRepos), query),
+    [state.myPrs, filter, activeOrg, sort, activeRepos, query]
   )
 
   if (state.status === 'loading' && state.myPrs.length === 0) {
@@ -115,6 +122,7 @@ export function MyPrList({ state, onDetail, focusPrId, onFocused, query = '', or
         ))}
       </main>
       <footer className="footer">
+        <RepoFilter options={repoOptions} selected={activeRepos} onChange={(next) => onRepos?.(next)} />
         <FooterActions prs={shown} githubUrl={MY_PULLS_URL} githubLabel={t('mine.viewAll')} />
       </footer>
     </>

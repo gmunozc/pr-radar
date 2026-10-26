@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { arrangeMyPrs, arrangePrs, filterByQuery, linksText, matchesQuery, reposOf, tabFor } from '../src/renderer/arrange'
+import { arrangeMyPrs, arrangePrs, filterByQuery, filterByRepos, linksText, matchesQuery, reposOf, tabFor } from '../src/renderer/arrange'
 import { myPr, pr } from './fixtures'
 
 const a = pr('a', { createdAt: '2026-01-03T00:00:00Z', updatedAt: '2026-01-03T00:00:00Z', repo: 'acme/app' })
@@ -41,6 +41,14 @@ describe('footer helpers', () => {
       { repo: 'globex/api', count: 1 }
     ])
     expect(reposOf([])).toEqual([])
+  })
+
+  it('keeps the chosen repositories of your PRs and of any list', () => {
+    const mine = [myPr('m1', { repo: 'acme/app' }), myPr('m2', { repo: 'acme/web' })]
+    expect(arrangeMyPrs(mine, 'all', null, 'newest', ['acme/web']).map((p) => p.id)).toEqual(['m2'])
+    expect(arrangeMyPrs(mine, 'all', null, 'newest').map((p) => p.id).sort()).toEqual(['m1', 'm2'])
+    expect(filterByRepos([a, b, c], ['globex/api']).map((p) => p.id)).toEqual(['c'])
+    expect(filterByRepos([a, b, c], []).map((p) => p.id)).toEqual(['a', 'b', 'c'])
   })
 
   it('copies the links shown, one per line', () => {

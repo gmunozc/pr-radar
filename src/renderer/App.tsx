@@ -40,8 +40,10 @@ function Panel() {
   const focused = useCallback(() => setFocusPrId(null), [])
   /** The organization filter, shared by the review and mine lists so it survives tab switches. */
   const [org, setOrg] = useState<string | null>(null)
-  /** The review tab's repository filter (none = all); kept here so it survives tab switches. */
+  /** Each tab's repository filter (none = all); kept here so they survive tab switches. */
   const [reviewRepos, setReviewRepos] = useState<string[]>([])
+  const [mineRepos, setMineRepos] = useState<string[]>([])
+  const [involvedRepos, setInvolvedRepos] = useState<string[]>([])
   /** The ⌘F text filter, shared by the three tabs. */
   const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -98,6 +100,8 @@ function Panel() {
       setTab('review')
       setOrg(null)
       setReviewRepos([])
+      setMineRepos([])
+      setInvolvedRepos([])
     }
   }, [state?.status])
 
@@ -196,9 +200,27 @@ function Panel() {
               onRepos={setReviewRepos}
             />
           ) : tab === 'mine' ? (
-            <MyPrList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} query={query} org={org} onOrg={setOrg} />
+            <MyPrList
+              state={state}
+              onDetail={openDetail}
+              focusPrId={focusPrId}
+              onFocused={focused}
+              query={query}
+              org={org}
+              onOrg={setOrg}
+              repos={mineRepos}
+              onRepos={setMineRepos}
+            />
           ) : (
-            <InvolvedList state={state} onDetail={openDetail} focusPrId={focusPrId} onFocused={focused} query={query} />
+            <InvolvedList
+              state={state}
+              onDetail={openDetail}
+              focusPrId={focusPrId}
+              onFocused={focused}
+              query={query}
+              repos={involvedRepos}
+              onRepos={setInvolvedRepos}
+            />
           )}
         </>
       )}
