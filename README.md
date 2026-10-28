@@ -102,7 +102,7 @@ If an organization uses **SAML SSO**, authorize the app for it; the panel tells 
 
 ## Send to an agent (macOS)
 
-Right-click a PR → **Send to…** and pick an action: PR Radar opens a new Warp tab with Claude Code already working on that PR, for example `claude --add-dir <project> -- '/triage-review https://github.com/acme/app/pull/42 …'` inside the PR's worktree. PR Radar only launches; your skills and rules stay where they are.
+Right-click a PR → **Send to…** and pick an action: PR Radar opens a new Warp tab with Claude Code already working on that PR, for example `claude --add-dir <worktree> -- '/triage-review https://github.com/acme/app/pull/42 …'`. PR Radar only launches; your skills and rules stay where they are.
 
 Set it up in Settings → **Send to agent** → **Set up**:
 
@@ -112,9 +112,9 @@ Set it up in Settings → **Send to agent** → **Set up**:
   - **Run:** a skill of the project, one of yours (`~/.claude/skills`), or a custom prompt that may use `{url}`, `{number}`, `{repo}` and `{sha}`. Skills receive the PR link.
   - **Extra text** (optional) goes after the PR link.
   - **Show on:** My PRs, To review, Involved, or All.
-  - **Code:** **PR worktree** (default) adds a git worktree at the PR's latest commit under `~/.pr-radar/worktrees`, fetching `pull/<n>/head` when the commit isn't local. Claude starts inside the worktree, so its folder, git and shell commands are the PR's code and your own checkout is not touched; the project is added with `--add-dir`, so its skills and `CLAUDE.md` still load. The worktree is a detached checkout of the commit: to push changes made there, push `HEAD` to the PR's branch (the prompt tells Claude how). A worktree is reused for the same commit, also with commits made there and not pushed yet; remove old ones with `git worktree remove`. **Project as is** skips the worktree.
+  - **Code:** **PR worktree** (default) adds a git worktree at the PR's latest commit under `~/.pr-radar/worktrees`, fetching `pull/<n>/head` when the commit isn't local. Claude starts in the project root and gets the worktree with `--add-dir` and its path in the prompt, which asks it to read, edit and run git there, so your own checkout is never touched. The worktree is a detached checkout of the commit: to push changes made there, push `HEAD` to the PR's branch (the prompt tells Claude how). A worktree is reused for the same commit, also with commits made there and not pushed yet; remove old ones with `git worktree remove`. **Project as is** skips the worktree.
 
-The branch name and title of a PR never reach the command line: its author chooses them. Claude Code then runs with your permissions on code written by that author, so keep its permission prompts on for PRs from people you don't trust. The settings are stored in `launchers.json` (Settings → Send to agent → launchers.json → Open), which you can share with your team; it runs commands on your Mac, so review changes to it like code.
+The branch name and title of a PR never reach the command line: its author chooses them. Nor does Claude Code ever start inside the PR's code: there it would take the PR's own `.claude/settings.json` (hooks, permissions) and `.mcp.json`, and a worktree inherits the trust you gave your checkout. Claude Code then runs with your permissions on code written by that author, so keep its permission prompts on for PRs from people you don't trust. The settings are stored in `launchers.json` (Settings → Send to agent → launchers.json → Open), which you can share with your team; it runs commands on your Mac, so review changes to it like code.
 
 ## Privacy and security
 

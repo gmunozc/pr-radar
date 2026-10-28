@@ -147,20 +147,20 @@ describe('command building', () => {
     const values = launchValues(prA)!
     expect(promptFor(triage, values, null)).toBe('/triage-review https://github.com/Acme/Core/pull/42')
     expect(promptFor({ ...triage, extra: "don't fix anything" }, values, '/w')).toBe(
-      "/triage-review https://github.com/Acme/Core/pull/42 don't fix anything (PR code at commit a1b2c3d, in the current folder: /w. It is a detached checkout: to push commits, git push origin HEAD:<branch>, the branch from gh pr view 42 --json headRefName)"
+      "/triage-review https://github.com/Acme/Core/pull/42 don't fix anything (PR code at commit a1b2c3d: /w. Read, edit and run git there, not in the current folder, which is the checkout the user works in. It is a detached checkout: to push commits from it, git push origin HEAD:<branch>, the branch from gh pr view 42 --json headRefName)"
     )
     expect(promptFor(here, values, null)).toBe('look at #42')
     expect(worktreePath('/wt', values)).toBe('/wt/Acme__Core/pr-42-a1b2c3d')
   })
 
-  it('runs claude with the project added and the prompt as one argument after --', () => {
-    expect(agentCommand("it's", '/p/a b')).toBe(`CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir '/p/a b' -- 'it'\\''s'`)
+  it('runs claude with the worktree added and the prompt as one argument after --', () => {
+    expect(agentCommand("it's", '/w/a b')).toBe(`claude --add-dir '/w/a b' -- 'it'\\''s'`)
     expect(agentCommand('-x', null)).toBe(`claude -- '-x'`)
   })
 })
 
 describe('Launcher', () => {
-  it('adds a worktree of the PR repository and opens Warp in it, with the project added', async () => {
+  it('adds a worktree of the PR repository and opens Warp in the project root, never in the worktree', async () => {
     const w = fake()
     expect(await new Launcher(w.deps).launch('PR_1', 'triage')).toEqual({ ok: true })
     expect(w.git).toEqual([
@@ -171,7 +171,7 @@ describe('Launcher', () => {
     ])
     const name = `pr_radar_${NOW}_1`
     expect(w.urls).toEqual([`warp://tab_config/${name}`])
-    const prompt = `/triage-review https://github.com/Acme/Core/pull/42 (PR code at commit a1b2c3d, in the current folder: ${WORKTREE}. It is a detached checkout: to push commits, git push origin HEAD:<branch>, the branch from gh pr view 42 --json headRefName)`
+    const prompt = `/triage-review https://github.com/Acme/Core/pull/42 (PR code at commit a1b2c3d: ${WORKTREE}. Read, edit and run git there, not in the current folder, which is the checkout the user works in. It is a detached checkout: to push commits from it, git push origin HEAD:<branch>, the branch from gh pr view 42 --json headRefName)`
     expect(w.files.get(`/Users/me/.warp/tab_configs/${name}.toml`)).toBe(
       [
         '# Written by PR Radar for one "Send to" launch; removed after a few minutes.',
@@ -180,8 +180,9 @@ describe('Launcher', () => {
         '[[panes]]',
         'id = "main"',
         'type = "terminal"',
-        `directory = "${WORKTREE}"`,
-        `commands = ["CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir '${ROOT}' -- '${prompt}'"]`,
+        // Claude Code would take hooks, env and allow rules from the PR's own .claude/settings.json there.
+        `directory = "${ROOT}"`,
+        `commands = ["claude --add-dir '${WORKTREE}' -- '${prompt}'"]`,
         ''
       ].join('\n')
     )
@@ -215,7 +216,8 @@ describe('Launcher', () => {
       [WORKTREE, 'rev-parse', 'HEAD'],
       [WORKTREE, 'merge-base', '--is-ancestor', SHA, 'HEAD']
     ])
-    expect(tabConfig(w)).toContain(`directory = "${WORKTREE}"`)
+    expect(tabConfig(w)).toContain(`directory = "${ROOT}"`)
+    expect(tabConfig(w)).toContain(`claude --add-dir '${WORKTREE}' -- `)
   })
 
   it('opens the project as it is for folder actions, without git', async () => {
