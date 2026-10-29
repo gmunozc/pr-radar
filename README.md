@@ -45,7 +45,7 @@ A macOS menu bar app that tells you when someone asks you to review a pull reque
 - **New version notice.** On macOS, **Install** downloads the dmg, checks it against the release's `SHA256SUMS.txt` and opens it; elsewhere it links to the release.
 - **Panel size** (compact, default, large) and **panel width** (default, wide, extra wide) in Settings → General.
 - **PR details** inside the panel: click a title to see the checks, who reviewed, files, commits, comments and the description, rendered from Markdown.
-- **Send to an agent** (macOS): right-click a PR → Send to… opens Claude Code on that PR in a Warp tab, with a skill or prompt you pick in Settings and the PR's code in a git worktree. See [Send to an agent](#send-to-an-agent-macos).
+- **Send to an agent** (macOS): right-click a PR → Send to… opens Claude Code on that PR in a Warp or Orca tab, with a skill or prompt you pick in Settings and the PR's code in a git worktree. See [Send to an agent](#send-to-an-agent-macos).
 - **Copy diagnostics:** a report you can attach to an issue, with tokens removed.
 
 <p>
@@ -102,11 +102,11 @@ If an organization uses **SAML SSO**, authorize the app for it; the panel tells 
 
 ## Send to an agent (macOS)
 
-Right-click a PR → **Send to…** and pick an action: PR Radar opens a new Warp tab with Claude Code already working on that PR, for example `claude --add-dir <worktree> -- '/triage-review https://github.com/acme/app/pull/42 …'`. PR Radar only launches; your skills and rules stay where they are.
+Right-click a PR → **Send to…** and pick an action: PR Radar opens a new Warp or Orca tab with Claude Code already working on that PR, for example `claude --add-dir <worktree> -- '/triage-review https://github.com/acme/app/pull/42 …'`. PR Radar only launches; your skills and rules stay where they are.
 
 Set it up in Settings → **Send to agent** → **Set up**:
 
-- **Terminal:** Warp or Warp Preview.
+- **Terminal:** Warp, Warp Preview or Orca. Orca opens the tab in the project's workspace with `orca terminal create`, so the project must be added to Orca (installed in `/Applications`) and Orca must be running.
 - **Projects:** **Add project…** and choose the folder where Claude Code should start (the root of the repository, with its `CLAUDE.md` and `.claude/skills`). PR Radar finds its GitHub repositories on its own, checked-out submodules included, so it knows which clone each PR belongs to. If you check out a submodule later, use **Detect again**.
 - **Actions:** each one is an entry of **Send to…** on the PRs of its project:
   - **Run:** a skill of the project, one of yours (`~/.claude/skills`), or a custom prompt that may use `{url}`, `{number}`, `{repo}` and `{sha}`. Skills receive the PR link.

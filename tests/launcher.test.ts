@@ -4,6 +4,7 @@ import {
   fillTemplate,
   Launcher,
   launchValues,
+  ORCA_CLI,
   promptFor,
   shellQuote,
   TAB_CONFIG_TTL_MS,
@@ -48,6 +49,7 @@ const config = (over: Partial<LaunchersConfig> = {}): LaunchersConfig => ({
 interface Fake {
   deps: LauncherDeps
   git: string[][]
+  orca: string[][]
   files: Map<string, string>
   urls: string[]
   removed: string[]
@@ -72,7 +74,7 @@ function fake(
 ): Fake {
   const dirs = new Set(opts.dirs ?? [ROOT, CORE])
   const commits = new Set(opts.commits ?? [SHA])
-  const world: Fake = { git: [], files: new Map(), urls: [], removed: [], redetected: 0, deps: null as unknown as LauncherDeps }
+  const world: Fake = { git: [], orca: [], files: new Map(), urls: [], removed: [], redetected: 0, deps: null as unknown as LauncherDeps }
   world.deps = {
     config: () => opts.config ?? config(),
     findPr: () => (opts.pr === undefined ? prA : opts.pr),
@@ -81,6 +83,10 @@ function fake(
       return opts.redetected ?? null
     },
     run: async (file, args, { cwd }) => {
+      if (file === ORCA_CLI) {
+        world.orca.push([cwd, ...args])
+        return ''
+      }
       expect(file).toBe('git')
       world.git.push([cwd, ...args])
       const [cmd] = args
@@ -242,6 +248,20 @@ describe('Launcher', () => {
     await new Launcher(w.deps).launch('PR_1', 'here')
     expect(w.urls[0]).toMatch(/^warppreview:\/\/tab_config\/pr_radar_/)
     expect([...w.files.keys()][0]).toMatch(/^\/Users\/me\/\.warp-preview\/tab_configs\//)
+  })
+
+  it('opens an Orca terminal in the project root with the same command, without a tab config', async () => {
+    const w = fake({ config: config({ terminal: 'orca' }) })
+    expect(await new Launcher(w.deps).launch('PR_1', 'here')).toEqual({ ok: true })
+    expect(w.orca).toEqual([
+      [ROOT, 'terminal', 'create', '--worktree', `path:${ROOT}`, '--title', 'Acme/Core#42 · Here', '--command', `claude -- 'look at #42'`, '--focus']
+    ])
+    expect(w.files.size).toBe(0)
+    expect(w.urls).toEqual([])
+    w.deps.run = async () => {
+      throw new Error('selector_not_found')
+    }
+    expect(await new Launcher(w.deps).launch('PR_1', 'here')).toEqual({ ok: false, code: 'terminal_failed' })
   })
 
   it('never puts the branch or title on the command line', async () => {

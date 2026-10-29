@@ -9,9 +9,9 @@ export type LaunchTarget = 'mine' | 'review' | 'involved'
 
 export type LauncherShowOn = LaunchTarget | 'all'
 
-export type LauncherTerminal = 'warp' | 'warp-preview'
+export type LauncherTerminal = 'warp' | 'warp-preview' | 'orca'
 
-export const LAUNCHER_TERMINALS: readonly LauncherTerminal[] = ['warp', 'warp-preview']
+export const LAUNCHER_TERMINALS: readonly LauncherTerminal[] = ['warp', 'warp-preview', 'orca']
 export const LAUNCHER_SHOW_ON: readonly LauncherShowOn[] = ['mine', 'review', 'involved', 'all']
 
 /** A local folder (usually a repository, maybe with submodules) where the agent starts. */
