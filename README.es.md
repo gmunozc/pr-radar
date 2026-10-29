@@ -45,7 +45,7 @@ PR Radar es una app de barra de menú para macOS que te avisa cuando alguien te 
 - **Aviso de versión nueva.** En macOS, **Instalar** descarga el dmg, lo comprueba contra el `SHA256SUMS.txt` de la Release y lo abre; en otros sistemas enlaza a la Release.
 - **Tamaño del panel** (compacto, normal, grande) y **ancho del panel** (normal, ancho, muy ancho) en Ajustes → General.
 - **Detalle del PR** dentro del panel: pulsa un título para ver los checks, quién revisó, archivos, commits, comentarios y la descripción con su formato Markdown.
-- **Enviar a un agente** (macOS): clic derecho en un PR → Enviar a… abre Claude Code sobre ese PR en una pestaña de Warp, con la skill o el prompt que elijas en Ajustes y el código del PR en un git worktree. Mira [Enviar a un agente](#enviar-a-un-agente-macos).
+- **Enviar a un agente** (macOS): clic derecho en un PR → Enviar a… abre Claude Code sobre ese PR en una pestaña de Warp o de Orca, con la skill o el prompt que elijas en Ajustes y el código del PR en un git worktree. Mira [Enviar a un agente](#enviar-a-un-agente-macos).
 - **Copiar diagnóstico:** un informe para adjuntar a un issue, sin tokens.
 
 ## Instalación
@@ -97,11 +97,11 @@ El **modo rápido** (activado por defecto) lanza cada 5 segundos una consulta li
 
 ## Enviar a un agente (macOS)
 
-Clic derecho en un PR → **Enviar a…** y elige una acción: PR Radar abre una pestaña nueva de Warp con Claude Code ya trabajando en ese PR, por ejemplo `claude --add-dir <worktree> -- '/triage-review https://github.com/acme/app/pull/42 …'`. PR Radar solo lanza; tus skills y tus reglas siguen donde están.
+Clic derecho en un PR → **Enviar a…** y elige una acción: PR Radar abre una pestaña nueva de Warp o de Orca con Claude Code ya trabajando en ese PR, por ejemplo `claude --add-dir <worktree> -- '/triage-review https://github.com/acme/app/pull/42 …'`. PR Radar solo lanza; tus skills y tus reglas siguen donde están.
 
 Se configura en Ajustes → **Enviar a agente** → **Configurar**:
 
-- **Terminal:** Warp o Warp Preview.
+- **Terminal:** Warp, Warp Preview u Orca. Orca abre la pestaña en el workspace del proyecto con `orca terminal create`, así que el proyecto tiene que estar añadido a Orca (instalado en `/Applications`) y Orca tiene que estar abierto.
 - **Proyectos:** **Agregar proyecto…** y elige la carpeta donde debe arrancar Claude Code (la raíz del repositorio, con su `CLAUDE.md` y `.claude/skills`). PR Radar detecta solo sus repositorios de GitHub, submódulos descargados incluidos, y así sabe a qué clon pertenece cada PR. Si descargas un submódulo después, usa **Volver a detectar**.
 - **Acciones:** cada una es una opción de **Enviar a…** en los PRs de su proyecto:
   - **Ejecutar:** una skill del proyecto, una tuya (`~/.claude/skills`) o un prompt libre que puede usar `{url}`, `{number}`, `{repo}` y `{sha}`. Las skills reciben el enlace del PR.

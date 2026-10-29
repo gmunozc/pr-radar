@@ -1,6 +1,6 @@
 /**
  * "Send to…": prepares a workspace for a PR (a git worktree at its head commit, or the project
- * as it is) and opens a Warp tab in the project's root running Claude Code on it.
+ * as it is) and opens a Warp or Orca tab in the project's root running Claude Code on it.
  *
  * Claude never starts inside the PR's code. Claude Code takes hooks, `env`, allow rules and MCP
  * servers from the `.claude/settings.json` and `.mcp.json` of the folder it starts in, and a git
@@ -40,6 +40,9 @@ export const GIT_TIMEOUT_MS = 30_000
 export const FETCH_TIMEOUT_MS = 120_000
 /** Warp reads a tab config when it opens it; ours are removed once they're this old. */
 export const TAB_CONFIG_TTL_MS = 10 * 60_000
+/** Apps opened from Finder don't get the shell's PATH, so the CLI is called by its full path. */
+// ponytail: fixed install location; look in ~/Applications too if someone installs Orca there.
+export const ORCA_CLI = '/Applications/Orca.app/Contents/Resources/bin/orca'
 
 const PR_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/
 const SHA = /^[0-9a-f]{40}$/
@@ -242,6 +245,14 @@ export class Launcher {
   }
 
   private async openTerminal(terminal: LauncherTerminal, dir: string, command: string, title: string): Promise<void> {
+    if (terminal === 'orca') {
+      // Opens in the Orca workspace at the project's root, so the project must be added to Orca.
+      const args = ['terminal', 'create', '--worktree', `path:${dir}`, '--title', title, '--command', command, '--focus']
+      await this.deps.run(ORCA_CLI, args, { cwd: dir, timeoutMs: GIT_TIMEOUT_MS }).catch((err) => {
+        throw new LaunchError('terminal_failed', message(err))
+      })
+      return
+    }
     // Warp can't take a command in a URL; it opens a tab config (a TOML file) by name instead.
     const preview = terminal === 'warp-preview'
     const folder = join(this.deps.home, preview ? '.warp-preview' : '.warp', 'tab_configs')
