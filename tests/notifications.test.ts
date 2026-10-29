@@ -5,6 +5,7 @@ import {
   planToEvents,
   renderNotification as render,
   restoredAction,
+  stampTitle,
   staleNotifications,
   type NotificationEvent
 } from '../src/main/notifications'
@@ -328,5 +329,13 @@ describe('restoredAction', () => {
       action: { kind: 'open_panel' },
       buttons: [{ label: 'Abrir PR Radar', action: { kind: 'open_panel' } }]
     })
+  })
+})
+
+describe('stampTitle', () => {
+  it('ends the title with the local time the notification arrives', () => {
+    const at = new Date(2026, 9, 29, 17, 8).getTime()
+    expect(stampTitle('Listo para merge', at, 'es')).toBe('Listo para merge · 17:08')
+    expect(stampTitle('Ready to merge', at, 'en')).toMatch(/^Ready to merge · 5:08\sPM$/)
   })
 })

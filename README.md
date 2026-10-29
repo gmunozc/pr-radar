@@ -94,7 +94,7 @@ If an organization uses **SAML SSO**, authorize the app for it; the panel tells 
 - **Muted repositories** (Settings, or the row's menu) stay in the lists but never notify; merges PR Radar did for you are still reported.
 - **A click** on an alert about a PR opens it on GitHub; Settings → **When you click an alert** can open the panel at that row instead.
 - **Snoozed PRs** come back with a reminder.
-- **Notification Center:** notifications are stacked per repository and show the avatar of whoever acted. They are removed on their own once the PR is reviewed, merged, dismissed or snoozed, when its checks are green again or its conflicts are solved, and when you sign out. The ones left from a previous run still work after a relaunch.
+- **Notification Center:** notifications are stacked per repository and show the avatar of whoever acted. On macOS their title ends with the time they arrived, since macOS shows no time on a notification on screen. They are removed on their own once the PR is reviewed, merged, dismissed or snoozed, when its checks are green again or its conflicts are solved, and when you sign out. The ones left from a previous run still work after a relaunch.
 - **Working hours:** outside them, notifications are held, and one "While you were away" notification arrives when your day starts. If the daily summary is due within the hour, the two are merged.
 - **Daily summary:** at most once a day, and skipped when nothing is pending. The reminder of review requests that have waited longer than the days set in Settings shares its slot: inside the summary when it's on, on its own otherwise.
 

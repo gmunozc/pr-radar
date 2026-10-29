@@ -1,10 +1,11 @@
 import { nativeImage, net, Notification, shell, type NativeImage } from 'electron'
 import type { NotifyResult } from '../shared/types'
-import { t } from './i18n'
+import { currentLocale, t } from './i18n'
 import { logger } from './log'
 import {
   renderNotification,
   restoredAction,
+  stampTitle,
   type NotificationAction,
   type NotificationEvent,
   type RenderedNotification
@@ -48,7 +49,7 @@ export async function deliver(n: RenderedNotification, handlers: NotificationHan
   // Only macOS has a subtitle line; elsewhere it opens the body.
   const mac = process.platform === 'darwin'
   const notification = new Notification({
-    title: n.title,
+    title: mac ? stampTitle(n.title, Date.now(), currentLocale()) : n.title,
     ...(mac && n.subtitle ? { subtitle: n.subtitle } : {}),
     body: !mac && n.subtitle ? `${n.subtitle}\n${n.body}` : n.body,
     silent: false,

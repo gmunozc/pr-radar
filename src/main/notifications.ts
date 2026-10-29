@@ -1,5 +1,6 @@
 /** What PR Radar can notify about, and how each notification reads. Free of Electron APIs. */
-import type { Translate } from '../shared/i18n'
+import { formatClock } from '../shared/format'
+import type { Locale, Translate } from '../shared/i18n'
 import type { ActionErrorCode, MergeMethod, MyPullRequest, NotifyKind, PullRequest, Settings, SnoozeOption } from '../shared/types'
 import type { MyPrEvent, MyPrSnapshot, NotificationPlan } from './diff'
 import type { PrRef } from './github'
@@ -156,6 +157,12 @@ export function staleNotifications(
 function where(pr: { repo: string; number: number }, who: string[] = []): string {
   const people = who.length ? ` · ${who.map((l) => `@${l}`).join(', ')}` : ''
   return `${pr.repo}#${pr.number}${people}`
+}
+
+/** The title with the time it arrives, "Listo para merge · 17:08": macOS shows no time on a
+ *  notification on screen, not even on an alert that stays there for hours. */
+export function stampTitle(title: string, at: number, locale: Locale): string {
+  return `${title} · ${formatClock(at, locale)}`
 }
 
 const authorOf = (pr: PullRequest) => (pr.author ? [pr.author.login] : [])

@@ -89,7 +89,7 @@ Si una organización usa **SAML SSO**, autoriza la app para ella; el panel avisa
 - **Repositorios silenciados** (en Ajustes o desde el menú de la fila): siguen en las listas pero no avisan; los merges que PR Radar hizo por ti sí se avisan.
 - **Al pulsar un aviso** sobre un PR se abre en GitHub; en Ajustes → **Al pulsar un aviso** puedes elegir que se abra el panel en esa fila.
 - **PRs pospuestos:** vuelven con un recordatorio.
-- **Centro de notificaciones:** los avisos se apilan por repositorio y muestran el avatar de quien actuó. Desaparecen solos cuando el PR se revisa, se mergea, se descarta o se pospone, cuando sus checks vuelven a estar en verde o se resuelven sus conflictos, y al cerrar sesión. Los que quedaron de la vez anterior siguen funcionando tras relanzar la app.
+- **Centro de notificaciones:** los avisos se apilan por repositorio y muestran el avatar de quien actuó. En macOS su título termina con la hora a la que llegaron, porque macOS no muestra la hora en los avisos en pantalla. Desaparecen solos cuando el PR se revisa, se mergea, se descarta o se pospone, cuando sus checks vuelven a estar en verde o se resuelven sus conflictos, y al cerrar sesión. Los que quedaron de la vez anterior siguen funcionando tras relanzar la app.
 - **Horario laboral:** fuera de él, los avisos esperan, y al empezar la jornada llega uno solo, "Mientras no estabas". Si el resumen diario toca dentro de la hora siguiente, se fusionan.
 - **Resumen diario:** como mucho uno al día, y no se envía si no hay nada pendiente. El recordatorio de las reviews que llevan más días de los configurados en Ajustes comparte su hora: dentro del resumen cuando está activo, solo cuando no.
 
