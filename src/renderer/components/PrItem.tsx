@@ -262,6 +262,11 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
         <div className="pr-tags">
           {sourceChip}
           {pr.isDraft && <span className="chip chip-draft">{t('pr.draft')}</span>}
+          {pr.yourReview === 'CHANGES_REQUESTED' && (
+            <span className="chip chip-changes" title={t('pr.youRequestedChangesHint')}>
+              {t('pr.youRequestedChanges')}
+            </span>
+          )}
           {pr.newCommitsSinceReview && (
             <span
               className="chip chip-new"

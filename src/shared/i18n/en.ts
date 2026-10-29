@@ -66,6 +66,8 @@ export const en = {
   'pr.draft': 'Draft',
   'pr.newCommits': 'New commits',
   'pr.newCommitsHint': 'The author pushed after your review on {date}',
+  'pr.youRequestedChanges': 'You requested changes',
+  'pr.youRequestedChangesHint': 'Your change request stands until you review again',
   'pr.dismiss': 'Dismiss',
   'pr.dismissHint': 'Dismiss (it comes back if your review is requested again)',
   'pr.dismissInvolvedHint': 'Dismiss (hidden while the PR stays open)',

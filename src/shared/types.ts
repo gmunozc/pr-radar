@@ -80,6 +80,9 @@ export interface PullRequest extends PullRequestBase, PrReviewers {
   lastReviewAt: string | null
   /** The author pushed after your last review. */
   newCommitsSinceReview: boolean
+  /** Your standing decision on it, which GitHub keeps until you review again (asked again or not);
+   *  null when you only commented or never reviewed. */
+  yourReview: 'APPROVED' | 'CHANGES_REQUESTED' | null
 }
 
 /** Why an approved PR of yours can't be merged yet. */

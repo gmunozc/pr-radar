@@ -631,6 +631,13 @@ export function reviewFreshness(n: Pick<RawPr, 'headRefOid' | 'myReview'>): {
   return { lastReviewAt: review.submittedAt, newCommitsSinceReview: review.commit?.oid !== n.headRefOid }
 }
 
+/** Your standing approval or change request on a PR you were asked to review. */
+export function yourStandingReview(n: Pick<RawPr, 'latestOpinionatedReviews'>, viewerLogin: string): PullRequest['yourReview'] {
+  const viewer = viewerLogin.toLowerCase()
+  const review = (n.latestOpinionatedReviews?.nodes ?? []).find((r) => r.author?.login.toLowerCase() === viewer)
+  return review?.state === 'APPROVED' || review?.state === 'CHANGES_REQUESTED' ? review.state : null
+}
+
 function toReviewer(r: RawReviewer | null): Reviewer | null {
   if (r?.__typename === 'User' && r.login) return { kind: 'user', login: r.login, avatarUrl: r.avatarUrl ?? '' }
   if (r?.__typename === 'Team') return { kind: 'team', slug: r.slug ?? '' }
@@ -749,7 +756,8 @@ export function mapResponse(body: RawResponse): FetchResult {
         ...reviewersOf(n, viewer.login, source.kind === 'team' ? source.slug : undefined),
         source,
         viewerDidAuthor: n.viewerDidAuthor === true,
-        ...reviewFreshness(n)
+        ...reviewFreshness(n),
+        yourReview: yourStandingReview(n, viewer.login)
       }
     })
     .sort(newestFirst)
@@ -765,6 +773,7 @@ export function mapResponse(body: RawResponse): FetchResult {
       viewerDidAuthor: n.viewerDidAuthor === true,
       lastReviewAt: null,
       newCommitsSinceReview: false,
+      yourReview: null,
       pendingReviewers: [],
       reviews: [],
       approvals: 0,

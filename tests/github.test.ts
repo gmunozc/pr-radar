@@ -336,8 +336,24 @@ describe('fetchPullRequests', () => {
         { login: 'ana', avatarUrl: 'a', state: 'COMMENTED' }
       ],
       approvals: 2,
-      requiredApprovals: 2
+      requiredApprovals: 2,
+      yourReview: 'APPROVED'
     })
+  })
+
+  it('remembers the changes you requested, which GitHub keeps until you review again', async () => {
+    const asked = rawPr({
+      reviewRequests: { nodes: [{ requestedReviewer: { __typename: 'User', login: 'Me', avatarUrl: 'm' } }] },
+      latestOpinionatedReviews: { nodes: [{ state: 'CHANGES_REQUESTED', author: { login: 'Me', avatarUrl: 'm' } }] },
+      latestReviews: { nodes: [] }
+    })
+    const commented = rawPr({
+      id: 'PR_2',
+      createdAt: '2026-09-01T00:00:00Z',
+      latestReviews: { nodes: [{ state: 'COMMENTED', author: { login: 'me', avatarUrl: 'm' } }] }
+    })
+    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockImplementation(async () => ok([asked, commented])))
+    expect(result.prs.map((p) => p.yourReview)).toEqual(['CHANGES_REQUESTED', null])
   })
 
   it('leaves out the team you were asked through, which is already the source', async () => {

@@ -63,6 +63,8 @@ export const es: Record<MessageKey, string> = {
   'pr.draft': 'Draft',
   'pr.newCommits': 'Nuevos commits',
   'pr.newCommitsHint': 'El autor subió cambios después de tu review del {date}',
+  'pr.youRequestedChanges': 'Pediste cambios',
+  'pr.youRequestedChangesHint': 'Tu petición de cambios sigue vigente hasta que vuelvas a revisar',
   'pr.dismiss': 'Descartar',
   'pr.dismissHint': 'Descartar (vuelve a aparecer si te piden review de nuevo)',
   'pr.dismissInvolvedHint': 'Descartar (no se vuelve a mostrar mientras el PR siga abierto)',

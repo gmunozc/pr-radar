@@ -23,6 +23,7 @@ export const pr = (id = 'PR_1', over: Partial<PullRequest> = {}): PullRequest =>
   viewerDidAuthor: false,
   lastReviewAt: null,
   newCommitsSinceReview: false,
+  yourReview: null,
   pendingReviewers: [],
   reviews: [],
   approvals: 0,

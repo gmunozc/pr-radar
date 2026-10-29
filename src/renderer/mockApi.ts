@@ -71,6 +71,7 @@ const reviews: PullRequest[] = [
     viewerDidAuthor: false,
     lastReviewAt: null,
     newCommitsSinceReview: false,
+    yourReview: null,
     labels: [
       { name: 'backend', color: '0e8a16' },
       { name: 'needs tests', color: 'd93f0b' }
@@ -97,6 +98,7 @@ const reviews: PullRequest[] = [
     viewerDidAuthor: false,
     lastReviewAt: ago(5 * DAY),
     newCommitsSinceReview: true,
+    yourReview: 'CHANGES_REQUESTED',
     labels: [{ name: 'urgent', color: 'b60205' }],
     checks: [
       { name: 'Pytest shard 1/4', state: 'failure', url: 'https://github.com/acme/billing/actions/runs/1/job/11' },
@@ -125,6 +127,7 @@ const reviews: PullRequest[] = [
     viewerDidAuthor: false,
     lastReviewAt: null,
     newCommitsSinceReview: false,
+    yourReview: null,
     labels: [{ name: 'dependencies', color: '0366d6' }],
     additions: 4,
     deletions: 4
@@ -145,7 +148,8 @@ const reviews: PullRequest[] = [
     source: { kind: 'direct' },
     viewerDidAuthor: false,
     lastReviewAt: null,
-    newCommitsSinceReview: false
+    newCommitsSinceReview: false,
+    yourReview: null
   }
 ]
 
@@ -245,6 +249,7 @@ const involved: PullRequest[] = [
     viewerDidAuthor: false,
     lastReviewAt: null,
     newCommitsSinceReview: false,
+    yourReview: null,
     labels: [{ name: 'design', color: 'c5def5' }]
   }
 ]
