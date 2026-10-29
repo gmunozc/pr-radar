@@ -12,6 +12,7 @@ import { CiIcon } from './CiIcon'
 import { ConfirmRow } from './ConfirmRow'
 import { SendToStatus } from './SendToStatus'
 import { Labels } from './Labels'
+import { Reviewers } from './Reviewers'
 
 const DAY_MS = 86_400_000
 const COPIED_MS = 2000
@@ -273,7 +274,7 @@ export function PrItem({ pr, snoozeTomorrowAt, canWrite, pending, staleDays, onD
           <span className="diff">
             <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>
           </span>
-          {pr.author && <span className="pr-author">@{pr.author.login}</span>}
+          <Reviewers pr={pr}>{pr.author && <span className="pr-author">@{pr.author.login}</span>}</Reviewers>
         </div>
         {checksOpen && <ChecksRow checks={pr.checks} total={pr.checksTotal} />}
         {approving && (

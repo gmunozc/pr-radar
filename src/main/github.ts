@@ -13,6 +13,7 @@ import type {
   MyReviewStatus,
   PrCapabilities,
   PrDetail,
+  PrReviewers,
   PullRequest,
   RepoPermission,
   Reviewer,
@@ -80,6 +81,39 @@ export const PROBE_QUERY = /* GraphQL */ `
 
 // Both lists come from a single query (~2 rate-limit points).
 export const PULL_REQUESTS_QUERY = /* GraphQL */ `
+  fragment ReviewerFields on PullRequest {
+    baseRef { branchProtectionRule { requiredApprovingReviewCount } }
+    reviewRequests(first: 20) {
+      nodes {
+        requestedReviewer {
+          __typename
+          ... on User { login avatarUrl }
+          ... on Team { slug }
+        }
+      }
+    }
+    latestReviews(first: 20) {
+      nodes {
+        state
+        author {
+          login
+          avatarUrl
+          ... on User { id }
+        }
+      }
+    }
+    latestOpinionatedReviews(first: 20) {
+      nodes {
+        state
+        author {
+          login
+          avatarUrl
+          ... on User { id }
+        }
+      }
+    }
+  }
+
   fragment PrFields on PullRequest {
     id
     number
@@ -148,15 +182,7 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
             @include(if: $withMyReview) {
             nodes { submittedAt commit { oid } }
           }
-          reviewRequests(first: 20) {
-            nodes {
-              requestedReviewer {
-                __typename
-                ... on User { login }
-                ... on Team { slug }
-              }
-            }
-          }
+          ...ReviewerFields
         }
       }
     }
@@ -183,37 +209,8 @@ export const PULL_REQUESTS_QUERY = /* GraphQL */ `
             viewerDefaultMergeMethod
             viewerPermission
           }
-          baseRef { branchProtectionRule { requiredApprovingReviewCount } }
           reviewThreads(first: 50) { totalCount nodes { isResolved } }
-          reviewRequests(first: 20) {
-            nodes {
-              requestedReviewer {
-                __typename
-                ... on User { login avatarUrl }
-                ... on Team { slug }
-              }
-            }
-          }
-          latestReviews(first: 20) {
-            nodes {
-              state
-              author {
-                login
-                avatarUrl
-                ... on User { id }
-              }
-            }
-          }
-          latestOpinionatedReviews(first: 20) {
-            nodes {
-              state
-              author {
-                login
-                avatarUrl
-                ... on User { id }
-              }
-            }
-          }
+          ...ReviewerFields
         }
       }
     }
@@ -291,6 +288,11 @@ interface RawPr {
   commits?: { nodes: Array<{ commit: { statusCheckRollup: RawRollup | null } | null }> }
   reviewRequests?: { nodes: Array<{ requestedReviewer: RawReviewer | null }> }
   myReview?: { nodes: Array<{ submittedAt: string | null; commit: { oid: string } | null }> }
+  baseRef?: { branchProtectionRule: { requiredApprovingReviewCount: number | null } | null } | null
+  /** Latest review per user, comments included. */
+  latestReviews?: { nodes: RawReview[] } | null
+  /** Latest approval or change request per user, which stands even if they commented later. */
+  latestOpinionatedReviews?: { nodes: RawReview[] }
 }
 
 type Mergeable = 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
@@ -315,12 +317,7 @@ interface RawMyPr extends RawPr {
   viewerCanEnableAutoMerge?: boolean | null
   viewerCanDisableAutoMerge?: boolean | null
   repository: RawPr['repository'] & RawRepoMerge
-  baseRef?: { branchProtectionRule: { requiredApprovingReviewCount: number | null } | null } | null
   reviewThreads?: { totalCount: number; nodes: Array<{ isResolved: boolean } | null> } | null
-  /** Latest review per user, comments included. */
-  latestReviews?: { nodes: RawReview[] } | null
-  /** Latest approval or change request per user, which stands even if they commented later. */
-  latestOpinionatedReviews: { nodes: RawReview[] }
 }
 
 interface RawReview {
@@ -456,7 +453,7 @@ const requestedLogins = (n: Pick<RawPr, 'reviewRequests'>): Set<string> =>
  * PR are not reviews.
  */
 export function mergeReviews(
-  n: Pick<RawMyPr, 'latestReviews' | 'latestOpinionatedReviews' | 'reviewRequests'>,
+  n: Pick<RawPr, 'latestReviews' | 'latestOpinionatedReviews' | 'reviewRequests'>,
   viewerLogin: string
 ): MyPullRequest['reviews'] {
   const requested = requestedLogins(n)
@@ -476,9 +473,12 @@ export function mergeReviews(
   return [...out.values()]
 }
 
-/** Approvals GitHub counts toward the branch protection: the standing ones, from reviewers asked again or not. */
-const standingApprovals = (n: Pick<RawMyPr, 'latestOpinionatedReviews'>, viewerLogin: string): number =>
-  (n.latestOpinionatedReviews?.nodes ?? []).filter((r) => r.state === 'APPROVED' && r.author && r.author.login !== viewerLogin).length
+/**
+ * Approvals GitHub counts toward the branch protection: the standing ones, from reviewers asked
+ * again or not. On a review request, yours too, although you aren't among its reviewers.
+ */
+const standingApprovals = (n: Pick<RawPr, 'latestOpinionatedReviews'>): number =>
+  (n.latestOpinionatedReviews?.nodes ?? []).filter((r) => r.state === 'APPROVED' && r.author).length
 
 export function ciFromRollup(state: string | null | undefined): CiState {
   switch (state) {
@@ -637,16 +637,30 @@ function toReviewer(r: RawReviewer | null): Reviewer | null {
   return null
 }
 
+/**
+ * Who reviews a PR besides you. A review request has you among its pending reviewers, or the team
+ * you were asked through (`viaTeam`), which the row already shows as its source.
+ */
+export function reviewersOf(n: RawPr, viewerLogin: string, viaTeam?: string): PrReviewers {
+  const viewer = viewerLogin.toLowerCase()
+  const isYours = (r: Reviewer) => (r.kind === 'user' ? r.login.toLowerCase() === viewer : r.slug === viaTeam)
+  return {
+    pendingReviewers: (n.reviewRequests?.nodes ?? [])
+      .map((x) => toReviewer(x.requestedReviewer))
+      .filter((r): r is Reviewer => r !== null && !isYours(r)),
+    reviews: mergeReviews(n, viewerLogin),
+    approvals: standingApprovals(n),
+    requiredApprovals: n.baseRef?.branchProtectionRule?.requiredApprovingReviewCount ?? null
+  }
+}
+
 function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boolean }, viewerLogin: string): MyPullRequest {
-  const pendingReviewers = (n.reviewRequests?.nodes ?? [])
-    .map((x) => toReviewer(x.requestedReviewer))
-    .filter((r): r is Reviewer => r !== null)
-  const reviews = mergeReviews(n, viewerLogin)
+  const reviewers = reviewersOf(n, viewerLogin)
   const base = baseFields(n, readable.ci)
   const status = myReviewStatus(
     n.reviewDecision,
-    pendingReviewers.length,
-    reviews.map((r) => r.state)
+    reviewers.pendingReviewers.length,
+    reviewers.reviews.map((r) => r.state)
   )
   const merge: MergeInput = {
     status,
@@ -668,10 +682,8 @@ function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boo
   const threads = n.reviewThreads?.nodes
   return {
     ...base,
+    ...reviewers,
     status,
-    pendingReviewers,
-    reviews,
-    approvals: standingApprovals(n, viewerLogin),
     readyToMerge: isReadyToMerge(merge),
     blocker: mergeBlocker(merge),
     conflicts: hasConflicts(merge),
@@ -682,8 +694,7 @@ function toMyPr(n: RawMyPr & { id: string }, readable: { ci: boolean; merge: boo
     autoMerge:
       n.autoMergeRequest && autoMethod ? { method: autoMethod, enabledAt: n.autoMergeRequest.enabledAt ?? '' } : null,
     merge: mergeOptions(n.repository),
-    unresolvedThreads: Array.isArray(threads) ? threads.filter((t) => t && !t.isResolved).length : null,
-    requiredApprovals: n.baseRef?.branchProtectionRule?.requiredApprovingReviewCount ?? null
+    unresolvedThreads: Array.isArray(threads) ? threads.filter((t) => t && !t.isResolved).length : null
   }
 }
 
@@ -731,12 +742,16 @@ export function mapResponse(body: RawResponse): FetchResult {
   const readable = { ci: !forbidden.ci, merge: !forbidden.merge }
   const prs: PullRequest[] = data.requested.nodes
     .filter(isPr)
-    .map((n) => ({
-      ...baseFields(n, readable.ci),
-      source: reviewSource(n, viewer.login),
-      viewerDidAuthor: n.viewerDidAuthor === true,
-      ...reviewFreshness(n)
-    }))
+    .map((n) => {
+      const source = reviewSource(n, viewer.login)
+      return {
+        ...baseFields(n, readable.ci),
+        ...reviewersOf(n, viewer.login, source.kind === 'team' ? source.slug : undefined),
+        source,
+        viewerDidAuthor: n.viewerDidAuthor === true,
+        ...reviewFreshness(n)
+      }
+    })
     .sort(newestFirst)
   const myPrs: MyPullRequest[] = data.mine.nodes
     .filter(isPr)
@@ -749,7 +764,11 @@ export function mapResponse(body: RawResponse): FetchResult {
       source: { kind: 'involved' as const },
       viewerDidAuthor: n.viewerDidAuthor === true,
       lastReviewAt: null,
-      newCommitsSinceReview: false
+      newCommitsSinceReview: false,
+      pendingReviewers: [],
+      reviews: [],
+      approvals: 0,
+      requiredApprovals: null
     }))
     .sort(newestFirst)
 

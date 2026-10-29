@@ -59,8 +59,20 @@ interface PullRequestBase {
   checksTotal: number
 }
 
-/** A PR someone asked you to review. */
-export interface PullRequest extends PullRequestBase {
+/** Who reviews a PR besides you, and how many approvals it has. */
+export interface PrReviewers {
+  /** Users and teams still asked to review it. */
+  pendingReviewers: Reviewer[]
+  /** One per reviewer, as they stand: a reviewer asked to review again is only in `pendingReviewers`. */
+  reviews: Array<{ login: string; avatarUrl: string; state: ReviewState; id?: string }>
+  /** Approvals GitHub counts toward the branch protection (one from a reviewer asked again still counts). */
+  approvals: number
+  /** Approvals the base branch's protection rule requires; null when unknown or unprotected. */
+  requiredApprovals: number | null
+}
+
+/** A PR someone asked you to review. The PRs you're only involved in come without reviewers. */
+export interface PullRequest extends PullRequestBase, PrReviewers {
   source: ReviewSource
   /** You opened it (GitHub doesn't let you approve your own PR). */
   viewerDidAuthor: boolean
@@ -99,13 +111,8 @@ export interface MergeOptions {
 }
 
 /** A PR you opened, with where its review stands. */
-export interface MyPullRequest extends PullRequestBase {
+export interface MyPullRequest extends PullRequestBase, PrReviewers {
   status: MyReviewStatus
-  pendingReviewers: Reviewer[]
-  /** One per reviewer, as they stand: a reviewer asked to review again is only in `pendingReviewers`. */
-  reviews: Array<{ login: string; avatarUrl: string; state: ReviewState; id?: string }>
-  /** Approvals GitHub counts toward the branch protection (one from a reviewer asked again still counts). */
-  approvals: number
   /** Approved, checks green, no conflicts and mergeable per branch protection. */
   readyToMerge: boolean
   /** Set when approved but not ready; null otherwise (or while GitHub is still computing). */
@@ -123,8 +130,6 @@ export interface MyPullRequest extends PullRequestBase {
   merge: MergeOptions
   /** Review threads nobody resolved yet; null when unreadable. */
   unresolvedThreads: number | null
-  /** Approvals the base branch's protection rule requires; null when unknown or unprotected. */
-  requiredApprovals: number | null
 }
 
 /** An action on a PR, as requested by the panel; the main process adds the head commit it expects. */

@@ -12,6 +12,7 @@ import type {
   PrAction,
   PrRadarApi,
   PullRequest,
+  Reviewer,
   Settings,
   SnoozeOption
 } from '../shared/types'
@@ -47,7 +48,11 @@ const base = {
   branch: 'feature/search-filters',
   labels: [],
   checks: [],
-  checksTotal: 0
+  checksTotal: 0,
+  pendingReviewers: [] as Reviewer[],
+  reviews: [] as PullRequest['reviews'],
+  approvals: 0,
+  requiredApprovals: null as number | null
 }
 
 const reviews: PullRequest[] = [
@@ -70,7 +75,11 @@ const reviews: PullRequest[] = [
       { name: 'backend', color: '0e8a16' },
       { name: 'needs tests', color: 'd93f0b' }
     ],
-    checksTotal: 6
+    checksTotal: 6,
+    reviews: [{ ...people.bob, state: 'APPROVED' }],
+    pendingReviewers: [{ kind: 'user', ...people.cris }],
+    approvals: 1,
+    requiredApprovals: 2
   },
   {
     ...base,
@@ -93,7 +102,12 @@ const reviews: PullRequest[] = [
       { name: 'Pytest shard 1/4', state: 'failure', url: 'https://github.com/acme/billing/actions/runs/1/job/11' },
       { name: 'Lint', state: 'success', url: 'https://github.com/acme/billing/actions/runs/1/job/12' }
     ],
-    checksTotal: 5
+    checksTotal: 5,
+    reviews: [
+      { ...people.cris, state: 'CHANGES_REQUESTED' },
+      { ...people.ana, state: 'COMMENTED' }
+    ],
+    requiredApprovals: 1
   },
   {
     ...base,

@@ -122,7 +122,7 @@ export type LaunchResult = { ok: true } | { ok: false; code: LaunchErrorCode }
 export const PROMPT_PLACEHOLDERS = ['url', 'number', 'repo', 'sha'] as const
 
 export function launchTargetOf(pr: PullRequest | MyPullRequest): LaunchTarget {
-  if ('reviews' in pr) return 'mine'
+  if (!('source' in pr)) return 'mine'
   return pr.source.kind === 'involved' ? 'involved' : 'review'
 }
 

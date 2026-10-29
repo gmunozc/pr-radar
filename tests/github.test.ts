@@ -115,7 +115,15 @@ describe('search exclusions', () => {
       }
     })
     const result = await fetchPullRequests('tok', settings, 'me', vi.fn().mockImplementation(async () => body.clone()))
-    expect(result.involved[0]).toMatchObject({ id: 'I1', source: { kind: 'involved' }, viewerDidAuthor: false })
+    expect(result.involved[0]).toMatchObject({
+      id: 'I1',
+      source: { kind: 'involved' },
+      viewerDidAuthor: false,
+      pendingReviewers: [],
+      reviews: [],
+      approvals: 0,
+      requiredApprovals: null
+    })
     expect(result.warnings).toContainEqual({ code: 'truncated_involved', params: { shown: 1, total: 160 } })
   })
 
@@ -295,6 +303,54 @@ describe('fetchPullRequests', () => {
     const pr = rawPr({ reviewRequests: { nodes: [{ requestedReviewer: null }] } })
     const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockImplementation(async () => ok([pr])))
     expect(result.prs[0].source).toEqual({ kind: 'team', slug: '' })
+  })
+
+  it('shows who else reviews a review request: not you, though your standing approval counts', async () => {
+    const bob = { login: 'bob', avatarUrl: 'b' }
+    const pr = rawPr({
+      baseRef: { branchProtectionRule: { requiredApprovingReviewCount: 2 } },
+      reviewRequests: {
+        nodes: [
+          { requestedReviewer: { __typename: 'User', login: 'Me', avatarUrl: 'm' } },
+          { requestedReviewer: { __typename: 'User', login: 'cris', avatarUrl: 'c' } },
+          { requestedReviewer: { __typename: 'Team', slug: 'platform' } }
+        ]
+      },
+      latestOpinionatedReviews: {
+        nodes: [
+          { state: 'APPROVED', author: bob },
+          { state: 'APPROVED', author: { login: 'me', avatarUrl: 'm' } }
+        ]
+      },
+      latestReviews: { nodes: [{ state: 'COMMENTED', author: bob }, { state: 'COMMENTED', author: { login: 'ana', avatarUrl: 'a' } }] }
+    })
+    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockImplementation(async () => ok([pr])))
+    expect(result.prs[0]).toMatchObject({
+      source: { kind: 'direct' },
+      pendingReviewers: [
+        { kind: 'user', login: 'cris', avatarUrl: 'c' },
+        { kind: 'team', slug: 'platform' }
+      ],
+      reviews: [
+        { ...bob, state: 'APPROVED' },
+        { login: 'ana', avatarUrl: 'a', state: 'COMMENTED' }
+      ],
+      approvals: 2,
+      requiredApprovals: 2
+    })
+  })
+
+  it('leaves out the team you were asked through, which is already the source', async () => {
+    const pr = rawPr({
+      reviewRequests: {
+        nodes: [
+          { requestedReviewer: { __typename: 'Team', slug: 'platform' } },
+          { requestedReviewer: { __typename: 'Team', slug: 'design' } }
+        ]
+      }
+    })
+    const result = await fetchPullRequests('tok', settings, undefined, vi.fn().mockImplementation(async () => ok([pr])))
+    expect(result.prs[0]).toMatchObject({ source: { kind: 'team', slug: 'platform' }, pendingReviewers: [{ kind: 'team', slug: 'design' }] })
   })
 
   it('surfaces SAML partial results as a warning', async () => {

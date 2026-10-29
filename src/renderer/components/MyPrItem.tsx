@@ -1,12 +1,10 @@
 import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { formatDateTime, timeAgo } from '../../shared/format'
-import type { Translate } from '../../shared/i18n'
 import type { MessageKey } from '../../shared/i18n/en'
 import { isSharedMenuAction, MENU_KEY, myPrMenuActions, type MyPrMenuAction } from '../../shared/prActions'
 import type { AppState, MergeMethod, MyPullRequest, MyReviewStatus, PrAction } from '../../shared/types'
 import { CopyIcon, GitMergeIcon, KebabHorizontalIcon, PullRequestIcon } from '../icons'
 import { useLocale, useT } from '../i18n'
-import { REVIEW_LOOK } from '../reviews'
 import { sharedMenuItem } from '../rowMenu'
 import { useSendTo, withSendTo } from '../useLaunchers'
 import { ActionMenu, type MenuItem } from './ActionMenu'
@@ -14,6 +12,7 @@ import { ChecksRow } from './ChecksRow'
 import { CiIcon } from './CiIcon'
 import { ConfirmRow } from './ConfirmRow'
 import { Labels } from './Labels'
+import { Reviewers } from './Reviewers'
 import { Segmented } from './Segmented'
 import { SendToStatus } from './SendToStatus'
 
@@ -31,38 +30,7 @@ const BLOCKER_CHIPS: Partial<Record<NonNullable<MyPullRequest['blocker']>, { lab
   blocked: { label: 'blocker.blocked', hint: 'blocker.blockedHint' }
 }
 
-const MAX_AVATARS = 4
 const COPIED_MS = 2000
-
-interface Person {
-  key: string
-  avatarUrl: string
-  ring: 'approved' | 'changes' | 'commented' | 'waiting'
-  title: string
-}
-
-/** Who already reviewed (approved, changes, comments) and who is still pending, as avatars. */
-function people(pr: MyPullRequest, t: Translate): { avatars: Person[]; teams: string[] } {
-  const avatars: Person[] = []
-  for (const r of pr.reviews) {
-    const look = REVIEW_LOOK[r.state]
-    if (look) avatars.push({ key: `r-${r.login}`, avatarUrl: r.avatarUrl, ring: look.ring, title: t(look.label, { login: r.login }) })
-  }
-  const teams: string[] = []
-  for (const r of pr.pendingReviewers) {
-    if (r.kind === 'user') {
-      avatars.push({
-        key: `p-${r.login}`,
-        avatarUrl: r.avatarUrl,
-        ring: 'waiting',
-        title: t('reviewer.pending', { name: `@${r.login}` })
-      })
-    } else {
-      teams.push(r.slug ? `@${r.slug}` : t('reviewer.team'))
-    }
-  }
-  return { avatars, teams }
-}
 
 /** An action that needs a confirmation (and a merge method) before it runs. */
 interface Confirming {
@@ -204,8 +172,6 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
   const [owner, name] = pr.repo.split('/')
   const status = pr.readyToMerge ? { label: 'status.ready' as MessageKey, className: 'ready' } : STATUS[pr.status]
   const blockerChip = pr.blocker ? BLOCKER_CHIPS[pr.blocker] : undefined
-  const { avatars, teams } = people(pr, t)
-  const extra = avatars.length - MAX_AVATARS
   const actionsOpen = menuOpen || confirming !== null || busy
   const now = Date.now()
   const ageDays = Math.floor((now - Date.parse(pr.createdAt)) / DAY_MS)
@@ -319,22 +285,7 @@ export function MyPrItem({ pr, canWrite, pending, armed, staleDays, onDetail, mu
           <span className="diff">
             <span className="add">+{pr.additions}</span> <span className="del">−{pr.deletions}</span>
           </span>
-          <span className="reviewers">
-            {pr.requiredApprovals !== null && pr.requiredApprovals > 0 && (
-              <span className="reviewers-count" title={t('mine.approvalsHint', { have: pr.approvals, need: pr.requiredApprovals })}>
-                {pr.approvals}/{pr.requiredApprovals}
-              </span>
-            )}
-            {teams.map((team) => (
-              <span key={team} className="reviewer-team" title={t('reviewer.pending', { name: team })}>
-                {team}
-              </span>
-            ))}
-            {avatars.slice(0, MAX_AVATARS).map((p) => (
-              <img key={p.key} className={`reviewer ring-${p.ring}`} src={p.avatarUrl} alt="" title={p.title} />
-            ))}
-            {extra > 0 && <span className="reviewer-more">+{extra}</span>}
-          </span>
+          <Reviewers pr={pr} />
         </div>
         {checksOpen && <ChecksRow checks={pr.checks} total={pr.checksTotal} />}
         {confirming && (

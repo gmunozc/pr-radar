@@ -16,7 +16,7 @@ interface Props {
   onGone(): void
 }
 
-const isMine = (pr: PullRequest | MyPullRequest): pr is MyPullRequest => 'reviews' in pr
+const isMine = (pr: PullRequest | MyPullRequest): pr is MyPullRequest => !('source' in pr)
 
 /**
  * One PR in full: its row (with every action), the checks, who reviewed, counts and the
@@ -75,7 +75,7 @@ export function PrDetail({ state, prId, onGone }: Props) {
           <ChecksRow checks={pr.checks} total={pr.checksTotal} />
         </section>
       )}
-      {isMine(pr) && (pr.reviews.length > 0 || pr.pendingReviewers.length > 0) && (
+      {(pr.reviews.length > 0 || pr.pendingReviewers.length > 0) && (
         <section className="detail-section">
           <div className="detail-heading">{t('detail.reviews')}</div>
           <ul className="detail-reviews">
