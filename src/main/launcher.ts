@@ -40,8 +40,8 @@ export const GIT_TIMEOUT_MS = 30_000
 export const FETCH_TIMEOUT_MS = 120_000
 /** Warp reads a tab config when it opens it; ours are removed once they're this old. */
 export const TAB_CONFIG_TTL_MS = 10 * 60_000
-/** Apps opened from Finder don't get the shell's PATH, so the CLI is called by its full path. */
-// ponytail: fixed install location; look in ~/Applications too if someone installs Orca there.
+/** Apps opened from Finder don't get the shell's PATH, so the CLI is called by its full path.
+ *  Only Orca's usual install location: one in ~/Applications isn't found. */
 export const ORCA_CLI = '/Applications/Orca.app/Contents/Resources/bin/orca'
 
 const PR_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/
